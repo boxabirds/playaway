@@ -1,0 +1,22 @@
+{
+  "windows": {
+    "playlist": [
+      { "element": "playback.nowplaying", "job": "play_file" },
+      { "element": "playback.previous", "job": "play_file" },
+      { "element": "playback.playpause", "job": "play_file" },
+      { "element": "playback.stop", "job": "play_file" },
+      { "element": "playback.next", "job": "play_file" },
+      { "element": "playback.elapsed", "job": "play_file" },
+      { "element": "playback.position", "job": "play_file" },
+      { "element": "playback.remaining", "job": "play_file" },
+      { "element": "playback.mute", "job": "play_file" },
+      { "element": "playback.volume", "job": "play_file" },
+      { "element": "playlist.shuffle", "job": "play_playlist" },
+      { "element": "playlist.repeat", "job": "play_playlist" },
+      { "element": "playlist.tracks", "job": "manage_playlists" },
+      { "element": "playlist.empty", "job": "manage_playlists" },
+      { "element": "playlist.add", "job": "manage_playlists" },
+      { "element": "playlist.remove", "job": "manage_playlists" }
+    ]
+  }
+}

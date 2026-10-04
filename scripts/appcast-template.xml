@@ -1,0 +1,17 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>@PRODUCT_NAME@</title>
+        <item>
+            <title>@PRODUCT_NAME@ @VERSION@</title>
+            <pubDate>@PUB_DATE@</pubDate>
+            <sparkle:version>@VERSION@</sparkle:version>
+            <sparkle:shortVersionString>@VERSION@</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="@DOWNLOAD_URL@"
+                       length="@LENGTH@"
+                       type="application/octet-stream"
+                       sparkle:edSignature="@ED_SIGNATURE@"/>
+        </item>
+    </channel>
+</rss>

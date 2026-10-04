@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="LocalPlayer Terminology">
+    <suite name="LocalPlayer Suite" code="LPlr" description="Everything the player's windows and menus do, for scripts.">
+
+        <class name="application" code="capp" description="The LocalPlayer application.">
+            <cocoa class="NSApplication"/>
+
+            <property name="playing" code="lpPl" type="boolean" access="r"
+                      description="Is a track playing right now?">
+                <cocoa key="scriptIsPlaying"/>
+            </property>
+            <property name="current track" code="lpCt" type="text" access="r"
+                      description="The file name of the current track, or empty text.">
+                <cocoa key="scriptCurrentTrack"/>
+            </property>
+            <property name="position" code="lpPo" type="real" access="r"
+                      description="Seconds into the current track.">
+                <cocoa key="scriptPosition"/>
+            </property>
+            <property name="volume" code="lpVo" type="integer" access="rw"
+                      description="The player's own volume, a whole number from 0 to 100. Kept for the next launch.">
+                <cocoa key="scriptVolume"/>
+            </property>
+            <property name="muted" code="lpMu" type="boolean" access="rw"
+                      description="Is the sound muted? Muting keeps the volume. Kept for the next launch.">
+                <cocoa key="scriptMuted"/>
+            </property>
+            <property name="shuffle" code="lpSh" type="boolean" access="rw"
+                      description="Is shuffle on? Kept for the next launch.">
+                <cocoa key="scriptShuffle"/>
+            </property>
+            <property name="repeat mode" code="lpRp" type="text" access="rw"
+                      description="Repeat: &quot;off&quot;, &quot;all&quot; or &quot;one&quot;. Kept for the next launch.">
+                <cocoa key="scriptRepeat"/>
+            </property>
+
+            <element type="playlist document" access="r">
+                <cocoa key="orderedDocuments"/>
+            </element>
+        </class>
+
+        <class name="playlist document" code="lpPD" description="An open playlist. Scripts address it by its name.">
+            <cocoa class="PlaylistDocument"/>
+            <property name="name" code="pnam" type="text" access="r"
+                      description="The playlist's name, as shown in its window title.">
+                <cocoa key="displayName"/>
+            </property>
+            <property name="track count" code="lpTc" type="integer" access="r"
+                      description="How many tracks the playlist has.">
+                <cocoa key="scriptTrackCount"/>
+            </property>
+            <property name="file" code="lpFp" type="text" access="r"
+                      description="POSIX path of the saved playlist file, or empty text when not saved yet.">
+                <cocoa key="scriptFilePath"/>
+            </property>
+        </class>
+
+        <command name="open audio file" code="LPlrOpAF" description="Open an audio file and play it, as opening it from Finder does.">
+            <cocoa class="OpenAudioFileCommand"/>
+            <direct-parameter description="POSIX path of an mp3, wav or m4a file." type="text"/>
+        </command>
+
+        <command name="play" code="LPlrPlay" description="Play, or resume when paused. With nothing loaded, starts the front playlist.">
+            <cocoa class="PlayCommand"/>
+        </command>
+
+        <command name="play track" code="LPlrPlTk" description="Play a track of an open playlist by its position, as double-clicking it does.">
+            <cocoa class="PlayTrackCommand"/>
+            <direct-parameter description="The track's position, starting at 1." type="integer"/>
+            <parameter name="in" code="LPin" type="text" description="Name of an open playlist.">
+                <cocoa key="playlist"/>
+            </parameter>
+        </command>
+
+        <command name="pause" code="LPlrPaus" description="Pause, keeping the position.">
+            <cocoa class="PauseCommand"/>
+        </command>
+
+        <command name="stop" code="LPlrStop" description="Stop playback and return to the start of the track.">
+            <cocoa class="StopCommand"/>
+        </command>
+
+        <command name="seek" code="LPlrSeek" description="Move to a time in the current track.">
+            <cocoa class="SeekCommand"/>
+            <parameter name="to" code="LPto" type="real" description="Seconds from the start of the track.">
+                <cocoa key="seconds"/>
+            </parameter>
+        </command>
+
+        <command name="next track" code="LPlrNext" description="Play the next track of the playlist.">
+            <cocoa class="NextTrackCommand"/>
+        </command>
+
+        <command name="previous track" code="LPlrPrev" description="Play the previous track of the playlist.">
+            <cocoa class="PreviousTrackCommand"/>
+        </command>
+
+        <command name="new playlist" code="LPlrNewP" description="Make a new playlist in its own window. With a name it is saved in Documents; with a path, there.">
+            <cocoa class="NewPlaylistCommand"/>
+            <parameter name="named" code="LPnm" type="text" optional="yes" description="File name to save it under in Documents.">
+                <cocoa key="name"/>
+            </parameter>
+            <parameter name="at" code="LPat" type="text" optional="yes" description="POSIX path to save it at.">
+                <cocoa key="path"/>
+            </parameter>
+            <result type="text" description="The new playlist's name."/>
+        </command>
+
+        <command name="rename playlist" code="LPlrRenP" description="Rename a saved, open playlist.">
+            <cocoa class="RenamePlaylistCommand"/>
+            <direct-parameter description="Name of an open playlist." type="text"/>
+            <parameter name="to" code="LPto" type="text" description="The new name.">
+                <cocoa key="newName"/>
+            </parameter>
+        </command>
+
+        <command name="add track" code="LPlrAddT" description="Add an audio file to an open playlist.">
+            <cocoa class="AddTrackCommand"/>
+            <direct-parameter description="POSIX path of an mp3, wav or m4a file." type="text"/>
+            <parameter name="to" code="LPto" type="text" description="Name of an open playlist.">
+                <cocoa key="playlist"/>
+            </parameter>
+        </command>
+
+        <command name="remove track" code="LPlrRemT" description="Remove a track from an open playlist. The audio file is not touched.">
+            <cocoa class="RemoveTrackCommand"/>
+            <direct-parameter description="The track's position, starting at 1." type="integer"/>
+            <parameter name="from" code="LPfm" type="text" description="Name of an open playlist.">
+                <cocoa key="playlist"/>
+            </parameter>
+        </command>
+
+        <command name="move track" code="LPlrMovT" description="Move a track to another position in an open playlist.">
+            <cocoa class="MoveTrackCommand"/>
+            <direct-parameter description="The track's current position, starting at 1." type="integer"/>
+            <parameter name="to" code="LPto" type="integer" description="The position to move it to.">
+                <cocoa key="position"/>
+            </parameter>
+            <parameter name="in" code="LPin" type="text" description="Name of an open playlist.">
+                <cocoa key="playlist"/>
+            </parameter>
+        </command>
+
+        <command name="locate track" code="LPlrLocT" description="Point a missing track at its file; other missing tracks in that folder are reconnected too.">
+            <cocoa class="LocateTrackCommand"/>
+            <direct-parameter description="The track's position, starting at 1." type="integer"/>
+            <parameter name="in" code="LPin" type="text" description="Name of an open playlist.">
+                <cocoa key="playlist"/>
+            </parameter>
+            <parameter name="with" code="LPwi" type="text" description="POSIX path of the file.">
+                <cocoa key="file"/>
+            </parameter>
+        </command>
+
+        <command name="check for updates" code="LPlrChkU" description="Check for a newer version, as the Check for Updates menu item does.">
+            <cocoa class="CheckForUpdatesCommand"/>
+        </command>
+    </suite>
+</dictionary>
