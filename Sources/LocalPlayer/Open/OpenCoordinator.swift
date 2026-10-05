@@ -36,8 +36,9 @@ final class OpenCoordinator {
             notices.show(.unsupported(reason))
             return .unsupported(reason)
         case .supported:
-            playlists?.endActivePlayback()
             let result = engine.play(url)
+            // Only a file that really started replaces the playlist session; a failed open changes nothing.
+            if result == .playing { playlists?.endActivePlayback() }
             onPlayResult?(url, result)
             return .played(result)
         }

@@ -81,6 +81,12 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         startResolutionIfLaunched()
     }
 
+    /// Closing the window of a playlist that is playing stops it. Anything else playing is left alone.
+    override func close() {
+        if player.isSessionActive { services.engine.stop() }
+        super.close()
+    }
+
     // MARK: Editing (the one path windows, menus and scripts use)
 
     private func replacePlaylist(_ updated: Playlist, actionName: String? = nil) {
@@ -92,10 +98,17 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         playlistDidChange()
     }
 
-    /// Undo and redo of an edit: put a whole earlier playlist back (which registers the inverse). Track ids are
-    /// kept, so statuses and hazard marks stay attached to the right rows.
+    /// Undo and redo of an edit: put an earlier list of tracks back (which registers the inverse). Track ids are
+    /// kept, so statuses and hazard marks stay attached to the right rows. A reference refreshed or located since
+    /// the edit is not an edit that can be undone here, so tracks present now keep their current reference.
     private func restore(_ earlier: Playlist, actionName: String?) {
-        replacePlaylist(earlier, actionName: actionName)
+        var restored = earlier
+        for index in restored.tracks.indices {
+            if let present = playlist.track(withID: restored.tracks[index].id) {
+                restored.tracks[index].reference = present.reference
+            }
+        }
+        replacePlaylist(restored, actionName: actionName)
     }
 
     private func playlistDidChange() {
@@ -161,13 +174,14 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         let snapshot = playlist.tracks
         let resolver = services.resolver
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let results = snapshot.map { ($0.id, resolver.resolve($0.reference)) }
+            let results = snapshot.map { (track: $0, result: resolver.resolve($0.reference)) }
             DispatchQueue.main.async {
                 guard let self else { return }
-                var updates: [UUID: TrackStatus] = [:]
-                for (id, result) in results { updates[id] = result.0 }
-                self.statuses.setAll(updates)
-                for (id, result) in results { self.apply(result.1, toTrack: id) }
+                // A track whose reference changed while this ran (a Locate, say) was resolved from a stale
+                // reference: its result is dropped rather than written over the newer state.
+                let current = results.filter { self.playlist.track(withID: $0.track.id)?.reference == $0.track.reference }
+                self.statuses.setAll(Dictionary(uniqueKeysWithValues: current.map { ($0.track.id, $0.result.0) }))
+                for entry in current { self.apply(entry.result.1, toTrack: entry.track.id) }
                 completion?()
             }
         }
@@ -198,7 +212,7 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         let base = trimmed.hasSuffix(".\(playlistFileExtension)") ? String(trimmed.dropLast(playlistFileExtension.count + 1)) : trimmed
         let target = current.deletingLastPathComponent().appendingPathComponent("\(base).\(playlistFileExtension)")
         guard target != current else { return completion(.success(())) }
-        guard !FileManager.default.fileExists(atPath: target.path) else { return completion(.failure(.nameTaken)) }
+        guard !Self.isDifferentExistingFile(target, from: current) else { return completion(.failure(.nameTaken)) }
         move(to: target) { [weak self] error in
             if let error {
                 self?.services.notices.show(.saveFailed(error.localizedDescription))
@@ -207,6 +221,18 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
                 completion(.success(()))
             }
         }
+    }
+}
+
+extension PlaylistDocument {
+    /// True when something other than `file` is already at `target`. On a case-insensitive volume a name that
+    /// differs only in case is the same file, and renaming to it is allowed.
+    fileprivate static func isDifferentExistingFile(_ target: URL, from file: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: target.path) else { return false }
+        let identifierKey = URLResourceKey.fileResourceIdentifierKey
+        guard let targetID = try? target.resourceValues(forKeys: [identifierKey]).fileResourceIdentifier,
+              let fileID = try? file.resourceValues(forKeys: [identifierKey]).fileResourceIdentifier else { return true }
+        return !targetID.isEqual(fileID)
     }
 }
 

@@ -31,6 +31,9 @@ struct AdvanceContext {
     let shuffleOn: Bool
     let pass: [Track]
     let shuffler: ShuffleOrdering
+    /// The order `current` was started in. Lets the decider carry on from where `current` was if it has since
+    /// been removed from the playlist.
+    var startedOrder: [Track] = []
 }
 
 struct Advance: Equatable {
@@ -62,6 +65,7 @@ struct AdvanceDecider: AdvanceDeciding {
             }
         }
         let index = context.current.flatMap { current in order.firstIndex { $0.id == current.id } }
+        let removedSlot = index == nil ? Self.slotOfRemovedCurrent(in: order, context: context) : nil
 
         switch event {
         case .start:
@@ -71,23 +75,31 @@ struct AdvanceDecider: AdvanceDeciding {
             if context.repeatMode == .one, let current = context.current, index != nil {
                 return Advance(next: .play(current), newPass: newPass)
             }
-            return forward(order: order, index: index, context: context, newPass: newPass)
+            return forward(order: order, index: index, removedSlot: removedSlot, context: context, newPass: newPass)
 
         case .skipForward:
-            return forward(order: order, index: index, context: context, newPass: newPass)
+            return forward(order: order, index: index, removedSlot: removedSlot, context: context, newPass: newPass)
 
         case .skipBackward:
-            guard let index else { return Advance(next: .stay, newPass: newPass) }
-            if index > 0 { return Advance(next: .play(order[index - 1]), newPass: newPass) }
+            guard let before = index ?? removedSlot else { return Advance(next: .stay, newPass: newPass) }
+            if before > 0 { return Advance(next: .play(order[before - 1]), newPass: newPass) }
             guard context.repeatMode != .off else { return Advance(next: .stay, newPass: newPass) }
             return Advance(next: .play(order[order.count - 1]), newPass: newPass)
         }
     }
 
-    private func forward(order: [Track], index: Int?, context: AdvanceContext, newPass: [Track]?) -> Advance {
-        guard let index else { return Advance(next: .stop, newPass: newPass) }
-        if index + 1 < order.count {
-            return Advance(next: .play(order[index + 1]), newPass: newPass)
+    private func forward(order: [Track], index: Int?, removedSlot: Int?, context: AdvanceContext,
+                         newPass: [Track]?) -> Advance {
+        let nextIndex: Int
+        if let index {
+            nextIndex = index + 1
+        } else if let removedSlot {
+            nextIndex = removedSlot
+        } else {
+            return Advance(next: .stop, newPass: newPass)
+        }
+        if nextIndex < order.count {
+            return Advance(next: .play(order[nextIndex]), newPass: newPass)
         }
         guard context.repeatMode != .off else { return Advance(next: .stop, newPass: newPass) }
         if context.shuffleOn {
@@ -95,6 +107,15 @@ struct AdvanceDecider: AdvanceDeciding {
             return Advance(next: fresh.first.map { .play($0) } ?? .stop, newPass: fresh)
         }
         return Advance(next: .play(order[0]), newPass: newPass)
+    }
+
+    /// Where the removed current track would sit in `order`: the number of tracks that came before it and are
+    /// still there. The track now at that position is the one that followed it. Nil when there is no way to know.
+    private static func slotOfRemovedCurrent(in order: [Track], context: AdvanceContext) -> Int? {
+        guard let current = context.current,
+              let position = context.startedOrder.firstIndex(where: { $0.id == current.id }) else { return nil }
+        let present = Set(order.map(\.id))
+        return context.startedOrder[..<position].filter { present.contains($0.id) }.count
     }
 
     /// Keeps the pass in step with edits made while it plays: removed tracks drop out, new ones join the end.

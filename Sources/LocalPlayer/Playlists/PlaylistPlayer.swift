@@ -24,6 +24,8 @@ final class PlaylistPlayer: SessionEnding {
     private(set) var current: Track?
     private var pass: [Track] = []
     private var passIsShuffled = false
+    /// The order the current track was started in, so the decider can carry on from where a removed track was.
+    private var startedOrder: [Track] = []
 
     init(playlist: @escaping () -> Playlist, settings: PlayModeSettings,
          decider: AdvanceDeciding = AdvanceDecider(), order: ShuffleOrdering = ShuffleOrder(),
@@ -64,6 +66,7 @@ final class PlaylistPlayer: SessionEnding {
         beginSession()
         current = nil
         pass = []
+        startedOrder = []
         passIsShuffled = settings.shuffleOn
         playLoop(first: .start)
     }
@@ -71,26 +74,25 @@ final class PlaylistPlayer: SessionEnding {
     // MARK: Double-click on a track
 
     /// A playable track plays from 0:00 and becomes the current track. A missing or unreadable one is marked
-    /// and leaves anything already playing unchanged.
+    /// and leaves anything already playing, and any session, unchanged: the session only changes hands once
+    /// the engine has actually started the file.
     func play(track: Track) {
         guard playlistProvider().track(withID: track.id) != nil else { return }
         guard case .ready(let url) = prepare(track) else {
             marks.markUnreadable(track)
             return
         }
-        beginSession()
-        current = track
-        passIsShuffled = settings.shuffleOn
-        pass = settings.shuffleOn ? order.pass(for: playlistProvider(), startingWith: track) : []
         switch engine.play(url) {
         case .playing:
-            break
+            beginSession()
+            current = track
+            passIsShuffled = settings.shuffleOn
+            pass = settings.shuffleOn ? order.pass(for: playlistProvider(), startingWith: track) : []
+            noteStartedOrder()
         case .failed:
             marks.markUnreadable(track)
-            engine.stop()
-            finishSession()
         case .noOutputDevice:
-            finishSession()
+            break
         }
     }
 
@@ -129,6 +131,7 @@ final class PlaylistPlayer: SessionEnding {
         cancellables.removeAll()
         current = nil
         pass = []
+        startedOrder = []
         registry.didEnd(self)
     }
 
@@ -147,11 +150,16 @@ final class PlaylistPlayer: SessionEnding {
         guard sessionActive, let current, settings.shuffleOn != passIsShuffled else { return }
         passIsShuffled = settings.shuffleOn
         pass = settings.shuffleOn ? order.pass(for: playlistProvider(), startingWith: current) : []
+        noteStartedOrder()
+    }
+
+    private func noteStartedOrder() {
+        startedOrder = passIsShuffled ? pass : playlistProvider().tracks
     }
 
     private func context() -> AdvanceContext {
         AdvanceContext(playlist: playlistProvider(), current: current, repeatMode: settings.repeatMode,
-                       shuffleOn: settings.shuffleOn, pass: pass, shuffler: order)
+                       shuffleOn: settings.shuffleOn, pass: pass, shuffler: order, startedOrder: startedOrder)
     }
 
     /// Asks the decider what is next and plays it, skipping tracks that cannot be played. Iterative, and bounded
@@ -177,6 +185,7 @@ final class PlaylistPlayer: SessionEnding {
                 return
             case .play(let track):
                 current = track
+                noteStartedOrder()
                 switch attempt(track) {
                 case .started:
                     return
