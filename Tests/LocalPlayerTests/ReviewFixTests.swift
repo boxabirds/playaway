@@ -228,6 +228,41 @@ final class ReviewFixDocumentTests: XCTestCase {
         XCTAssertEqual(doc.playlist.tracks[1].reference, located, "redo does not revert it either")
     }
 
+    func testLocateDuringABackgroundResolveIsNotUndoneByItFromTheScript() throws {
+        let actions = AppActions(services: app.services)
+        actions.isReady = { true }
+        let fixture = PlaylistFixture()
+        let doc = app.openSaved(fixture.playlist, at: dir.path("Race.lplaylist"))
+        let newHome = TempDir("newhome")
+        newHome.copyFixture("track2.mp3")
+        fixture.deleteFile(at: 1)
+        resolve(doc)
+        var done = false
+        doc.resolveStatuses { done = true }
+        try actions.locateTrack(2, inPlaylist: "Race", withFile: newHome.path("track2.mp3").path)
+        spin { done }
+        XCTAssertEqual(doc.statuses.status(of: fixture.tracks[1].id), .resolved(newHome.path("track2.mp3")))
+        XCTAssertEqual(doc.playlist.tracks[1].reference.lastKnownPath, newHome.path("track2.mp3").canonicalPath)
+    }
+
+    func testUndoOfAnEarlierEditKeepsALaterLocateFromTheScript() throws {
+        let actions = AppActions(services: app.services)
+        actions.isReady = { true }
+        let fixture = PlaylistFixture()
+        let doc = app.openSaved(fixture.playlist, at: dir.path("Undo.lplaylist"))
+        let newHome = TempDir("newhome")
+        newHome.copyFixture("track2.mp3")
+        fixture.deleteFile(at: 1)
+        resolve(doc)
+        doc.undoManager?.removeAllActions()
+        try actions.removeTrack(5, fromPlaylist: "Undo")
+        try actions.locateTrack(2, inPlaylist: "Undo", withFile: newHome.path("track2.mp3").path)
+        let located = doc.playlist.tracks[1].reference
+        doc.undoManager?.undo()
+        XCTAssertEqual(doc.playlist.tracks.count, 5)
+        XCTAssertEqual(doc.playlist.tracks[1].reference, located)
+    }
+
     // Finding: removing the playing track stopped the playlist (UI route and script route).
 
     func testRemovingThePlayingRowCarriesOnFromTheUI() {

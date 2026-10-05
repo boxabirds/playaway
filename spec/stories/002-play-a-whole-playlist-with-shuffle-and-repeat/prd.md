@@ -22,7 +22,7 @@ A playlist plays from its first track to its last without any further action: wh
 
 ## Alternate flows
 - **The person double-clicks a track:** that track plays from its beginning and becomes the current track. Anything else that was playing stops. With shuffle off the playlist carries on from that track in listed order. With shuffle on the remaining tracks follow in a random order after it.
-- **The person double-clicks a track that is missing or cannot be read:** it does not play, it is marked with the hazard icon, and anything that was already playing carries on unchanged. This reading, that playback is left unchanged, is an interpretation pending owner confirmation.
+- **The person double-clicks a track that is missing or cannot be read:** it does not play, it is marked with the hazard icon, and anything that was already playing carries on unchanged.
 - **Something else is already playing:** starting this playlist, or playing one of its tracks, stops it, so only one thing plays at a time.
 - **Empty playlist:** there is nothing to play; starting it does nothing and no track is shown as playing.
 - **A track cannot be read:** when playback reaches that track it is skipped, a hazard icon appears next to it in the list, and the next track starts.
