@@ -27,6 +27,7 @@ A playlist plays from its first track to its last without any further action: wh
 - **Empty playlist:** there is nothing to play; starting it does nothing and no track is shown as playing.
 - **A track cannot be read:** when playback reaches that track it is skipped, a hazard icon appears next to it in the list, and the next track starts.
 - **A track's file is missing (moved or deleted and not found):** when playback reaches it, it is skipped, the same hazard icon appears next to it, and the next track starts. The hazard icon is added on top of the greyed-out look the missing-files story gives such a track. How missing tracks are repaired belongs to the missing-files story.
+- **The person closes the window of a playlist that is playing:** playback stops. Closing a window of a playlist that is not playing changes nothing, and does not stop anything else that is playing.
 - **Single-track playlist:** with repeat off it plays once and stops; with repeat all or one it plays again.
 - **First launch ever:** Shuffle is off and Repeat is off.
 
@@ -115,6 +116,8 @@ WHILE repeat is off WHEN the last track of the playlist finishes THE SYSTEM SHAL
 
 WHILE repeat is all WHEN the last track of the playlist finishes THE SYSTEM SHALL start the playlist again.
 
+WHILE repeat is all and shuffle is on WHEN a shuffled pass ends THE SYSTEM SHALL start a new random pass, and the first track of that pass MAY be the track that just played.
+
 ## Repeat one replays the track
 
 > Anchor: `prd.playlist.repeat_one`
@@ -145,6 +148,12 @@ WHEN playback reaches a track that cannot be read THE SYSTEM SHALL skip that tra
 
 WHEN playback reaches a track whose file is missing THE SYSTEM SHALL skip that track, mark it with a hazard icon, and continue with the next track.
 
+## Closing the window stops playback
+
+> Anchor: `prd.playlist.close_stops`
+
+WHEN the person closes the window of a playlist that is playing THE SYSTEM SHALL stop playback.
+
 ## Shuffle does not rewrite the playlist
 
 > Anchor: `prd.playlist.order_untouched`
@@ -166,6 +175,8 @@ A non-technical person can check each of these by hand, using a playlist of five
 10. Start an empty playlist: nothing plays and nothing already playing changes.
 11. Double-click the third track while another track plays: the third track plays from its beginning and the other track stops. With Shuffle off, the fourth track follows it. With Shuffle on, the other tracks follow in a random order.
 12. Double-click a track whose file is missing while something plays: the track does not play, it shows a hazard icon, and the music carries on.
+13. Close the window of a playlist that is playing: the music stops. Close the window of a playlist that is not playing while another plays: the music carries on.
+14. With Shuffle on and Repeat all, let a whole pass finish: a new random pass starts. Its first track may be the one that just played; that is not an error.
 
 ## Constraints
 
