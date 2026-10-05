@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LocalPlayer UI Proposal</title>
+<style>
+:root {
+  --accent: #0a6cff; --accent-soft: rgba(10,108,255,.12);
+  --label: #1d1d1f; --label2: #6e6e73; --label3: #a1a1a6; --hair: #e5e5ea;
+  --win: #fff; --page: #f5f5f7; --fill: #ededf0;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 32px 16px 64px; background: var(--page); color: var(--label);
+  font: 14px/1.45 -apple-system, "SF Pro Text", system-ui, sans-serif; }
+h1 { font-size: 26px; margin: 0 0 4px; } h2 { font-size: 19px; margin: 40px 0 4px; }
+p.lead { color: var(--label2); margin: 0 0 20px; max-width: 760px; }
+.row { display: flex; flex-wrap: wrap; gap: 36px; align-items: flex-start; }
+figure { margin: 0; } figcaption { margin-top: 10px; font-size: 13px; color: var(--label2); max-width: 440px; }
+figcaption b { color: var(--label); }
+svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
+.shot { width: 440px; border-radius: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.18); display: block; }
+
+/* ---------- macOS window ---------- */
+.win { width: 440px; background: var(--win); border-radius: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.18); overflow: hidden; }
+.tb { height: 38px; display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--hair); position: relative; }
+.tb i { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; display: block; }
+.tb span { position: absolute; left: 0; right: 0; text-align: center; font-weight: 600; font-size: 13px; }
+.np { padding: 18px 22px 0; position: relative; }
+.np h3 { margin: 0; font-size: 24px; line-height: 1.15; letter-spacing: -.01em; }
+.np .sub { color: var(--label2); font-size: 12px; margin-top: 2px; }
+.scrub { margin: 14px 0 0; height: 18px; position: relative; }
+.scrub .t { position: absolute; top: 7px; left: 0; right: 0; height: 4px; border-radius: 2px; background: var(--fill); }
+.scrub .f { position: absolute; top: 7px; left: 0; width: 38%; height: 4px; border-radius: 2px; background: var(--accent); }
+.scrub .k { position: absolute; top: 3px; left: calc(38% - 6px); width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.18), 0 1px 3px rgba(0,0,0,.2); }
+.times { display: flex; justify-content: space-between; font: 11px ui-monospace, "SF Mono", monospace; font-variant-numeric: tabular-nums; color: var(--label3); }
+.ctl { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 8px 22px 16px; }
+.ctl .l { display: flex; gap: 4px; } .ctl .r { display: flex; gap: 6px; align-items: center; justify-content: flex-end; color: var(--label2); }
+.ctl .c { display: flex; align-items: center; gap: 14px; }
+.b { display: grid; place-items: center; border: 0; background: none; color: var(--label2); border-radius: 8px; font-size: 18px; width: 30px; height: 30px; padding: 0; }
+.b.on { background: var(--accent-soft); color: var(--accent); }
+.b.big { font-size: 24px; width: 40px; height: 40px; color: var(--label); }
+.b.stop { font-size: 14px; width: 26px; height: 26px; color: var(--label3); position: absolute; right: 22px; top: 20px; }
+.b.play { width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 26px; box-shadow: 0 2px 8px rgba(10,108,255,.35); }
+.vol { width: 70px; height: 4px; border-radius: 2px; background: var(--fill); position: relative; }
+.vol::after { content: ""; position: absolute; inset: 0 30% 0 0; background: var(--label3); border-radius: 2px; }
+.list { border-top: 1px solid var(--hair); }
+.tr { height: 32px; display: flex; align-items: center; padding: 0 22px; gap: 8px; font-size: 14px; }
+.tr .g { width: 16px; color: var(--accent); font-size: 14px; }
+.tr.now { color: var(--accent); font-weight: 600; }
+.tr.sel { background: var(--accent); color: #fff; border-radius: 8px; margin: 0 10px; padding: 0 12px; }
+.ft { display: flex; justify-content: space-between; align-items: center; padding: 8px 22px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--label2); }
+.ft .a { color: var(--accent); display: flex; align-items: center; gap: 4px; font-weight: 500; } .ft .a svg { font-size: 14px; }
+
+/* ---------- iPhone ---------- */
+.phone { width: 300px; height: 620px; background: #fff; border-radius: 40px; border: 8px solid #1d1d1f; position: relative; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.22); }
+.sb { height: 44px; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 24px 4px; font-weight: 600; font-size: 13px; }
+.notch { position: absolute; top: 8px; left: 50%; width: 84px; height: 22px; margin-left: -42px; background: #1d1d1f; border-radius: 12px; }
+.lt { font-size: 30px; font-weight: 700; letter-spacing: -.02em; padding: 8px 18px 6px; }
+.pl { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--hair); }
+.pl .ic { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 22px; }
+.pl .n { font-weight: 600; font-size: 15px; } .pl .m { font-size: 12px; color: var(--label2); }
+.pl.live .ic { background: var(--accent); color: #fff; }
+.nav { display: flex; justify-content: space-between; padding: 6px 18px; color: var(--accent); font-size: 15px; }
+.hdrbtns { display: flex; gap: 10px; padding: 4px 18px 10px; }
+.hb { flex: 1; height: 44px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; font-size: 15px; }
+.hb.fill { background: var(--accent); color: #fff; } .hb svg { font-size: 18px; }
+.ir { height: 48px; display: flex; align-items: center; padding: 0 18px; gap: 10px; border-bottom: 1px solid var(--hair); font-size: 15px; }
+.ir .g { width: 18px; color: var(--accent); }
+.ir.now { color: var(--accent); font-weight: 600; }
+.mini { position: absolute; left: 8px; right: 8px; bottom: 28px; height: 60px; border-radius: 16px; background: rgba(245,245,247,.92); box-shadow: 0 2px 14px rgba(0,0,0,.18); display: flex; align-items: center; gap: 10px; padding: 0 10px 0 14px; backdrop-filter: blur(12px); }
+.mini .t { flex: 1; font-weight: 600; font-size: 14px; line-height: 1.2; } .mini .t small { display: block; font-weight: 400; color: var(--label2); font-size: 11px; }
+.mini .b { color: var(--label); width: 40px; height: 40px; font-size: 22px; }
+.mini .prog { position: absolute; left: 14px; right: 14px; bottom: 0; height: 2px; background: var(--fill); } .mini .prog::after { content: ""; position: absolute; inset: 0 62% 0 0; background: var(--accent); }
+.hbar { position: absolute; bottom: 8px; left: 50%; width: 110px; height: 4px; margin-left: -55px; border-radius: 2px; background: #1d1d1f; }
+.sheet { text-align: center; padding: 0 28px; }
+.grab { width: 38px; height: 5px; border-radius: 3px; background: var(--hair); margin: 6px auto 20px; }
+.art { width: 100%; aspect-ratio: 1; border-radius: 18px; background: linear-gradient(135deg, #cfe2ff, #e8d9ff); display: grid; place-items: center; color: var(--accent); font-size: 64px; margin-bottom: 20px; }
+.sheet h4 { margin: 0; font-size: 21px; } .sheet .sub { color: var(--label2); font-size: 13px; }
+.sheet .scrub { margin-top: 18px; height: 28px; } .sheet .scrub .t, .sheet .scrub .f { top: 12px; height: 6px; } .sheet .scrub .k { top: 6px; width: 18px; height: 18px; left: calc(38% - 9px); }
+.sheet .ctl { padding: 12px 0 0; grid-template-columns: 1fr; } .sheet .c { justify-content: center; gap: 30px; }
+.sheet .b.big { font-size: 34px; width: 56px; height: 56px; } .sheet .b.play { width: 76px; height: 76px; font-size: 34px; }
+.sheet .modes { display: flex; justify-content: space-between; padding: 22px 30px 0; } .sheet .modes .b { width: 48px; height: 48px; font-size: 24px; }
+.legend { max-width: 860px; margin-top: 8px; } .legend li { margin: 4px 0; }
+code { background: var(--fill); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="pause" viewBox="0 0 24 24"><path d="M6.5 5h3.5v14H6.5zM14 5h3.5v14H14z"/></symbol>
+  <symbol id="next" viewBox="0 0 24 24"><path d="M5 5l10 7-10 7zM17 5h2.5v14H17z"/></symbol>
+  <symbol id="prev" viewBox="0 0 24 24"><path d="M19 5L9 12l10 7zM4.5 5H7v14H4.5z"/></symbol>
+  <symbol id="stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="shuffle" viewBox="0 0 24 24"><path d="M3 7h3.5c3 0 4.5 10 8 10H21M3 17h3.5c1.5 0 2.5-1.8 3.5-3.5M13.5 9.5C14.5 8 15.5 7 17 7h4M18 4l3 3-3 3M18 14l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="repeat" viewBox="0 0 24 24"><path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="spk" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9c1.3 1 1.3 5 0 6M18.5 6.5c3 2.5 3 8.5 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="wave" viewBox="0 0 24 24"><rect x="4" y="10" width="3.4" height="8" rx="1.2"/><rect x="10.3" y="5" width="3.4" height="14" rx="1.2"/><rect x="16.6" y="8" width="3.4" height="10" rx="1.2"/></symbol>
+  <symbol id="note" viewBox="0 0 24 24"><path d="M9 17V6l11-2v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="17.5" r="2.7"/><circle cx="17.5" cy="15.5" r="2.7"/></symbol>
+</svg>
+
+<h1>LocalPlayer UI proposal</h1>
+<p class="lead">Left: the real playlist window today (screenshot of the running app, playing track 2 of 5). Right: the proposed layout. Mockups are HTML, drawn to show hierarchy, sizes and spacing; they are not pixel-exact AppKit renders.</p>
+
+<h2>1. macOS playlist window</h2>
+<div class="row">
+  <figure>
+    <img class="shot" src="ui-current.png" alt="Current playlist window">
+    <figcaption><b>Today.</b> Four equal buttons, left-aligned. Seek and volume look identical. Shuffle and Repeat are word-buttons. Nothing shows which row is playing. Stripes continue into empty space.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="win">
+      <div class="tb"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span>Morning</span></div>
+      <div class="np">
+        <button class="b stop" aria-label="Stop"><svg class="i"><use href="#stop"/></svg></button>
+        <h3>track2</h3>
+        <div class="sub">Track 2 of 5</div>
+        <div class="scrub"><div class="t"></div><div class="f"></div><div class="k"></div></div>
+        <div class="times"><span>0:03</span><span>-0:27</span></div>
+      </div>
+      <div class="ctl">
+        <div class="l"><button class="b on" aria-label="Shuffle on"><svg class="i"><use href="#shuffle"/></svg></button><button class="b" aria-label="Repeat off"><svg class="i"><use href="#repeat"/></svg></button></div>
+        <div class="c">
+          <button class="b big" aria-label="Previous"><svg class="i"><use href="#prev"/></svg></button>
+          <button class="b play" aria-label="Pause"><svg class="i"><use href="#pause"/></svg></button>
+          <button class="b big" aria-label="Next"><svg class="i"><use href="#next"/></svg></button>
+        </div>
+        <div class="r"><svg class="i" style="font-size:16px"><use href="#spk"/></svg><div class="vol"></div></div>
+      </div>
+      <div class="list">
+        <div class="tr"><span class="g"></span>track1</div>
+        <div class="tr now"><span class="g"><svg class="i"><use href="#wave"/></svg></span>track2</div>
+        <div class="tr"><span class="g"></span>track3</div>
+        <div class="tr"><span class="g"></span>track4</div>
+        <div class="tr"><span class="g"></span>track5</div>
+        <div style="height:92px"></div>
+      </div>
+      <div class="ft"><span class="a"><svg class="i"><use href="#plus"/></svg>Add Files</span><span>5 tracks</span><span style="width:70px"></span></div>
+    </div>
+    <figcaption><b>Proposed.</b> One dominant Play button; Previous/Next secondary; Stop sits quietly beside the title it applies to; volume is a small slider. Modes are icons that light up when on. The playing row carries a marker. Controls take 3 rows instead of 5.</figcaption>
+  </figure>
+</div>
+
+<ol class="legend">
+  <li><b>Biggest and boldest:</b> track title (24 pt bold) and the Play/Pause circle (56 pt, the only filled accent shape).</li>
+  <li><b>Medium:</b> Previous/Next (40 pt targets, label colour, not accent) and the thin accent seek bar.</li>
+  <li><b>Quiet:</b> Shuffle, Repeat, volume, Stop and the time labels use secondary or tertiary grey. Shuffle/Repeat take the accent only while on.</li>
+  <li><b>List:</b> no border, no stripes; the playing row is accent-coloured and semibold with a leading marker. A selected row keeps the standard blue highlight (shown in the next frame).</li>
+</ol>
+
+<h2>Selection versus playing</h2>
+<div class="row"><figure>
+  <div class="win" style="width:440px"><div class="list" style="border:0">
+    <div class="tr"><span class="g"></span>track1</div>
+    <div class="tr now"><span class="g"><svg class="i"><use href="#wave"/></svg></span>track2 &nbsp;<small style="font-weight:400;color:var(--label2)">playing</small></div>
+    <div class="tr sel"><span class="g" style="color:#fff"></span>track3</div>
+    <div class="tr"><span class="g"></span>track4</div>
+  </div></div>
+  <figcaption>Selecting a row (to remove it) and playing a row are different states and must look different. Marker and weight carry "playing", so colour is not the only signal.</figcaption>
+</figure></div>
+
+<h2>2. iPhone proposal</h2>
+<p class="lead">Portrait. Three screens: the list of playlists, one playlist with a docked mini player, and the full Now Playing sheet that rises from the mini player.</p>
+<div class="row">
+  <figure>
+    <div class="phone"><div class="notch"></div>
+      <div class="sb"><span>9:41</span><span>●●●</span></div>
+      <div class="nav"><span style="visibility:hidden">x</span><span><svg class="i" style="display:inline;vertical-align:-2px"><use href="#plus"/></svg></span></div>
+      <div class="lt">Playlists</div>
+      <div class="pl live"><div class="ic"><svg class="i"><use href="#wave"/></svg></div><div><div class="n">Morning</div><div class="m">5 tracks · playing</div></div></div>
+      <div class="pl"><div class="ic"><svg class="i"><use href="#note"/></svg></div><div><div class="n">Dinner</div><div class="m">12 tracks</div></div></div>
+      <div class="pl"><div class="ic"><svg class="i"><use href="#note"/></svg></div><div><div class="n">Run</div><div class="m">8 tracks · 1 missing</div></div></div>
+      <div class="mini"><svg class="i" style="font-size:24px;color:var(--accent)"><use href="#wave"/></svg><div class="t">track2<small>Morning</small></div><button class="b"><svg class="i"><use href="#pause"/></svg></button><button class="b"><svg class="i"><use href="#next"/></svg></button><div class="prog"></div></div>
+      <div class="hbar"></div>
+    </div>
+    <figcaption><b>Playlists.</b> Files-based documents. Large title, one row per playlist. The playing playlist is marked.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="phone"><div class="notch"></div>
+      <div class="sb"><span>9:41</span><span>●●●</span></div>
+      <div class="nav"><span>‹ Playlists</span><span>Edit</span></div>
+      <div class="lt">Morning</div>
+      <div class="hdrbtns"><div class="hb fill"><svg class="i"><use href="#play"/></svg>Play</div><div class="hb"><svg class="i"><use href="#shuffle"/></svg>Shuffle</div></div>
+      <div class="ir"><span class="g"></span>track1</div>
+      <div class="ir now"><span class="g"><svg class="i"><use href="#wave"/></svg></span>track2</div>
+      <div class="ir"><span class="g"></span>track3</div>
+      <div class="ir"><span class="g"></span>track4</div>
+      <div class="ir"><span class="g"></span>track5</div>
+      <div class="mini"><svg class="i" style="font-size:24px;color:var(--accent)"><use href="#wave"/></svg><div class="t">track2<small>Morning</small></div><button class="b"><svg class="i"><use href="#pause"/></svg></button><button class="b"><svg class="i"><use href="#next"/></svg></button><div class="prog"></div></div>
+      <div class="hbar"></div>
+    </div>
+    <figcaption><b>One playlist.</b> Big Play and Shuffle at the top. Tap a row to play it. Swipe a row to remove it; Edit reorders.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="phone"><div class="notch"></div>
+      <div class="sb"><span>9:41</span><span>●●●</span></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="art"><svg class="i"><use href="#note"/></svg></div>
+        <h4>track2</h4><div class="sub">Track 2 of 5 · Morning</div>
+        <div class="scrub"><div class="t"></div><div class="f"></div><div class="k"></div></div>
+        <div class="times"><span>0:03</span><span>-0:27</span></div>
+        <div class="ctl"><div class="c">
+          <button class="b big"><svg class="i"><use href="#prev"/></svg></button>
+          <button class="b play"><svg class="i"><use href="#pause"/></svg></button>
+          <button class="b big"><svg class="i"><use href="#next"/></svg></button>
+        </div></div>
+        <div class="modes"><button class="b on"><svg class="i"><use href="#shuffle"/></svg></button><button class="b"><svg class="i"><use href="#repeat"/></svg></button></div>
+      </div>
+      <div class="hbar"></div>
+    </div>
+    <figcaption><b>Now Playing.</b> Drag down to dismiss. Volume is the hardware buttons and system control, so there is no volume slider. No Stop button.</figcaption>
+  </figure>
+</div>
+</body>
+</html>
