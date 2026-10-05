@@ -2,16 +2,20 @@ import AppKit
 import Combine
 import UniformTypeIdentifiers
 
-/// The window of one playlist, with three groups top to bottom and nothing else: what is playing and its controls,
-/// shuffle and repeat, and the tracks with add and remove. Standard AppKit controls only.
+/// The window of one playlist, with three areas top to bottom and nothing else: what is playing with its controls
+/// (including shuffle and repeat), the tracks, and a slim footer with add, the track count and remove. Standard
+/// AppKit controls only.
 final class PlaylistWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
     private static let rowDragType = NSPasteboard.PasteboardType("com.localplayer.playlist.row")
-    private static let initialSize = NSSize(width: 520, height: 640)
-    private static let minimumSize = NSSize(width: 420, height: 460)
+    private static let initialSize = NSSize(width: 480, height: 620)
+    private static let minimumSize = NSSize(width: 420, height: 420)
     private static let contentInset: CGFloat = 20
-    private static let groupSpacing: CGFloat = 18
+    private static let groupSpacing: CGFloat = 14
     private static let rowSpacing: CGFloat = 8
     private static let tableMinimumHeight: CGFloat = 160
+    private static let footerHeight: CGFloat = 28
+    private static let footerSymbolSize: CGFloat = 12
+    private static let rowHeight: CGFloat = 30
     private static let cellIdentifier = NSUserInterfaceItemIdentifier("TrackCell")
     private static let hazardIconSize: CGFloat = 16
     /// Window open and close animations. Tests turn them off: closing animated windows in a headless test process
@@ -27,6 +31,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     let scrollView = NSScrollView()
     let addButton = NSButton()
     let removeButton = NSButton()
+    let countLabel = NSTextField(labelWithString: "")
     let emptyHint = NSTextField(wrappingLabelWithString: PlaylistWindowController.emptyHintText)
     let transport: TransportControlsView
     let modes: PlayModeControls
@@ -38,8 +43,9 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     init(document: PlaylistDocument) {
         playlistDocument = document
         services = document.services
-        transport = TransportControlsView(viewModel: document.services.transport)
-        modes = PlayModeControls(settings: document.services.settings)
+        let modes = PlayModeControls(settings: document.services.settings)
+        self.modes = modes
+        transport = TransportControlsView(viewModel: document.services.transport, modes: modes)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.initialSize),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: true)
@@ -61,14 +67,12 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         configureTable()
         configureTrackButtons()
 
-        let trackButtons = NSStackView(views: [addButton, removeButton])
-        trackButtons.spacing = Self.rowSpacing
-        let tracksGroup = NSStackView(views: [scrollView, emptyHint, trackButtons])
+        let tracksGroup = NSStackView(views: [scrollView, emptyHint, footer()])
         tracksGroup.orientation = .vertical
         tracksGroup.alignment = .leading
         tracksGroup.spacing = Self.rowSpacing
 
-        let root = NSStackView(views: [transport, modes, tracksGroup])
+        let root = NSStackView(views: [transport, tracksGroup])
         root.orientation = .vertical
         root.alignment = .leading
         root.spacing = Self.groupSpacing
@@ -83,6 +87,27 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         emptyHint.widthAnchor.constraint(equalTo: tracksGroup.widthAnchor).isActive = true
     }
 
+    /// Add Files on the left, the track count in the middle, Remove on the right. The count stays centred
+    /// whatever the width of the buttons.
+    private func footer() -> NSView {
+        let footer = NSView()
+        footer.translatesAutoresizingMaskIntoConstraints = false
+        for view in [addButton, countLabel, removeButton] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            footer.addSubview(view)
+            view.centerYAnchor.constraint(equalTo: footer.centerYAnchor).isActive = true
+        }
+        NSLayoutConstraint.activate([
+            footer.heightAnchor.constraint(equalToConstant: Self.footerHeight),
+            addButton.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
+            countLabel.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+            removeButton.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
+            addButton.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -Self.rowSpacing),
+            countLabel.trailingAnchor.constraint(lessThanOrEqualTo: removeButton.leadingAnchor, constant: -Self.rowSpacing),
+        ])
+        return footer
+    }
+
     private func configureTable() {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(ElementID.tracks))   // part of the tracks element
         column.resizingMask = .autoresizingMask
@@ -90,8 +115,8 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         tableView.headerView = nil
         tableView.style = .inset
         tableView.allowsMultipleSelection = true
-        tableView.usesAlternatingRowBackgroundColors = true
-        tableView.rowHeight = NSFont.systemFontSize * 2
+        tableView.usesAlternatingRowBackgroundColors = false
+        tableView.rowHeight = Self.rowHeight
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
@@ -106,7 +131,8 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
         scrollView.setAccessibilityIdentifier(ElementID.tracks)
         scrollView.setAccessibilityElement(true)
         scrollView.setAccessibilityLabel("Tracks")
@@ -115,22 +141,31 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     }
 
     private func configureTrackButtons() {
+        let small = NSImage.SymbolConfiguration(pointSize: Self.footerSymbolSize, weight: .semibold)
         addButton.title = "Add Files"
-        addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add Files")
+        addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add Files")?.withSymbolConfiguration(small)
         addButton.imagePosition = .imageLeading
-        addButton.bezelStyle = .texturedRounded
+        addButton.isBordered = false
+        addButton.contentTintColor = .controlAccentColor
+        addButton.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
         addButton.target = self
         addButton.action = #selector(addFiles(_:))
         addButton.setAccessibilityIdentifier(ElementID.add)
         addButton.setAccessibilityLabel("Add Files")
-        removeButton.title = "Remove"
-        removeButton.image = NSImage(systemSymbolName: "minus", accessibilityDescription: "Remove")
-        removeButton.imagePosition = .imageLeading
-        removeButton.bezelStyle = .texturedRounded
+        removeButton.title = ""
+        removeButton.image = NSImage(systemSymbolName: "minus", accessibilityDescription: "Remove")?.withSymbolConfiguration(small)
+        removeButton.imagePosition = .imageOnly
+        removeButton.isBordered = false
+        removeButton.contentTintColor = .secondaryLabelColor
+        removeButton.toolTip = "Remove"
         removeButton.target = self
         removeButton.action = #selector(removeSelectedTracks(_:))
         removeButton.setAccessibilityIdentifier(ElementID.remove)
         removeButton.setAccessibilityLabel("Remove")
+        countLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        countLabel.textColor = .secondaryLabelColor
+        countLabel.setAccessibilityIdentifier(ElementID.count)
+        countLabel.setAccessibilityLabel("Number of tracks")
     }
 
     // MARK: Binding
@@ -141,6 +176,35 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         if let marks = services.marks as? ReadabilityMarkStore {
             marks.changes.sink { [weak self] in self?.reload() }.store(in: &cancellables)
         }
+        // The playing marker follows the engine (play, pause, stop) and the playlist's own current track.
+        services.engine.events
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshMarkers() }.store(in: &cancellables)
+        playlistDocument.player.changes
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                self?.services.transport.refresh()
+                self?.refreshMarkers()
+            }.store(in: &cancellables)
+    }
+
+    /// Which marker a row shows: playing or paused for this playlist's current track, otherwise none.
+    private func marker(for track: Track) -> TrackCellView.Marker {
+        guard playlistDocument.player.isSessionActive, playlistDocument.player.current?.id == track.id else { return .none }
+        switch services.engine.state {
+        case .playing: return .playing
+        case .paused: return .paused
+        case .idle: return .none
+        }
+    }
+
+    /// Updates the markers of the rows on screen without reloading the table, so selection and scrolling stay.
+    private func refreshMarkers() {
+        let tracks = playlistDocument.playlist.tracks
+        let visible = tableView.rows(in: tableView.visibleRect)
+        for row in visible.location..<(visible.location + visible.length) where tracks.indices.contains(row) {
+            (tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? TrackCellView)?.marker = marker(for: tracks[row])
+        }
     }
 
     func reload() {
@@ -148,8 +212,12 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         tableView.reloadData()
         let valid = selected.filteredIndexSet { $0 < tableView.numberOfRows }
         tableView.selectRowIndexes(valid, byExtendingSelection: false)
-        emptyHint.isHidden = !playlistDocument.playlist.tracks.isEmpty
+        let count = playlistDocument.playlist.tracks.count
+        emptyHint.isHidden = count != 0
+        countLabel.stringValue = count == 1 ? "1 track" : "\(count) tracks"
+        countLabel.isHidden = count == 0
         removeButton.isEnabled = !tableView.selectedRowIndexes.isEmpty
+        services.transport.refresh()      // "Track 2 of 5" follows edits
     }
 
     // MARK: Table data
@@ -162,8 +230,8 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         let cell = (tableView.makeView(withIdentifier: Self.cellIdentifier, owner: self) as? TrackCellView) ?? TrackCellView()
         cell.identifier = Self.cellIdentifier
         let missing = playlistDocument.statuses.isMissing(track.id)
-        cell.configure(name: track.reference.fileName, missing: missing,
-                       hazard: services.marks.mark(of: track) == .unreadable)
+        cell.configure(name: TransportControlsView.displayTitle(forFileName: track.reference.fileName), missing: missing,
+                       hazard: services.marks.mark(of: track) == .unreadable, marker: marker(for: track))
         return cell
     }
 
@@ -303,20 +371,34 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     }
 }
 
-/// A row: an optional hazard icon and the file name, greyed when the file is missing.
+/// A row: a leading glyph slot and the name. The slot shows the hazard icon for a track that could not be played,
+/// or the playing or paused marker for the current track. The name is greyed when the file is missing, and
+/// accent-coloured and semibold while it is the current track.
 final class TrackCellView: NSTableCellView {
-    private static let hazardSize: CGFloat = 16
+    enum Marker { case none, playing, paused }
+
+    private static let glyphSize: CGFloat = 16
     private static let spacing: CGFloat = 6
-    private let hazardView = NSImageView()
+    private static let nameSize: CGFloat = 14
+    private let glyphView = NSImageView()
     private let nameField = NSTextField(labelWithString: "")
+    private var name = ""
+    private var missing = false
+    private var hazard = false
+    private(set) var titleWeight: NSFont.Weight = .regular
+
+    var marker: Marker = .none {
+        didSet { if marker != oldValue { refresh() } }
+    }
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { refresh() }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        hazardView.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Could not be played")
-        hazardView.contentTintColor = .systemYellow
-        hazardView.setAccessibilityLabel("Could not be played")
         nameField.lineBreakMode = .byTruncatingMiddle
-        let stack = NSStackView(views: [hazardView, nameField])
+        let stack = NSStackView(views: [glyphView, nameField])
         stack.spacing = Self.spacing
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -324,24 +406,69 @@ final class TrackCellView: NSTableCellView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.spacing),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Self.spacing),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            hazardView.widthAnchor.constraint(equalToConstant: Self.hazardSize),
+            glyphView.widthAnchor.constraint(equalToConstant: Self.glyphSize),
         ])
         textField = nameField
-        imageView = hazardView
+        imageView = glyphView
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
 
-    func configure(name: String, missing: Bool, hazard: Bool) {
+    func configure(name: String, missing: Bool, hazard: Bool, marker: Marker = .none) {
+        self.name = name
+        self.missing = missing
+        self.hazard = hazard
+        self.marker = marker
+        refresh()
+    }
+
+    /// A track that could not be played shows the hazard, never the playing marker.
+    private var shownMarker: Marker { hazard ? .none : marker }
+
+    private func refresh() {
+        let emphasized = backgroundStyle == .emphasized
         nameField.stringValue = name
-        nameField.textColor = missing ? .disabledControlTextColor : .labelColor
-        hazardView.isHidden = !hazard
+        titleWeight = shownMarker == .none ? .regular : .semibold
+        nameField.font = .systemFont(ofSize: Self.nameSize, weight: titleWeight)
+        if emphasized {
+            nameField.textColor = .alternateSelectedControlTextColor
+        } else {
+            nameField.textColor = missing ? .disabledControlTextColor : (shownMarker == .none ? .labelColor : .controlAccentColor)
+        }
+        let tint: NSColor = emphasized ? .alternateSelectedControlTextColor : .controlAccentColor
+        switch (hazard, shownMarker) {
+        case (true, _):
+            glyphView.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Could not be played")
+            glyphView.contentTintColor = emphasized ? tint : .systemYellow
+            glyphView.setAccessibilityLabel("Could not be played")
+            glyphView.isHidden = false
+        case (_, .playing):
+            glyphView.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Playing")
+            glyphView.contentTintColor = tint
+            glyphView.setAccessibilityLabel("Playing")
+            glyphView.isHidden = false
+        case (_, .paused):
+            glyphView.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: "Paused")
+            glyphView.contentTintColor = tint
+            glyphView.setAccessibilityLabel("Paused")
+            glyphView.isHidden = false
+        default:
+            glyphView.isHidden = true
+        }
         // Colour alone must not carry the state: say it.
-        let state = hazard ? ", could not be played" : (missing ? ", file not found" : "")
+        let state: String
+        switch (hazard, shownMarker, missing) {
+        case (true, _, _): state = ", could not be played"
+        case (_, .playing, _): state = ", playing"
+        case (_, .paused, _): state = ", paused"
+        case (_, _, true): state = ", file not found"
+        default: state = ""
+        }
         setAccessibilityLabel(name + state)
     }
 
-    var showsHazard: Bool { !hazardView.isHidden }
+    var showsHazard: Bool { hazard && !glyphView.isHidden }
+    var glyphDescription: String? { glyphView.isHidden ? nil : glyphView.accessibilityLabel() }
     var isGreyedOut: Bool { nameField.textColor == .disabledControlTextColor }
     var title: String { nameField.stringValue }
 }

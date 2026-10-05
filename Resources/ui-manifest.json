@@ -11,12 +11,14 @@
       { "element": "playback.remaining", "job": "play_file" },
       { "element": "playback.mute", "job": "play_file" },
       { "element": "playback.volume", "job": "play_file" },
+      { "element": "playback.track_position", "job": "play_playlist" },
       { "element": "playlist.shuffle", "job": "play_playlist" },
       { "element": "playlist.repeat", "job": "play_playlist" },
       { "element": "playlist.tracks", "job": "manage_playlists" },
       { "element": "playlist.empty", "job": "manage_playlists" },
       { "element": "playlist.add", "job": "manage_playlists" },
-      { "element": "playlist.remove", "job": "manage_playlists" }
+      { "element": "playlist.remove", "job": "manage_playlists" },
+      { "element": "playlist.count", "job": "manage_playlists" }
     ]
   }
 }

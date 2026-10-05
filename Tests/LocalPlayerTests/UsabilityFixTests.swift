@@ -79,12 +79,12 @@ final class UsabilityFixTests: XCTestCase {
         window.reload()
         let missing = window.tableView.view(atColumn: 0, row: 1, makeIfNecessary: true) as! TrackCellView
         let fine = window.tableView.view(atColumn: 0, row: 0, makeIfNecessary: true) as! TrackCellView
-        XCTAssertEqual(missing.accessibilityLabel(), "track2.mp3, file not found")
-        XCTAssertEqual(fine.accessibilityLabel(), "track1.mp3")
+        XCTAssertEqual(missing.accessibilityLabel(), "track2, file not found")
+        XCTAssertEqual(fine.accessibilityLabel(), "track1")
         doc.player.play(track: doc.playlist.tracks[1])
         window.reload()
         XCTAssertEqual((window.tableView.view(atColumn: 0, row: 1, makeIfNecessary: true) as! TrackCellView).accessibilityLabel(),
-                       "track2.mp3, could not be played")
+                       "track2, could not be played")
     }
 
     func testSpaceMenuItemTogglesPlayPauseThroughTheSameHandler() {

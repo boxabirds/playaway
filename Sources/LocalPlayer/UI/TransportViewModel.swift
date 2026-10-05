@@ -13,6 +13,8 @@ final class TransportViewModel: ObservableObject {
     @Published private(set) var isMuted: Bool
     @Published private(set) var nowPlaying: String = ""
     @Published private(set) var hasPlaylistSession: Bool = false
+    /// "Track 2 of 5" while a playlist session has a current track in the playlist; empty otherwise.
+    @Published private(set) var trackPosition: String = ""
 
     private let engine: PlaybackEngine
     private let registry: ActiveSessionRegistry
@@ -52,6 +54,8 @@ final class TransportViewModel: ObservableObject {
         isMuted = engine.isMuted
         nowPlaying = engine.currentURL?.lastPathComponent ?? ""
         hasPlaylistSession = activePlayerProvider()?.isSessionActive == true
+        trackPosition = hasPlaylistSession
+            ? activePlayerProvider()?.currentPosition.map { "Track \($0.place) of \($0.of)" } ?? "" : ""
     }
 
     private func startTimer() {

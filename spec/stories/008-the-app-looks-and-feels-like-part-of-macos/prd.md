@@ -38,6 +38,7 @@ Each playlist is a document that opens in its own window. There is no main windo
 - Does not offer its own light/dark setting that overrides the system.
 - Does not turn off or work around a system accessibility setting.
 - Does not draw fake glass or imitate system materials.
+- A larger or more prominent control, such as the Play/Pause button, uses a standard button with the system's own prominent or glass style at a larger size. It is never drawn by hand.
 - Does not use custom-drawn replacements for standard windows, buttons or menus.
 - Does not have a main window or a window that lists playlists.
 - Does not decide in this story which surfaces use Liquid Glass.

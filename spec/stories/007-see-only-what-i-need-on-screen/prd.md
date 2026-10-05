@@ -14,7 +14,7 @@ After this is built, a person opening a playlist window can play a file, play a 
 
 ## Golden path
 1. The person double-clicks a playlist file, or chooses New Playlist. One playlist window opens. There is no main window and no list of playlists; each playlist has its own window.
-2. The window shows three groups from top to bottom. The first group shows the current file's name and the playback controls. The second group shows the shuffle and repeat controls. The third group is the track list with its add, remove and reorder actions. The person can name the job of every item they see: play a file, play a playlist with repeat and shuffle, or manage that playlist.
+2. The window shows three areas from top to bottom. The top area shows the current track's name, its place in the playlist (for example "Track 2 of 5"), Stop, the seek bar with elapsed and remaining time, and one row of controls: Shuffle and Repeat on the left, Previous, Play/Pause and Next in the centre, and volume on the right. Below it is the track list, then a slim footer with Add Files, the track count and Remove. The person can name the job of every item they see: play a file, play a playlist with repeat and shuffle, or manage that playlist.
 3. The person presses play in the first group, or chooses a track in the third group. The first group updates to show that track playing. Nothing else on screen changes or competes for attention.
 4. The person drags files into the track list or reorders rows. The list updates in place and no other part of the window changes.
 
@@ -29,7 +29,16 @@ A new untitled playlist with nothing playing shows only the items needed to star
 - **Nothing else appears:** an error never adds a permanent item to the window. After dismissal the window contains only recorded items again.
 
 ## Structure
-A playlist window has three groups of items, one per job, and nothing else. The first group shows what is playing and lets the person control it: transport, volume and mute (the job of playing a file; the controls themselves are defined by the story about controlling playback). The second group lets the person run the playlist and choose repeat and shuffle (playing a playlist). The third group shows the tracks in the playlist and lets them add, remove, reorder and locate missing files (managing playlists). Creating, opening, renaming and saving a playlist are standard document and menu actions rather than items in the window. There is no fourth group: no sidebar of unrelated sections, no footer of statistics, no promotional or tips panel. Every item inside a group is one that its job uses.
+A playlist window has three areas and nothing else: the now-playing area, the track list and the footer. Each item belongs to exactly one job in the manifest, and the area an item sits in does not have to match its job. Play a file: the track name, Previous, Play/Pause, Next, Stop, the seek bar with its times, volume and Mute. Play a playlist: Shuffle, Repeat and the "Track N of M" line. Manage playlists: the track list, Add Files, Remove, the track count and the empty-list hint. Creating, opening, renaming and saving a playlist are standard document and menu actions rather than items in the window. There is no fourth area: no sidebar of unrelated sections, no footer of statistics, no promotional or tips panel. Every item is one that its job uses.
+
+## Emphasis follows use
+
+> Anchor: `prd.simple.hierarchy`
+
+The items used most are the largest and boldest, and the items used least are the quietest. Play/Pause is the largest control and is always filled with the accent colour. Shuffle and Repeat are filled with it only while on, using the system's own toggle look, so their state is shown by shape as well as colour. The track name is the largest text. Previous and Next are medium. Shuffle, Repeat, volume, Stop and the times are small and grey while off. Which row is playing is shown in the track list by a marker and a bolder name, so it is not shown by colour alone, and it looks different from a selected row.
+
+WHILE a window is shown THE SYSTEM SHALL draw Play/Pause larger than every other control, and SHALL draw Shuffle, Repeat, Stop and volume with less emphasis than Previous and Next.
+WHILE a track of the playlist is playing or paused THE SYSTEM SHALL mark that row in the track list with a playing or paused marker.
 
 ## Behaviour
 - Adding a new visible element requires recording which job it serves.
@@ -55,6 +64,8 @@ A product owner can verify each of these by using the app, reading one list and 
 5. Ask the team to demonstrate the check with one extra visible item that is not on the list. The check reports a failure and names that item.
 6. Ask the team to demonstrate the check with one item's line removed from the list. The check reports a failure and names that item.
 7. Ask the team to run the check on the real app and list together. It reports success with no failures named.
+8. Play a playlist and look at the window for three seconds without reading it. Play/Pause is the first thing the eye lands on. Stop, volume, Shuffle and Repeat are visibly quieter than Previous and Next.
+9. With a playlist playing, the playing row is marked and a different row is selected: the two look different. Pause: the marker changes to a paused one.
 
 ## Every visible element serves a job
 
@@ -90,7 +101,7 @@ WHILE a playlist window is in any of its states (new untitled playlist, playing,
 ## Open questions
 
 These are not decided and are deliberately not answered here.
-1. The actual list of elements in a playlist window, each tied to a job. This list does not exist yet; the three groups above are the only structure decided.
+1. The actual list of elements in a playlist window, each tied to a job. The list is `Resources/ui-manifest.json`; the three areas above are the structure.
 2. Whether v1 explicitly refuses features such as an equalizer, lyrics, ratings or an album-art browser. People will ask for them; no decision has been made.
 3. What counts as an element for the check: controls only, or also labels, icons and artwork.
 4. Whether menus and dialogs fall under the same rule as the playlist window.

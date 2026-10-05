@@ -120,7 +120,7 @@ final class ControlsViewTests: XCTestCase {
         XCTAssertTrue(view.volumeSlider.isEnabled)
         XCTAssertTrue(view.muteButton.isEnabled)
         _ = app.services.engine.play(Fixtures.url("track1.mp3"))
-        spin { view.nowPlayingLabel.stringValue == "track1.mp3" }
+        spin { view.nowPlayingLabel.stringValue == "track1" }        // the title drops the extension
         XCTAssertEqual(view.playPauseButton.accessibilityLabel(), "Pause")
         XCTAssertTrue(view.stopButton.isEnabled)
         view.playPausePressed()
@@ -144,14 +144,14 @@ final class ControlsViewTests: XCTestCase {
     func testModeControlsShowAndStepStateAndAreShared() {                                     // TC-30..37, TC-104, E2E-4
         let a = PlayModeControls(settings: app.services.settings)
         let b = PlayModeControls(settings: app.services.settings)
-        XCTAssertEqual(a.repeatButton.title, "Repeat: Off")
+        XCTAssertEqual(a.repeatButton.toolTip, "Repeat: Off")
         var seen: [String] = []
-        for _ in 0..<3 { a.repeatPressed(); seen.append(a.repeatButton.title) }
+        for _ in 0..<3 { a.repeatPressed(); seen.append(a.repeatButton.toolTip ?? "") }
         XCTAssertEqual(seen, ["Repeat: All", "Repeat: One", "Repeat: Off"])
         a.shufflePressed()
         spin { b.shuffleButton.state == .on }
         XCTAssertEqual(b.shuffleButton.state, .on, "window B shows the same state")
-        XCTAssertEqual(b.repeatButton.title, "Repeat: Off", "independent controls")
+        XCTAssertEqual(b.repeatButton.toolTip, "Repeat: Off", "independent controls")
         XCTAssertEqual(a.shuffleButton.accessibilityValue() as? String, "on")
     }
 

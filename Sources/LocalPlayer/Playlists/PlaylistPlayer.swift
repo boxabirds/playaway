@@ -19,9 +19,16 @@ final class PlaylistPlayer: SessionEnding {
     private let registry: ActiveSessionRegistry
     private weak var reporter: TrackResolutionReporting?
 
-    private var sessionActive = false
+    private var sessionActive = false {
+        didSet { if oldValue != sessionActive { changesSubject.send() } }
+    }
     private var cancellables = Set<AnyCancellable>()
-    private(set) var current: Track?
+    private(set) var current: Track? {
+        didSet { if oldValue != current { changesSubject.send() } }
+    }
+    private let changesSubject = PassthroughSubject<Void, Never>()
+    /// Fires whenever the current track, or whether this playlist has a session, changes.
+    var changes: AnyPublisher<Void, Never> { changesSubject.eraseToAnyPublisher() }
     private var pass: [Track] = []
     private var passIsShuffled = false
     /// The order the current track was started in, so the decider can carry on from where a removed track was.
@@ -57,6 +64,15 @@ final class PlaylistPlayer: SessionEnding {
     /// True while this playlist's session is active and something is playing or paused.
     var isPlaying: Bool { sessionActive && engine.state != .idle }
     var isSessionActive: Bool { sessionActive }
+
+    /// The current track's 1-based place in the playlist as listed, and the playlist's length. Nil when there is
+    /// no current track or it has since been removed.
+    var currentPosition: (place: Int, of: Int)? {
+        guard let current else { return nil }
+        let tracks = playlistProvider().tracks
+        guard let index = tracks.firstIndex(where: { $0.id == current.id }) else { return nil }
+        return (index + 1, tracks.count)
+    }
 
     // MARK: Start
 

@@ -298,11 +298,25 @@ final class E2ETests: XCTestCase {
         return Set(result.out.split(whereSeparator: \.isNewline).map(String.init).filter { !$0.isEmpty && $0 != "missing value" })
     }
 
+    /// Some elements are shown only in some states (the empty hint with no tracks; the track count and the place in
+    /// the playlist with some). The check is over the states together, as the spec's "stale" rule is.
     func testRealWindowShowsExactlyTheRecordedElements() throws {                     // story 7 E2E-1 through real accessibility
         try launch()
         let manifest = try UIManifest(data: Data(contentsOf: bundledManifestURL))
         let recorded = Set(manifest.entries[.playlist]!.map(\.elementID))
-        let seen = windowIdentifiers()
+        let empty = windowIdentifiers()
+        XCTAssertTrue(empty.contains("playlist.empty"))
+        XCTAssertFalse(empty.contains("playlist.count"), "no count above an empty list")
+        XCTAssertFalse(empty.contains("playback.track_position"), "no place in a playlist when nothing plays")
+        XCTAssertEqual(osa("add track \"\(audio("long30.mp3").path)\" to \"Untitled\"").status, 0)
+        XCTAssertEqual(osa("play track 1 in \"Untitled\"").status, 0)
+        XCTAssertTrue(waitFor("get playing", equals: "true"))
+        Thread.sleep(forTimeInterval: 0.5)
+        let playing = windowIdentifiers()
+        XCTAssertTrue(playing.contains("playlist.count"))
+        XCTAssertTrue(playing.contains("playback.track_position"))
+        XCTAssertFalse(playing.contains("playlist.empty"))
+        let seen = empty.union(playing)
         XCTAssertEqual(seen, recorded, "extra: \(seen.subtracting(recorded)), missing: \(recorded.subtracting(seen))")
     }
 
