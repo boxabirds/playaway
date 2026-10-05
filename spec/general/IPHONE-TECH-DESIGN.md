@@ -304,9 +304,13 @@ New `NowPlayingBridge` in the iOS target, subscribing to `TransportViewModel` an
 
 No Stop: the proposal says swipe-dismiss the mini player. Mapping: dismissing calls the existing `engine.stop()`, which sends `.stopped` and ends the playlist session through `PlaylistPlayer` (verified in the `handle(_ event:)` switch). The mini player is not hidden on pause. Lock screen has no Stop either.
 
-### Gaps and gapless risk
+### Moving from one track to the next
 
-`AVAudioPlayerHandle.onFinish` fires from `audioPlayerDidFinishPlaying`, then `AVPlaybackEngine.trackFinished` sends `.finished`, then `PlaylistPlayer` creates the next `AVAudioPlayer` and starts it. There is a gap between tracks (a main-thread hop plus `prepareToPlay`). On macOS this is harmless. On iOS in the background, the question is whether the app keeps getting CPU time across that gap. A playing audio session normally keeps the process alive, but the interval where nothing is playing is the weak point. I have not tested it. Mitigation, if the spike shows dropped playback: preload the next `AVAudioPlayer` and `play(atTime:)` it on the current player's `deviceCurrentTime + duration`, which needs a handle API change (`AudioPlayerHandle` has no "chain" operation today) and changes the engine's single-player invariant. This is the top technical risk.
+Background audio on iOS is a standard capability, not a risk in itself: with `UIBackgroundModes` = `audio` and an active `.playback` session, the app keeps running while it plays and a playlist carries on with the screen locked. That is how every music and podcast app works. This part rests on my knowledge of the platform, not on a test in this repo, so spike (b) in section 16 confirms it on a device.
+
+What does need a decision is the hand-off between tracks. Today `AVAudioPlayerHandle.onFinish` fires from `audioPlayerDidFinishPlaying`, then `AVPlaybackEngine.trackFinished` sends `.finished`, then `PlaylistPlayer` creates the next `AVAudioPlayer` and starts it. That leaves a short silent gap (a main-thread hop plus `prepareToPlay`). On the Mac nobody minds. On iPhone the gap is audible, and starting a new player only after audio has stopped is the least robust way to keep a session going.
+
+Decision: make the iOS engine preload the next track. When a track starts, the playlist asks the decider what follows (the decider is a pure function and already answers this), builds that `AVAudioPlayer`, calls `prepareToPlay()`, and starts it at the current player's `deviceCurrentTime + duration` with `play(atTime:)`. This needs a new "prepare next" operation on `AudioPlayerHandle` and the engine, which the Mac backend can leave unimplemented, so the Mac behaviour and tests do not change. Three cases need handling: the next track turns out to be unreadable (fall back to the normal skip path), the person presses Next or seeks (discard the preloaded player), and shuffle or repeat changes mid-track (re-ask the decider). An `AVQueuePlayer` or `AVAudioEngine` would also work, but each replaces the single-player engine, so they are the fallback, not the first choice.
 
 ## 9. Volume and mute
 
@@ -431,7 +435,7 @@ Cannot or should not be asserted in the simulator, from general knowledge of the
 
 - Real audio output, Bluetooth routes, headphone unplug, and real interruptions (phone call, alarm). The simulator can fake some, not reliably.
 - Lock screen and Control Center rendering of Now Playing, remote commands from AirPods or CarPlay.
-- Background audio behaviour across the track gap (section 8). Needs a device.
+- Background audio and the preloaded hand-off between tracks (section 8). Needs a device.
 - iCloud Drive eviction and download. The simulator's iCloud behaviour differs; a not-downloaded file cannot be produced faithfully.
 - Security-scoped bookmark behaviour for files from other providers (the picker UI reaches only the simulator's own Files).
 - Performance of startup and scrolling on real hardware.
@@ -486,7 +490,7 @@ No durations are estimated. Each phase ends only when its exit criteria pass.
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| 0. Spikes | On a real device: (a) picker URL to `bookmarkData(options: [])` to relaunch to resolve; (b) `AVAudioPlayer` background play across a track boundary with the screen locked; (c) `AudioPlaybackIntent` reaching the live engine; (d) iCloud evicted file behaviour; (e) Xcode project resolving the root package with Sparkle | Each of the five has a written result with the exact API behaviour, or the design item that depends on it is revised. No production code merged from this phase. |
+| 0. Spikes | On a real device: (a) picker URL to `bookmarkData(options: [])` to relaunch to resolve; (b) a preloaded next-track hand-off (`play(atTime:)`) across a track boundary with the screen locked, confirming playback carries on and measuring the gap; (c) `AudioPlaybackIntent` reaching the live engine; (d) iCloud evicted file behaviour; (e) Xcode project resolving the root package with Sparkle | Each of the five has a written result with the exact API behaviour, or the design item that depends on it is revised. No production code merged from this phase. |
 | 1. Core extraction | `LocalPlayerCore` target; `public`/`package` access; `PlaylistSession` extraction; `PlaylistStore` codec split; `ActionManifest` split; `ScriptFailure` split; Mac app and tests re-pointed | All existing Mac tests pass unchanged in behaviour (suite count and names the same); `swift build` for the Mac app works; Mac scripts and release flow untouched; shared tests also pass on iOS Simulator. |
 | 2. iPhone app, playback and lists | iOS project; SwiftUI screens 1 to 4; `UIDocument`; fileImporter add; session layer; background audio; Now Playing and remote commands; no Stop, no volume | Manual device checklist passes (interruptions, unplug, lock screen, background, track gap); `ui-manifest-ios.json` check passes in XCUITest; accessibility checks pass at the largest Dynamic Type; a Mac-written `.lplaylist` opens and shows tracks missing without crashing; an iPhone-written file opens on the Mac with tracks missing and no crash. |
 | 3. Missing, Locate, iCloud | Reference policy; folder Locate; availability state; pre-fetch; Files "Open in" for single file | Story 005 cases that apply (TC set for missing, locate, autoskip) pass on iOS with the folder variant; a not-downloaded track never plays silently and never shows as missing; device checklist for iCloud. |
@@ -494,18 +498,19 @@ No durations are estimated. Each phase ends only when its exit criteria pass.
 | 5. Ship | Privacy manifest, App Store listing, TestFlight | Archive validates; privacy report reviewed; TestFlight build installed on a device by someone other than the author. |
 | Later | iPad; relative-path or fingerprint field; Music library; tag metadata | Owner decision. |
 
-Order rationale: spikes first because the three largest unknowns (bookmarks, background gap, intent reach) can each invalidate a later phase. The intents phase is after the UI because they call the same handlers; but the parity gate's manifest-level check (section 10, check 1) should run from phase 2 so a UI action never ships without a recorded intent status.
+Order rationale: spikes first because the largest unknowns (bookmarks, intent reach) can each invalidate a later phase, and the hand-off spike sets how the engine seam is changed. The intents phase is after the UI because they call the same handlers; but the parity gate's manifest-level check (section 10, check 1) should run from phase 2 so a UI action never ships without a recorded intent status.
 
 ## 17. Risks, ranked
 
-1. **Background playback across the track gap.** `AVAudioPlayer` is created per track. If iOS suspends the app in the gap, playlist playback stops when the screen is locked. This breaks the central promise. It is untested. Mitigation: phase 0 spike (b); fallback to a chained player or `AVQueuePlayer` and a rewrite of the handle seam.
-2. **Cross-device playlists do not resolve.** The shared format carries bookmarks that are device-local, so the "same `.lplaylist` on both" idea in the proposal delivers a playlist whose tracks are all missing on the other device. The user-visible result may be read as a bug. Mitigation: product copy, the fingerprint field (later), or deciding that playlists are per-device. Needs owner decision.
-3. **Security-scope and iCloud behaviour is unverified.** The reference design (`TrackReference`, `TrackResolver`, `FolderMatcher`, `FormatClassifier`) assumes a readable URL. On iOS each needs an open scope and a downloaded file. Errors here show up as intermittent "unreadable" or "missing" tracks, which erode trust in story 005's core value.
-4. **Core extraction churn.** No `public` anywhere; a wide mechanical diff touches the working Mac app and its large test suite in one go. Mitigation: do it as phase 1 alone, behind the full Mac suite, with no iOS code in the same change.
-5. **Parity gate on iOS is weaker than the Mac one.** The Mac gate parses a real artefact (the sdef). The iOS gate checks a hand-kept catalog and compiled types; it cannot prove the system sees the intents. A broken `AppShortcut` or metadata issue would pass CI.
-6. **SwiftUI list edit mode with swipe actions and a docked bar.** Known to be fragile historically; unverified on iOS 26. Fallback is a `UIViewControllerRepresentable` table.
-7. **Xcode project in a SwiftPM-only repo.** Adds merge-conflict-prone `project.pbxproj` and a second build system for the owner to maintain. Mitigation: keep the project minimal, all logic in packages.
-8. **Deployment target choice.** iOS 26 only shrinks the audience; a lower target needs a check of every API and glass styling used.
+Background playback is not listed: it is a standard capability (section 8). The track hand-off is a design task with a known approach, and spike (b) confirms it on a device.
+
+1. **Cross-device playlists do not resolve.** The shared format carries bookmarks that are device-local, so the "same `.lplaylist` on both" idea in the proposal delivers a playlist whose tracks are all missing on the other device. The user-visible result may be read as a bug. Mitigation: product copy, the fingerprint field (later), or deciding that playlists are per-device. Needs owner decision.
+2. **Security-scope and iCloud behaviour is unverified.** The reference design (`TrackReference`, `TrackResolver`, `FolderMatcher`, `FormatClassifier`) assumes a readable URL. On iOS each needs an open scope and a downloaded file. Errors here show up as intermittent "unreadable" or "missing" tracks, which erode trust in story 005's core value.
+3. **Core extraction churn.** No `public` anywhere; a wide mechanical diff touches the working Mac app and its large test suite in one go. Mitigation: do it as phase 1 alone, behind the full Mac suite, with no iOS code in the same change.
+4. **Parity gate on iOS is weaker than the Mac one.** The Mac gate parses a real artefact (the sdef). The iOS gate checks a hand-kept catalog and compiled types; it cannot prove the system sees the intents. A broken `AppShortcut` or metadata issue would pass CI.
+5. **SwiftUI list edit mode with swipe actions and a docked bar.** Known to be fragile historically; unverified on iOS 26. Fallback is a `UIViewControllerRepresentable` table.
+6. **Xcode project in a SwiftPM-only repo.** Adds merge-conflict-prone `project.pbxproj` and a second build system for the owner to maintain. Mitigation: keep the project minimal, all logic in packages.
+7. **Deployment target choice.** iOS 26 only shrinks the audience; a lower target needs a check of every API and glass styling used.
 
 ## 18. Open questions for the owner
 
