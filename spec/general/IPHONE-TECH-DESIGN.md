@@ -504,7 +504,7 @@ Order rationale: spikes first because the largest unknowns (bookmarks, intent re
 
 Background playback is not listed: it is a standard capability (section 8). The track hand-off is a design task with a known approach, and spike (b) confirms it on a device.
 
-1. **Cross-device playlists do not resolve.** The shared format carries bookmarks that are device-local, so the "same `.lplaylist` on both" idea in the proposal delivers a playlist whose tracks are all missing on the other device. The user-visible result may be read as a bug. Mitigation: product copy, the fingerprint field (later), or deciding that playlists are per-device. Needs owner decision.
+1. **Cross-device playlists do not resolve (decided, now a separate feature).** The shared format carries bookmarks that are device-local, so a playlist copied between devices shows every track missing. The owner has decided this is not solved here: playlists are per-device by default, and the bridge is the opt-in iCloud sync feature designed in `ICLOUD-SYNC-DESIGN.md`. The iPhone app must open a foreign playlist without crashing and show its tracks as missing.
 2. **Security-scope and iCloud behaviour is unverified.** The reference design (`TrackReference`, `TrackResolver`, `FolderMatcher`, `FormatClassifier`) assumes a readable URL. On iOS each needs an open scope and a downloaded file. Errors here show up as intermittent "unreadable" or "missing" tracks, which erode trust in story 005's core value.
 3. **Core extraction churn.** No `public` anywhere; a wide mechanical diff touches the working Mac app and its large test suite in one go. Mitigation: do it as phase 1 alone, behind the full Mac suite, with no iOS code in the same change.
 4. **Parity gate on iOS is weaker than the Mac one.** The Mac gate parses a real artefact (the sdef). The iOS gate checks a hand-kept catalog and compiled types; it cannot prove the system sees the intents. A broken `AppShortcut` or metadata issue would pass CI.
@@ -514,7 +514,7 @@ Background playback is not listed: it is a standard capability (section 8). The 
 
 ## 18. Open questions for the owner
 
-1. Should a `.lplaylist` made on one device be expected to work on the other? If yes, do you accept adding an optional fingerprint or relative-path field to `TrackReference` (version 1 compatible), or should playlists be per-device?
+1. **Answered by the owner:** no. Playlists are per-device by default. Working across devices is the separate, opt-in iCloud sync feature (`ICLOUD-SYNC-DESIGN.md`), which adds optional fields to `TrackReference`.
 2. Is the proposal's custom Playlists home a hard requirement, or is the system document browser acceptable to save work (section 5, options A and B)?
 3. Do you want iCloud Drive as a storage location for playlists in the first release? It adds a container entitlement and the not-downloaded state.
 4. A not-downloaded next track during autoplay: skip it like a missing track, wait for the download, or stop?
