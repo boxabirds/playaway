@@ -1,6 +1,6 @@
 # Lyric-synced playback: research on native word-level timing for the Mac
 
-Status: research, 2026-10-06. Nothing was built. No candidate was run on a song in this session. Every number below was read from the source named next to it. Where I could not read a primary source, the item is marked unverified.
+Status: research, 2026-10-06. Updated the same day with the owner's decision (section 10): lyrics come from the music audio itself. Nothing was built. No candidate was run on a song in this session. Every number below was read from the source named next to it. Where I could not read a primary source, the item is marked unverified.
 
 ## 1. Bottom line
 
@@ -122,6 +122,41 @@ Goal: replace guesses with a measured accuracy per candidate on singing.
 4. Is a model download of several hundred megabytes acceptable, and is processing time of a minute or more per song in the background acceptable?
 5. Where do results live, and may they be written next to the person's audio files? The app today never writes beside them.
 6. Does this feature also have to work on the iPhone version? That changes the engine choice, because Demucs MLX and several aligners are Apple Silicon Mac tools.
+
+## 10. Decision: lyrics come from the audio, and what that changes
+
+The owner has decided that the lyrics are transcribed from the song, not looked up. That removes the rights question about lyric text (the app would only process the person's own files, on their own Mac), and it makes the problem harder than section 1 implied.
+
+**The target moves.** The goal was word timing as accurate as WhisperX gets on speech. On this path the error that shows first is the text: the best open-source result I found is about 20% word error on a benchmark where the language was supplied in advance (section 4). A word-by-word display of text that is one-fifth wrong, with words highlighted exactly on the beat, will look precise and be wrong. Timing accuracy only matters on words that are right.
+
+Specific consequences, each from the evidence above or flagged as my judgment:
+
+1. **Language must be detected, not supplied.** The Jam-ALT results gave Whisper the language. In the app there is no such input. Language identification on music is something I did not find a number for.
+2. **Instrumental passages and backing vocals.** The same paper reports that over half of backing vocals and non-lexical sounds are deleted, and hallucination (inserted text unrelated to the audio) is tracked as a failure mode. A synced display must handle silence and instrumental breaks without inventing words.
+3. **Confidence has to gate the display.** WhisperKit computes a per-word probability from the decoder's token log-probabilities (read in `SegmentSeeker.swift`). In my judgment a line below a confidence bar should not be shown as lyrics, or should be marked as machine-generated. Wrong lyrics shown confidently are worse than none. This is a product rule that needs the owner's decision, and it needs measuring: I have no calibration data for these scores on singing.
+4. **Genre will matter.** The 2019 alignment paper reports its worst outliers on slurred hip-hop and metal.
+5. **Compute is per song, and a library is large.** The one speed claim I have is Demucs separating a 3:19 track in about 15 s on an M1 Pro (README claim), before the speech model runs. I have no figure for Whisper on this Mac. A library of thousands of songs is hours of background work. The design needs a policy: on first play, on adding to a playlist, or on request, and a place to cache results.
+6. **Forced alignment still has a role**, but a different one. After the text is transcribed, aligning it to the audio with a dedicated aligner may give tighter word times than the Whisper decoder's own DTW times. Also, aligning the *correct* lyrics is useful in the test as an upper bound that separates transcription error from timing error.
+
+**Revised pipeline to test:** detect language, then segment on vocal activity (optionally after separating the vocals), then transcribe (WhisperKit or whisper.cpp), then take word times from the decoder's DTW or from a forced aligner, then filter by confidence and cache. Runs entirely offline.
+
+**Revised spike.** Same test set (JamendoLyrics Multi-Lang plus songs chosen by the owner) and same arms as section 7, with these changes and additions:
+
+- Report transcription word error rate **and** timing error on the words that were transcribed correctly, separately. A single combined number hides which half is failing.
+- Add the correct-lyrics alignment arm as an upper bound, not as the product path.
+- Measure language-detection accuracy with the language not supplied.
+- Measure hallucination on instrumental sections (inserted words where the reference has none).
+- Measure whether the confidence score separates right lines from wrong ones, and at what threshold a line is trustworthy.
+- Measure seconds of processing per minute of audio and peak memory on the Mac the owner actually uses.
+
+**What would make me stop.** If the best arm still gets about one word in five wrong on the owner's own music, a word-by-word display is not defensible, and the fallback is a line-level display of high-confidence lines only, or no feature. That result is plausible given the evidence, and the spike exists to find out before any app code is written.
+
+**Open questions that remain** (the first one in section 9 is now answered):
+
+1. What is the accuracy bar, in terms the owner would accept: for example, the share of lines that must be right before the feature is shown for a song?
+2. Is "machine-generated" labelling acceptable on lines below the confidence bar, or should low-confidence lines be hidden?
+3. Which languages must work? If the owner's library is mostly English, say so, because it sets the model choice and the language-detection risk.
+4. When may processing run: on first play, in the background for a playlist, or only on request?
 
 ## Sources
 
