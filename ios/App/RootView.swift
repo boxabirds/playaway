@@ -4,24 +4,21 @@ import PlayawayCore
 
 struct RootView: View {
     @EnvironmentObject var model: AppModel
-    @State private var path: [URL] = []
 
     var body: some View {
-        NavigationStack(path: $path) {
-            PlaylistsView(path: $path)
+        NavigationStack(path: $model.path) {
+            PlaylistsView()
                 .navigationDestination(for: URL.self) { url in
                     if let session = model.session(for: url) { PlaylistView(session: session) }
                     else { ContentUnavailableView("Playlist unavailable", systemImage: "exclamationmark.triangle") }
                 }
         }
-        .safeAreaInset(edge: .bottom) { MiniPlayer() }
-        .accessibilityIdentifier("playlists-root")
+        .overlay { PlayerChrome() }
     }
 }
 
 struct PlaylistsView: View {
     @EnvironmentObject var model: AppModel
-    @Binding var path: [URL]
     @State private var creating = false
     @State private var newName = ""
     @State private var errorText: String?
@@ -47,7 +44,7 @@ struct PlaylistsView: View {
         .alert("New Playlist", isPresented: $creating) {
             TextField("Name", text: $newName)
             Button("Create") {
-                do { path.append(try model.createPlaylist(named: newName)) }
+                do { model.openPlaylist(try model.createPlaylist(named: newName)) }
                 catch LibraryError.alreadyExists { errorText = "A playlist with that name already exists." }
                 catch { errorText = "Enter a name for the playlist." }
             }
@@ -81,18 +78,19 @@ struct PlaylistView: View {
         List {
             header
             ForEach(session.playlist.tracks) { track in
-                Button { session.player.play(track: track) } label: {
+                Button { session.play(track) } label: {
                     HStack {
                         Text(track.reference.fileName.fileNameWithoutExtension).foregroundStyle(.primary)
                         Spacer()
                         if session.player.current?.id == track.id { Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint) }
                     }
                 }
+                .buttonStyle(.plain)
             }
             .onDelete { session.remove(at: $0) }
             .onMove { from, to in if let f = from.first { session.move(from: f, to: to > f ? to - 1 : to) } }
         }
-        .navigationTitle(session.name)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -126,7 +124,7 @@ struct PlaylistView: View {
                 switch startDecision(session: state, shuffleOn: model.settings.shuffleOn,
                                      songCount: session.playlist.tracks.count, random: &rng) {
                 case .toggleCurrentSong: model.transport.playPause()
-                case .startShuffled, .startInOrder: session.player.start()
+                case .startShuffled, .startInOrder: session.start()
                 case .nothingToStart: break
                 }
             } label: {
@@ -142,22 +140,4 @@ struct PlaylistView: View {
 
 extension String {
     var fileNameWithoutExtension: String { (self as NSString).deletingPathExtension }
-}
-
-struct MiniPlayer: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        if model.transport.state != .idle {
-            HStack {
-                Text(model.transport.nowPlaying).lineLimit(1)
-                Spacer()
-                Button { model.transport.playPause() } label: {
-                    Image(systemName: model.transport.state == .playing ? "pause.fill" : "play.fill").font(.title2)
-                }
-                .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
-            }
-            .padding(.horizontal).frame(minHeight: 56)
-            .background(.bar)
-        }
-    }
 }

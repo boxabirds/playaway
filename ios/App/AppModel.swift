@@ -1,9 +1,11 @@
 import SwiftUI
 import Combine
 import AVFoundation
+import MediaPlayer
 import PlayawayCore
 
 /// One open playlist: its songs, its player, and saving after every change.
+@MainActor
 final class PlaylistSession: ObservableObject {
     let url: URL
     @Published private(set) var playlist: Playlist
@@ -46,6 +48,10 @@ final class PlaylistSession: ObservableObject {
 
     func dismissNotice() { notice = nil }
 
+    func play(_ track: Track) { model?.becameActive(self); player.play(track: track) }
+    func start() { model?.becameActive(self); player.start() }
+    weak var model: AppModel?
+
     private func replace(_ updated: Playlist) {
         playlist = updated
         if case .writeFailed = library.save(updated, to: url) { notice = "The playlist could not be saved." }
@@ -62,6 +68,11 @@ final class AppModel: ObservableObject {
     let transport: TransportViewModel
     @Published private(set) var entries: [PlaylistEntry] = []
     @Published var cardOpen = false
+    @Published var path: [URL] = []
+    @Published private(set) var activeSession: PlaylistSession?
+    @Published private(set) var metadata: TrackMetadata?
+    private var metadataURL: URL?
+    private let nowPlaying = NowPlayingCenter()
     private var sessions: [URL: PlaylistSession] = [:]
     private var cancellables = Set<AnyCancellable>()
 
@@ -69,9 +80,62 @@ final class AppModel: ObservableObject {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         library = PlaylistLibrary(folder: documents)
         transport = TransportViewModel(engine: engine, registry: registry)
+        transport.activePlayerProvider = { [weak self] in self?.activeSession?.player }
         configureAudioSession()
+        nowPlaying.attach(model: self)
+        // Views read transport and settings through the model, so their changes must reach the model's observers.
+        transport.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        engine.events.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.engineChanged() }.store(in: &cancellables)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-PlayawaySeedDemo") { seedDemoPlaylist(in: documents) }
+        #endif
         refresh()
     }
+
+    #if DEBUG
+    /// Test aid: a playlist of two short generated tones, so UI tests can play real files.
+    private func seedDemoPlaylist(in folder: URL) {
+        func tone(_ seconds: Int, hz: Double) -> Data {
+            let rate = 8000, samples = rate * seconds
+            var d = Data()
+            func u32(_ v: Int) { var x = UInt32(v).littleEndian; d.append(Data(bytes: &x, count: 4)) }
+            func u16(_ v: Int) { var x = UInt16(v).littleEndian; d.append(Data(bytes: &x, count: 2)) }
+            d.append("RIFF".data(using: .ascii)!); u32(36 + samples * 2); d.append("WAVEfmt ".data(using: .ascii)!)
+            u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
+            d.append("data".data(using: .ascii)!); u32(samples * 2)
+            for i in 0..<samples { var v = Int16(sin(2 * .pi * hz * Double(i) / Double(rate)) * 8000).littleEndian; d.append(Data(bytes: &v, count: 2)) }
+            return d
+        }
+        var urls: [URL] = []
+        for (name, hz) in [("Demo One", 440.0), ("Demo Two", 660.0)] {
+            let url = folder.appendingPathComponent("\(name).wav")
+            if !FileManager.default.fileExists(atPath: url.path) { try? tone(60, hz: hz).write(to: url) }
+            urls.append(url)
+        }
+        guard let playlistURL = try? library.create(named: "Demo") else { return }
+        let result = adding(urls, to: Playlist(), classifier: FormatClassifier())
+        _ = library.save(result.playlist, to: playlistURL)
+    }
+    #endif
+
+    /// Called by a playlist session whenever its player starts something, so the card knows the playlist.
+    func becameActive(_ session: PlaylistSession) { activeSession = session }
+
+    private func engineChanged() {
+        let url = engine.currentURL
+        if url != metadataURL {
+            metadataURL = url
+            metadata = url.map { TrackMetadata.fallback(for: $0) }
+            if let url { Task { [weak self] in
+                let loaded = await loadTrackMetadata(for: url)
+                await MainActor.run { if self?.metadataURL == url { self?.metadata = loaded; self?.nowPlaying.update() } }
+            } }
+        }
+        nowPlaying.update()
+    }
+
+    func openPlaylist(_ url: URL) { path.append(url) }
 
     func refresh() { entries = library.entries() }
 
@@ -85,6 +149,7 @@ final class AppModel: ObservableObject {
         if let existing = sessions[url] { return existing }
         guard case .loaded(let playlist) = library.load(url) else { return nil }
         let session = PlaylistSession(url: url, playlist: playlist, library: library, model: self)
+        session.model = self
         sessions[url] = session
         session.objectWillChange.sink { [weak self] in self?.objectWillChange.send(); self?.refresh() }.store(in: &cancellables)
         return session
