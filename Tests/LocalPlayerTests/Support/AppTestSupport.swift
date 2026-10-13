@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// Brings up the pieces the real app builds in main.swift, with a recording audio sink and isolated defaults.
 @MainActor

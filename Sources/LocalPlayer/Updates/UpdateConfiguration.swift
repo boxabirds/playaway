@@ -1,3 +1,4 @@
+import PlayawayCore
 import Foundation
 
 /// The Sparkle keys the app carries in its Info.plist, as read (nothing is interpreted here).

@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 @MainActor
 final class PlaylistDocumentTests: XCTestCase {

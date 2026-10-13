@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 final class StubUpdaterDriver: UpdaterDriver {
     var startCalls = 0

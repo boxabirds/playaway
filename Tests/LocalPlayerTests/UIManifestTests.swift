@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 let bundledManifestURL = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent()
     .appendingPathComponent("Resources/ui-manifest.json")

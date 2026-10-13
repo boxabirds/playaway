@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 import Combine
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 // MARK: - Fixtures
 

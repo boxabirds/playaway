@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// Fixes from the HIG review: undo, Delete and Return in the list, spoken missing state, Space, layout.
 @MainActor

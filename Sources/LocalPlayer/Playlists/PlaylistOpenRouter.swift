@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 enum OpenOutcome: Equatable {

@@ -1,5 +1,6 @@
 import XCTest
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// End-to-end tests against the built, ad-hoc signed dev bundle, driven from outside through real `open`,
 /// `osascript` and `defaults`. They skip unless the bundle exists: run `scripts/run-e2e.sh`, which builds it first.

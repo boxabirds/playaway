@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// Regressions found by the review of the code against spec/. Each test failed before its fix.
 

@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// The standard macOS menu bar: application menu, File, Window, Help. Standard names and shortcuts.

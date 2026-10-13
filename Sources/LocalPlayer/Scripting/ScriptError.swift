@@ -1,3 +1,4 @@
+import PlayawayCore
 import Foundation
 
 /// Stable error numbers returned to scripts. Accepted by the owner for now; they may change until the first release.

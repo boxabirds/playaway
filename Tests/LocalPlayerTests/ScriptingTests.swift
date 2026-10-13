@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 let sdefURL = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/LocalPlayer.sdef")
 let infoPlistURL = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/Info.plist")

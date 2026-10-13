@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// The playlist window redesign (spec 007, prd.simple.hierarchy): emphasis follows use, one control row, a marked
 /// playing row, a quiet footer. Layout is checked on a real window at its real sizes.

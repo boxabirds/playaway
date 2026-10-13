@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// KVC properties for the scripting dictionary. NSApplication dispatches script property access to its delegate,

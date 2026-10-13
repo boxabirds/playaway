@@ -1,5 +1,6 @@
 import XCTest
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// One shared, ordered log so cross-component ordering can be asserted.
 final class EventLog {

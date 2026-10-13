@@ -1,8 +1,5 @@
+import PlayawayCore
 import AppKit
-
-protocol NoticePresenting: AnyObject {
-    func show(_ notice: Notice)
-}
 
 /// Presents a standard alert, as a sheet on the front playlist window when there is one.
 /// Holds at most one notice; showing a second replaces the first.

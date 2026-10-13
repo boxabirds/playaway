@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// The one Check for Updates item in the app menu.

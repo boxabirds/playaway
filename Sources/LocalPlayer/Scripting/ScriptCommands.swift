@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// Cocoa scripting entry points. Each command only extracts its arguments and calls `AppActions`.

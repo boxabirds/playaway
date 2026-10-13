@@ -1,6 +1,7 @@
 import CryptoKit
 import XCTest
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 private func lines(_ run: (@escaping (String) -> Void) -> Int32) -> (status: Int32, lines: [String]) {
     var output: [String] = []

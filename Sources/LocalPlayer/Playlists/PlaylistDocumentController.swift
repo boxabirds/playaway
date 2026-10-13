@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// The app's document controller. It supplies the playlist document type from code, so documents work the same

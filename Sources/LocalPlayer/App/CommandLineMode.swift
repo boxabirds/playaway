@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// Launch flags that run a check inside the built app and exit, instead of showing windows.

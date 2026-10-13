@@ -2,6 +2,7 @@ import XCTest
 import AppKit
 import CryptoKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// End-to-end gap tests for task 9.25 (Check for Updates by script and by menu) and task 8.11 (real appearance
 /// switch, accessibility settings left untouched). They drive the built, ad-hoc signed dev bundle from outside through

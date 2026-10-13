@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// The KVC state properties on the real AppDelegate (AppDelegate+Scripting.swift), built headlessly the way
 /// DualPathTests builds its rig: a real AppDelegate instance given a real AppActions over a TestApp. The app is not

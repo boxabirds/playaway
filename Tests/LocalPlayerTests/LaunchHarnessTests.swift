@@ -1,5 +1,6 @@
 import XCTest
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 final class LaunchVerdictTests: XCTestCase {
     private let calculator = LaunchVerdictCalculator()

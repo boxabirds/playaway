@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// The one number the launch target lives in: the app, the harness and the tests all use it.

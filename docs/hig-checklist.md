@@ -2,7 +2,7 @@
 
 Release gate for `prd.look.review` (story 008). The release is blocked unless every item below is `pass`, or is
 `exception:` followed by a written reason. Validation: `validateChecklist(at:)` / `runHIGChecklistCheck(path:)`
-in `Sources/LocalPlayer/UI/HIGChecklist.swift`.
+in `Sources/PlayawayCore/UI/HIGChecklist.swift`.
 
 ## Line format
 

@@ -1,5 +1,6 @@
 import XCTest
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// Test-support helpers for the repository layout, shared by the update tests.
 enum RepoLayout {

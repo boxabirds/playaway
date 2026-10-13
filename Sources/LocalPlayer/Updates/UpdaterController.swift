@@ -1,3 +1,4 @@
+import PlayawayCore
 import Foundation
 import os
 import Sparkle

@@ -48,7 +48,8 @@ scripts/check-hig.sh              # the HIG review gate
 
 | Path | What |
 |---|---|
-| `Sources/LocalPlayer/Open` | format classifier, notices, the one open path (`OpenCoordinator`) |
+| `Sources/PlayawayCore` | the module the Mac and iPhone apps share (no AppKit): model, store, resolver, relinker, decider, shuffle, player, engine, format classifier, open coordinator, transport view model, UI manifest and checker, HIG checklist. `package` access, builds for macOS and iOS |
+| `Sources/LocalPlayer/Open` | notice presenter (AppKit; the format classifier and `OpenCoordinator` moved to `PlayawayCore`) |
 | `Sources/LocalPlayer/Playback` | `PlaybackEngine`, `AVPlaybackEngine` (AVAudioPlayer behind an injectable sink), volume store |
 | `Sources/LocalPlayer/Playlists` | model, store (atomic JSON `.lplaylist`), `PlaylistDocument` (NSDocument), decider, shuffle, player, resolver, relinker, router |
 | `Sources/LocalPlayer/UI` | window controller, transport and mode controls, UI manifest + checker, glass helper, HIG checklist |

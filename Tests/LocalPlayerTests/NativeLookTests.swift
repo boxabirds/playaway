@@ -2,6 +2,7 @@ import XCTest
 import AppKit
 import ObjectiveC
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 let packageRoot = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent()
 
@@ -178,13 +179,18 @@ final class NativeControlsTests: XCTestCase {
         XCTAssertEqual(playlistWindow().effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]), .darkAqua)
     }
 
+    /// Every Swift source of the app target and of the shared core: sources moved between them, and these checks cover both.
+    private var appAndCoreSources: [URL] {
+        ["Sources/LocalPlayer", "Sources/PlayawayCore"].flatMap {
+            FileManager.default.enumerator(at: packageRoot.appendingPathComponent($0), includingPropertiesForKeys: nil)!.allObjects as! [URL]
+        }
+    }
+
     func testTheAppOffersNoAppearanceOrAccessibilityOverride() throws {                         // TC-71 / TC-70
         NSApp.appearance = nil
         XCTAssertNil(NSApp.appearance, "the app never sets an appearance of its own")
-        let sources = packageRoot.appendingPathComponent("Sources/LocalPlayer")
         let forbidden = ["NSApp.appearance =", ".appearance = NSAppearance", "accessibilityDisplayShould", "reduceTransparency =", "increaseContrast ="]
-        let enumerator = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)!
-        for case let url as URL in enumerator where url.pathExtension == "swift" && url.lastPathComponent != "AppearanceModel.swift" {
+        for url in appAndCoreSources where url.pathExtension == "swift" && url.lastPathComponent != "AppearanceModel.swift" {
             let text = try String(contentsOf: url, encoding: .utf8)
             for token in forbidden { XCTAssertFalse(text.contains(token), "\(url.lastPathComponent) contains \(token)") }
         }
@@ -209,9 +215,7 @@ final class NativeControlsTests: XCTestCase {
         let window = playlistWindow()
         // AppKit's own table machinery contains system effect views; what matters is that this app creates none.
         _ = window
-        let sources = packageRoot.appendingPathComponent("Sources/LocalPlayer")
-        let enumerator = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)!
-        for case let url as URL in enumerator {
+        for url in appAndCoreSources {
             XCTAssertFalse(["png", "pdf", "icns", "jpg"].contains(url.pathExtension.lowercased()), "no image assets: \(url.lastPathComponent)")
             if url.pathExtension == "swift" {
                 let text = try String(contentsOf: url, encoding: .utf8)

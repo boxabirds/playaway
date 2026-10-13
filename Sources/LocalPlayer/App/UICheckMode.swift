@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// A silent audio output used only by the element dump, so reaching the "playing" state makes no sound.

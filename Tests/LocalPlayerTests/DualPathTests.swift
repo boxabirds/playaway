@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// Every app-specific action, triggered through the on-screen route and through the script route, in two fresh apps
 /// that start from the same fixture. The observable result must be identical. (scripting.tests.dual_path)

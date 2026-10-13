@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// The only place Liquid Glass is created. It hands back the system's own glass material, never a custom blur,

@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 @testable import LocalPlayer
+@testable import PlayawayCore
 
 /// Launch ordering with real documents: nothing about the audio files is touched before the first window is shown,
 /// and when it is, the work runs off the main thread (launch.window.first_paint TC-38 / TC-40 / TC-56).

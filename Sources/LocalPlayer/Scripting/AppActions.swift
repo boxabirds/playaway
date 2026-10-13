@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 /// The actions a script can ask for, validated and mapped to numbered refusals. Each one ends in the same handler

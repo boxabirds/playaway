@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 // Playlist windows come back after a relaunch, whatever the system's "close windows when quitting" setting is.

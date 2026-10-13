@@ -1,3 +1,4 @@
+import PlayawayCore
 import Foundation
 
 /// The result of one measured launch. `invalid` is never a pass: it covers a missing stop timestamp

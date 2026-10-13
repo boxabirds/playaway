@@ -1,3 +1,4 @@
+import PlayawayCore
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
