@@ -7,7 +7,7 @@ packages:
     path: ..
 settings:
   base:
-    SWIFT_VERSION: "6.0"
+    SWIFT_VERSION: "5.0"
     CODE_SIGNING_ALLOWED: NO
     GENERATE_INFOPLIST_FILE: YES
 targets:
@@ -18,12 +18,30 @@ targets:
     dependencies:
       - package: PlayawaySources
         product: PlayawayCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Playaway
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.localplayer.playlist
+            UTTypeDescription: Playlist
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [lplaylist]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Playlist
+            LSHandlerRank: Owner
+            LSItemContentTypes: [com.localplayer.playlist]
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.playaway.app
         PRODUCT_NAME: Playaway
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Playaway
         TARGETED_DEVICE_FAMILY: "1"
         OTHER_SWIFT_FLAGS: "-package-name localplayer"
   PlayawayUITests:

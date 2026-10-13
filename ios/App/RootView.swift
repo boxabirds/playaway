@@ -1,0 +1,163 @@
+import SwiftUI
+import UniformTypeIdentifiers
+import PlayawayCore
+
+struct RootView: View {
+    @EnvironmentObject var model: AppModel
+    @State private var path: [URL] = []
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            PlaylistsView(path: $path)
+                .navigationDestination(for: URL.self) { url in
+                    if let session = model.session(for: url) { PlaylistView(session: session) }
+                    else { ContentUnavailableView("Playlist unavailable", systemImage: "exclamationmark.triangle") }
+                }
+        }
+        .safeAreaInset(edge: .bottom) { MiniPlayer() }
+        .accessibilityIdentifier("playlists-root")
+    }
+}
+
+struct PlaylistsView: View {
+    @EnvironmentObject var model: AppModel
+    @Binding var path: [URL]
+    @State private var creating = false
+    @State private var newName = ""
+    @State private var errorText: String?
+
+    var body: some View {
+        Group {
+            if model.entries.isEmpty {
+                ContentUnavailableView("No Playlists", systemImage: "music.note.list",
+                                       description: Text("Tap + to make your first playlist."))
+            } else {
+                List(model.entries) { entry in
+                    NavigationLink(value: entry.url) { row(entry) }
+                }
+            }
+        }
+        .navigationTitle("Playlists")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { newName = ""; creating = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("New Playlist")
+            }
+        }
+        .alert("New Playlist", isPresented: $creating) {
+            TextField("Name", text: $newName)
+            Button("Create") {
+                do { path.append(try model.createPlaylist(named: newName)) }
+                catch LibraryError.alreadyExists { errorText = "A playlist with that name already exists." }
+                catch { errorText = "Enter a name for the playlist." }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Can't create playlist", isPresented: Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(errorText ?? "") }
+        .onAppear { model.refresh() }
+    }
+
+    @ViewBuilder private func row(_ entry: PlaylistEntry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(entry.name).font(.body)
+            switch entry.status {
+            case .ok(let count): Text("\(count) \(count == 1 ? "song" : "songs")").font(.caption).foregroundStyle(.secondary)
+            case .damaged: Text("Can't be read").font(.caption).foregroundStyle(.secondary)
+            case .newerVersion: Text("Made by a newer version of Playaway").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct PlaylistView: View {
+    @EnvironmentObject var model: AppModel
+    @ObservedObject var session: PlaylistSession
+    @State private var importing = false
+
+    var body: some View {
+        List {
+            header
+            ForEach(session.playlist.tracks) { track in
+                Button { session.player.play(track: track) } label: {
+                    HStack {
+                        Text(track.reference.fileName.fileNameWithoutExtension).foregroundStyle(.primary)
+                        Spacer()
+                        if session.player.current?.id == track.id { Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint) }
+                    }
+                }
+            }
+            .onDelete { session.remove(at: $0) }
+            .onMove { from, to in if let f = from.first { session.move(from: f, to: to > f ? to - 1 : to) } }
+        }
+        .navigationTitle(session.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { importing = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add Songs")
+            }
+            ToolbarItem(placement: .secondaryAction) { EditButton() }
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
+            session.add(urls)
+            scoped.forEach { $0.stopAccessingSecurityScopedResource() }
+        }
+        .alert("Playlist", isPresented: Binding(get: { session.notice != nil }, set: { if !$0 { session.dismissNotice() } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(session.notice ?? "") }
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(session.name).font(.headline)
+                let count = session.playlist.tracks.count
+                Text("\(count) \(count == 1 ? "song" : "songs")").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                let state: PlaylistSessionState = session.player.isSessionActive && model.transport.state != .idle
+                    ? .songUnderWay(isPlaying: model.transport.state == .playing) : .noSongUnderWay
+                var rng = SystemRandomNumberGenerator()
+                switch startDecision(session: state, shuffleOn: model.settings.shuffleOn,
+                                     songCount: session.playlist.tracks.count, random: &rng) {
+                case .toggleCurrentSong: model.transport.playPause()
+                case .startShuffled, .startInOrder: session.player.start()
+                case .nothingToStart: break
+                }
+            } label: {
+                Image(systemName: startButtonIcon(session: session.player.isSessionActive && model.transport.state == .playing
+                                                  ? .songUnderWay(isPlaying: true) : .noSongUnderWay) == .pause ? "pause.fill" : "play.fill")
+                    .font(.title2)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Start playlist")
+        }
+    }
+}
+
+extension String {
+    var fileNameWithoutExtension: String { (self as NSString).deletingPathExtension }
+}
+
+struct MiniPlayer: View {
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        if model.transport.state != .idle {
+            HStack {
+                Text(model.transport.nowPlaying).lineLimit(1)
+                Spacer()
+                Button { model.transport.playPause() } label: {
+                    Image(systemName: model.transport.state == .playing ? "pause.fill" : "play.fill").font(.title2)
+                }
+                .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
+            }
+            .padding(.horizontal).frame(minHeight: 56)
+            .background(.bar)
+        }
+    }
+}
