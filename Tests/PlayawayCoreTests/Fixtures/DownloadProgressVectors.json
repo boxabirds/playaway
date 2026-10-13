@@ -1,0 +1,14 @@
+{
+  "percentFullScale": 100,
+  "vectors": [
+    {"name": "half",             "reported": 50,   "downloading": true,  "previous": null, "expect": 0.5},
+    {"name": "zero",             "reported": 0,    "downloading": true,  "previous": null, "expect": 0},
+    {"name": "full",             "reported": 100,  "downloading": true,  "previous": null, "expect": 1},
+    {"name": "above range",      "reported": 250,  "downloading": true,  "previous": null, "expect": 1},
+    {"name": "below range",      "reported": -10,  "downloading": true,  "previous": null, "expect": 0},
+    {"name": "missing",          "reported": null, "downloading": true,  "previous": null, "expect": null},
+    {"name": "not downloading",  "reported": 50,   "downloading": false, "previous": null, "expect": null},
+    {"name": "never decreases",  "reported": 20,   "downloading": true,  "previous": 0.6,  "expect": 0.6},
+    {"name": "may increase",     "reported": 80,   "downloading": true,  "previous": 0.6,  "expect": 0.8}
+  ]
+}

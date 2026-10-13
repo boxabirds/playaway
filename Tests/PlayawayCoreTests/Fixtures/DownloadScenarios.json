@@ -1,0 +1,23 @@
+[
+  {"name": "on device plays at once",
+   "steps": [{"op": "request", "song": "a", "onDevice": true}],
+   "expect": {"started": [], "cancelled": [], "played": ["a"], "states": {"a": "onThisDevice"}}},
+  {"name": "download then play",
+   "steps": [{"op": "request", "song": "a", "onDevice": false}, {"op": "progress", "song": "a", "percent": 40}, {"op": "finished", "song": "a"}],
+   "expect": {"started": ["a"], "cancelled": [], "played": ["a"], "states": {"a": "onThisDevice"}}},
+  {"name": "another song current keeps file, no play",
+   "steps": [{"op": "request", "song": "a", "onDevice": false}, {"op": "request", "song": "b", "onDevice": true}, {"op": "finished", "song": "a"}],
+   "expect": {"started": ["a"], "cancelled": [], "played": ["b"], "states": {"a": "onThisDevice", "b": "onThisDevice"}}},
+  {"name": "cancel then late finish",
+   "steps": [{"op": "request", "song": "a", "onDevice": false}, {"op": "cancel", "song": "a"}, {"op": "finished", "song": "a"}],
+   "expect": {"started": ["a"], "cancelled": ["a"], "played": [], "states": {"a": "notOnThisDevice"}}},
+  {"name": "fail then retry then finish",
+   "steps": [{"op": "request", "song": "a", "onDevice": false}, {"op": "failed", "song": "a"}, {"op": "retry", "song": "a"}, {"op": "finished", "song": "a"}],
+   "expect": {"started": ["a", "a"], "cancelled": [], "played": ["a"], "states": {"a": "onThisDevice"}}},
+  {"name": "failed song is not retried by itself",
+   "steps": [{"op": "request", "song": "a", "onDevice": false}, {"op": "failed", "song": "a"}],
+   "expect": {"started": ["a"], "cancelled": [], "played": [], "states": {"a": "failed"}}},
+  {"name": "retry of a song that is not failed does nothing",
+   "steps": [{"op": "request", "song": "a", "onDevice": false}, {"op": "retry", "song": "a"}],
+   "expect": {"started": ["a"], "cancelled": [], "played": [], "states": {"a": "downloading:0"}}}
+]

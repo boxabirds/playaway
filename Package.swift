@@ -32,6 +32,7 @@ let package = Package(
             name: "PlayawayCoreTests",
             dependencies: ["PlayawayCore"],
             path: "Tests/PlayawayCoreTests",
+            resources: [.copy("Fixtures")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
