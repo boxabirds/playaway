@@ -10,17 +10,6 @@ package enum DownloadEvent: Equatable {
     case failed(SongID)
 }
 
-/// Provided by the Mac and iPhone adapters: start or cancel a platform download.
-package protocol SongDownloading: AnyObject {
-    func startDownload(of song: SongID)
-    func cancelDownload(of song: SongID)
-}
-
-/// The shared player, as far as the coordinator needs it.
-package protocol SongPlaybackStarting: AnyObject {
-    func startPlayback(of song: SongID)
-}
-
 package enum TransportPlayOutcome: Equatable { case ignored, proceed }
 
 /// Decides what happens when a song that may not be on this device is asked for. Pure decisions; effects only through
