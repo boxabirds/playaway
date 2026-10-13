@@ -119,4 +119,50 @@ final class DownloadOnPlayTests: XCTestCase {
         sut.handle(.finished(a)); sut.handle(.failed(a)); sut.handle(.progress(a, reportedPercent: 90))
         XCTAssertEqual(sut.state(of: a), .notOnThisDevice); XCTAssertTrue(seams.played.isEmpty)
     }
+
+    func testFinishedTwiceStartsPlaybackOnce() {
+        sut.request(a, source: .list, isOnDevice: false)
+        sut.handle(.finished(a)); sut.handle(.finished(a))
+        XCTAssertEqual(seams.played, [a])
+    }
+
+    func testProgressAfterFinishedChangesNothing() {
+        sut.request(a, source: .list, isOnDevice: false)
+        sut.handle(.finished(a)); sut.handle(.progress(a, reportedPercent: 30))
+        XCTAssertEqual(sut.state(of: a), .onThisDevice)
+    }
+
+    func testCancelTwiceIssuesOneCommand() {
+        sut.request(a, source: .list, isOnDevice: false)
+        sut.cancel(a); sut.cancel(a)
+        XCTAssertEqual(seams.cancelled, [a])
+    }
+
+    func testCancellingFirstDownloadLeavesSecondSongPlaying() {
+        sut.request(a, source: .list, isOnDevice: false)
+        sut.request(b, source: .list, isOnDevice: true)
+        sut.cancel(a)
+        XCTAssertEqual(sut.current, b); XCTAssertEqual(seams.played, [b])
+    }
+
+    func testRetryThenAnotherSongChosenKeepsFileWithoutPlaying() {
+        sut.request(a, source: .list, isOnDevice: false)
+        sut.handle(.failed(a)); sut.retry(a)
+        sut.request(b, source: .list, isOnDevice: true)
+        sut.handle(.finished(a))
+        XCTAssertEqual(seams.played, [b]); XCTAssertEqual(sut.state(of: a), .onThisDevice)
+    }
+
+    func testRetryThatFailsAgainReturnsToFailedWithoutThirdAttempt() {
+        sut.request(a, source: .list, isOnDevice: false)
+        sut.handle(.failed(a)); sut.retry(a); sut.handle(.failed(a))
+        XCTAssertEqual(sut.state(of: a), .failed); XCTAssertEqual(seams.started, [a, a])
+        XCTAssertTrue(seams.played.isEmpty)
+    }
+
+    func testRetryThenFinishWhileStillCurrentPlays() {
+        sut.request(a, source: .list, isOnDevice: false)
+        sut.handle(.failed(a)); sut.retry(a); sut.handle(.finished(a))
+        XCTAssertEqual(seams.played, [a])
+    }
 }

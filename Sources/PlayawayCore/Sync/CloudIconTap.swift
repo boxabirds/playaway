@@ -31,3 +31,6 @@ package func cloudIconTapAction(state: CloudIconState, kind: SyncItemKind) -> Cl
 
 /// iPhone adapter rule: every tappable cloud icon has at least this tappable area although the drawn icon is ~20pt.
 package let minimumCloudIconTapSize = CGSize(width: 44, height: 44)
+
+/// The drawn cloud icon is about this size; the tappable area above is larger on purpose.
+package let cloudIconDrawnSize = CGSize(width: 20, height: 20)

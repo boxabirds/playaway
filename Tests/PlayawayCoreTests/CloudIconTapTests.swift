@@ -16,4 +16,9 @@ final class CloudIconTapTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(minimumCloudIconTapSize.width, 44)
         XCTAssertGreaterThanOrEqual(minimumCloudIconTapSize.height, 44)
     }
+
+    func testDrawnIconIsSmallerThanItsTappableArea() {
+        XCTAssertLessThan(cloudIconDrawnSize.width, minimumCloudIconTapSize.width)
+        XCTAssertLessThan(cloudIconDrawnSize.height, minimumCloudIconTapSize.height)
+    }
 }
