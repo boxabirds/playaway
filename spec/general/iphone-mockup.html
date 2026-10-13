@@ -72,7 +72,7 @@ svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
   transform: translateY(100%); touch-action: none; padding: 8px 24px 34px; display: flex; flex-direction: column; transition: height .25s ease; }
 .card.anim { transition: transform .28s ease, height .25s ease; }
 .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--fill); margin: 0 auto 10px; flex: none; }
-.from { text-align: center; font-size: 12px; color: var(--label2); flex: none; min-height: 18px; }
+.from { text-align: center; font-size: 12px; color: var(--accent); flex: none; min-height: 18px; cursor: pointer; position: relative; } .from::after { content: ""; position: absolute; inset: -14px 0; }  /* 44 pt hit area; the accent colour marks it as tappable */
 .cart { flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
 .cart .art { width: 100%; max-width: 330px; aspect-ratio: 1; margin: 14px 0; flex: none; border-radius: 12px; } .cart .art svg { width: 30%; height: 30%; }
 .r3 { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; margin-top: 4px; }
@@ -82,6 +82,16 @@ svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
 .song.dim .t { opacity: .45; }
 .ci, .cloud { position: relative; cursor: pointer; } .ci::after, .cloud::after { content: ""; position: absolute; inset: -12px; }  /* 44 pt hit area around a ~20 pt glyph */
 .pl .ci { margin-left: auto; }
+#songs { position: relative; }
+.swrap { position: relative; overflow: hidden; background: var(--bg); transition: height .2s ease, opacity .2s ease; }
+.swrap.removing { height: 0 !important; opacity: 0; }
+.trash { position: absolute; right: 0; top: 0; bottom: 0; width: 80px; border: 0; background: var(--destr); color: #fff; display: grid; place-items: center; font-size: 24px; cursor: pointer; }
+.song { position: relative; background: var(--bg); transform: translate(var(--sx, 0px), var(--ty, 0px)); transition: transform .2s ease; touch-action: pan-y; }
+.song.drag { transition: none; }
+.song.lifted { z-index: 6; box-shadow: 0 6px 18px rgba(0,0,0,.35); border-radius: 10px; transition: none; }
+.swrap.liftedwrap { overflow: visible; z-index: 6; }
+.swrap.liftedwrap .trash { display: none; }
+.ibar { position: absolute; left: 12px; right: 12px; height: 3px; margin-top: -1.5px; border-radius: 2px; background: var(--accent); pointer-events: none; z-index: 7; display: none; }
 :root { --destr: #d70015; } :root[data-theme="dark"] { --destr: #ff453a; }
 .dlgwrap { position: absolute; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; }
 .dlgwrap[hidden] { display: none; }
@@ -113,9 +123,10 @@ svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
   <symbol id="shuffle" viewBox="0 0 24 24"><path d="M3 7h3.5c3 0 4.5 10 8 10H21M3 17h3.5c1.5 0 2.5-1.8 3.5-3.5M13.5 9.5C14.5 8 15.5 7 17 7h4M18 4l3 3-3 3M18 14l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="repeat" viewBox="0 0 24 24"><path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
-  <symbol id="back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="chev-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="note" viewBox="0 0 24 24"><path d="M9 17V6l11-2v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="17.5" r="2.7"/><circle cx="17.5" cy="15.5" r="2.7"/></symbol>
   <symbol id="wave" viewBox="0 0 24 24"><rect x="4" y="10" width="3.4" height="8" rx="1.2"/><rect x="10.3" y="5" width="3.4" height="14" rx="1.2"/><rect x="16.6" y="8" width="3.4" height="10" rx="1.2"/></symbol>
+  <symbol id="trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l1 12.2h9L17.5 7M10 11v5.5M14 11v5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="cloud" viewBox="0 0 24 24"><path d="M7 19a4.5 4.5 0 0 1-.9-8.9A6 6 0 0 1 17.6 9 5 5 0 0 1 17.5 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
   <symbol id="cloud-x" viewBox="0 0 24 24"><path d="M7 19a4.5 4.5 0 0 1-.9-8.9A6 6 0 0 1 17.6 9 5 5 0 0 1 17.5 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 4l16 16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
 </svg>
@@ -127,12 +138,15 @@ svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
     <li><b>Tap a song</b> or the round start button to play.</li>
     <li><b>Drag the player bar up</b> and the card follows your pointer; let go and it settles fully open (or back closed if you barely moved it). <b>Drag the card down</b> the same way to close it. It never rests half open. Tapping the bar also opens it. It never closes any other way: change song, navigate or skip with it open.</li>
     <li>A song <b>with artwork</b> opens a full card. One <b>without</b> opens a card that is only as tall as its rows, with the playlist still visible above.</li>
-    <li>Songs differ on purpose: artwork or none, artist and album or none, three cloud icons: crossed-out = this phone only, outline = in iCloud, pie = downloading. Kettle Song starts as in iCloud but not downloaded: tap it and watch the pie. Its first download fails at about 55%: the icon becomes an exclamation mark, tap it to retry (the retry succeeds).</li>
+    <li>Songs differ on purpose: artwork or none, artist and album or none, four cloud icon states: crossed-out = this phone only, outline = in iCloud, pie = syncing or downloading, exclamation mark = download failed. Kettle Song starts as in iCloud but not downloaded: tap it and watch the pie. Its first download fails at about 55%: the icon becomes an exclamation mark, tap it to retry (the retry succeeds).</li>
     <li>The scrubber is draggable. Previous, Next, Shuffle and Repeat work.</li>
     <li><b>The cloud icon is the control.</b> Tap a crossed-out cloud on a playlist (Playlists screen, right side) or on a song: a dialog asks Move / Copy / Cancel (playlists: Move / Cancel). Choosing one shows the pie, then the outline cloud. Tap the pie to cancel: a sync returns to crossed-out. Tapping an outline cloud does nothing. The playlist screen itself has no playlist icon.</li>
-    <li>Only Morning has songs. Tap <b>+</b> inside it.</li>
+    <li><b>Remove a song:</b> swipe its row left; a red trash can is underneath, tap it. <b>Reorder:</b> press and hold a row (about a third of a second), then drag: an insertion bar shows where it will drop and the list autoscrolls near the top and bottom edges. The long press is my assumption; the spec leaves it open.</li>
+    <li><b>Tap the playlist name</b> on the card (row 1, in the accent colour): the screen behind the card navigates to that playlist (at the top). The card stays open. <b>Back</b> is a browser-style history: it returns to exactly where you were (open Dinner, play a song, jump via the card, then Back returns to Dinner). If the playlist is unavailable (button below), the name offers to save it as a new playlist.</li>
+    <li>Only Morning has songs (16 here so the list scrolls). Tap <b>+</b> inside it.</li>
   </ul>
   <p><button id="theme">Toggle dark / light</button><button id="reset">Reset</button></p>
+  <p><button id="unavail">Make Morning unavailable</button> <span id="unavail-s" style="color:var(--label2);font-size:13px">(then tap its name on the card)</span></p>
   <p id="legend"></p>
 </div>
 
@@ -145,9 +159,10 @@ svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
       <div id="pls"></div>
     </div>
     <div class="pane right" id="p-list">
-      <div class="nav"><button id="back"><svg class="i"><use href="#back"/></svg>Playlists</button><button id="add" aria-label="Add Songs"><svg class="i"><use href="#plus"/></svg></button></div>
-      <div class="head"><div><h2>Morning</h2><div class="cnt">5 songs</div></div><button class="start" id="start" aria-label="Start playlist"><svg class="i"><use href="#play"/></svg></button></div>
+      <div class="nav"><button id="back"><svg class="i"><use href="#chev-back"/></svg><span id="back-l">Playlists</span></button><button id="add" aria-label="Add Songs"><svg class="i"><use href="#plus"/></svg></button></div>
+      <div class="head"><div><h2 id="pl-name">Morning</h2><div class="cnt" id="cnt">5 songs</div></div><button class="start" id="start" aria-label="Start playlist"><svg class="i"><use href="#play"/></svg></button></div>
       <div id="songs"></div>
+      <p id="stub" hidden style="padding:18px;color:var(--label2);font-size:13px">No songs in this mockup: only Morning has songs. Use Back to return to where you were.</p>
     </div>
     <div class="mini" id="mini" hidden>
       <div id="m-art"></div>
@@ -158,7 +173,7 @@ svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
     <div class="scrim" id="scrim"></div>
     <div class="card half" id="card">
       <div class="grab"></div>
-      <div class="from" id="c-from"></div>
+      <div class="from" id="c-from" data-nodrag role="button"></div>
       <div class="cart" id="c-art"></div>
       <div class="r3"><div class="nm" id="c-t"></div><span class="cloud" id="c-cloud" data-nodrag></span></div>
       <div class="scrub" id="scrub" data-nodrag><div class="t"></div><div class="f" id="s-f"></div><div class="k" id="s-k"></div></div>
@@ -187,9 +202,11 @@ const SONGS = [
   { t: "Kettle Song", artist: "Alba Moon", art: ["#3bb2b8", "#1d4e89"], cloud: "evicted", failAt: 55, dur: 245 },
   { t: "Late Bus", artist: "Fen", album: "Night Routes", art: null, cloud: "in", dur: 192 },
   { t: "track5.m4a", art: ["#7b61ff", "#2b1a66"], cloud: "none", dur: 160 },
+  ...Array.from({ length: 11 }, (_, k) => ({ t: `track${k + 6}.mp3`, art: null, cloud: "in", dur: 150 + k * 7 })),   /* filler rows so the list scrolls and autoscroll can be tried */
 ];
+SONGS.forEach((s, i) => { s.id = i; s.cloud0 = s.cloud; s.failAt0 = s.failAt; });
+const SONGS0 = [...SONGS];
 const CLOUD_LABEL = { in: "In iCloud, on this phone", none: "Not in iCloud: this phone only", evicted: "In iCloud, not downloaded yet", dl: "Downloading from iCloud", sync: "Syncing to iCloud", fail: "Download failed: tap to retry" };
-const ORIGINAL = SONGS.map(s => s.cloud), ORIGINAL_FAIL = SONGS.map(s => s.failAt);
 const DOWNLOAD_TICK_MS = 100, DOWNLOAD_STEP_PCT = 4, FULL_PCT = 100, PIE_R = 9, PIE_C = 12;
 /* Three icons: crossed-out cloud = local only; outline cloud = in iCloud; pie = downloading after an attempt to play. */
 function pie(pct) {
@@ -221,10 +238,25 @@ const PLAYLIST_ORIGINAL = PLAYLISTS.map(p => p.cloud);
 function renderPlaylists() {
   $("pls").innerHTML = PLAYLISTS.map((q, k) => `<div class="pl" data-k="${k}"><div class="ic"><svg class="i"><use href="#note"/></svg></div><div><div class="n">${q.n}</div><div class="m">${q.m}</div></div><span class="ci ${q.cloud === "none" ? "none" : ""}" aria-label="${CLOUD_LABEL[q.cloud]}">${iconHtml(q)}</span></div>`).join("");
 }
+/* Global browser-style navigation history: every navigation pushes; Back returns to exactly where the person was. Opening or closing the card is not a navigation. */
+const navStack = ["lists"];
+const navTitle = d => d === "lists" ? "Playlists" : PLAYLISTS[+d.slice(1)].n;
+function go(dest) { if (navStack[navStack.length - 1] !== dest) navStack.push(dest); renderNav(); }
+function goBack() { if (navStack.length > 1) navStack.pop(); renderNav(); }
+function renderNav() {
+  const top = navStack[navStack.length - 1];
+  $("p-lists").classList.toggle("left", top !== "lists"); $("p-list").classList.toggle("right", top === "lists");
+  if (top === "lists") return;
+  const k = +top.slice(1), morning = k === 0;
+  $("pl-name").textContent = PLAYLISTS[k].n; $("songs").hidden = !morning; $("stub").hidden = morning; $("start").hidden = !morning;
+  $("cnt").textContent = morning ? `${SONGS.length} songs` : "0 songs (mock)";
+  $("back-l").textContent = navTitle(navStack[navStack.length - 2] || "lists");
+}
+function showPlaylist() { go("p0"); }
 $("pls").onclick = e => {
   const row = e.target.closest(".pl"); if (!row) return; const k = +row.dataset.k, q = PLAYLISTS[k];
   if (e.target.closest(".ci")) return tapPlaylistIcon(k);
-  if (q.open) { $("p-lists").classList.add("left"); $("p-list").classList.remove("right"); } else toast("Mockup: only Morning has songs");
+  go("p" + k);
 };
 function ask(title, body, buttons) {
   return new Promise(res => {
@@ -242,9 +274,9 @@ async function tapSongIcon(i) {
   const s = SONGS[i];
   if (s.cloud === "none") {
     const a = await ask(...DIALOG_FILES, [{ label: "Move to iCloud", value: "move", kind: "destr" }, { label: "Copy to iCloud", value: "copy", kind: "def" }, { label: "Cancel", value: "cancel" }]);
-    if (a !== "cancel") runProgress("s" + i, s, "sync", refresh, refresh);
-  } else if (s.cloud === "sync") cancelProgress("s" + i, s, "none", refresh);
-  else if (s.cloud === "dl") cancelProgress("s" + i, s, "evicted", refresh);
+    if (a !== "cancel") runProgress("s" + s.id, s, "sync", refresh, refresh);
+  } else if (s.cloud === "sync") cancelProgress("s" + s.id, s, "none", refresh);
+  else if (s.cloud === "dl") cancelProgress("s" + s.id, s, "evicted", refresh);
   else if (s.cloud === "fail") startDownload(i);   /* the exclamation mark: tap retries the download */
 }
 async function tapPlaylistIcon(k) {
@@ -269,14 +301,91 @@ $("c-cloud").onclick = () => { if (cur >= 0) tapSongIcon(cur); };
 
 /* list */
 function renderSongs() {
-  $("songs").innerHTML = SONGS.map((s, i) => `<div class="song${i === cur ? " now" : ""}${["evicted", "dl", "fail"].includes(s.cloud) ? " dim" : ""}" data-i="${i}">
+  $("songs").innerHTML = SONGS.map((s, i) => `<div class="swrap" data-i="${i}"><button class="trash" aria-label="Remove ${s.t}"><svg class="i"><use href="#trash"/></svg></button><div class="song${i === cur ? " now" : ""}${["evicted", "dl", "fail"].includes(s.cloud) ? " dim" : ""}">
     <div class="t"><div class="tt">${s.t}</div>${sub(s) ? `<div class="ar">${sub(s)}</div>` : ""}</div>
-    ${i === cur && playing ? '<svg class="i eq"><use href="#wave"/></svg>' : ""}<span class="ci ${s.cloud === "none" ? "none" : ""}" aria-label="${CLOUD_LABEL[s.cloud]}">${iconHtml(s)}</span></div>`).join("");
+    ${i === cur && playing ? '<svg class="i eq"><use href="#wave"/></svg>' : ""}<span class="ci ${s.cloud === "none" ? "none" : ""}" aria-label="${CLOUD_LABEL[s.cloud]}">${iconHtml(s)}</span></div></div>`).join("") + '<div class="ibar" id="ibar"></div>';
+  openRow = null;
 }
-$("songs").onclick = e => { const r = e.target.closest(".song"); if (!r) return; if (e.target.closest(".ci")) tapSongIcon(+r.dataset.i); else play(+r.dataset.i); };
+function updateCounts() { const n = `${SONGS.length} songs`; $("cnt").textContent = n; PLAYLISTS[0].m = "Playlist · " + n; renderPlaylists(); }
+let openRow = null, justDragged = false;
+$("songs").onclick = e => {
+  if (justDragged) return;
+  const w = e.target.closest(".swrap"); if (!w) return; const i = +w.dataset.i;
+  if (e.target.closest(".trash")) return removeSong(i, w);
+  if (e.target.closest(".ci")) return tapSongIcon(i);
+  if (openRow) return setOpen(openRow, false);   /* a tap on a revealed row closes it */
+  play(i);
+};
+function removeSong(i, w) {
+  const gone = SONGS[i], curSong = cur >= 0 ? SONGS[cur] : null;
+  clearInterval(timers["s" + gone.id]); w.style.height = w.offsetHeight + "px"; w.offsetHeight; w.classList.add("removing");
+  setTimeout(() => {
+    SONGS.splice(i, 1);
+    if (curSong === gone) { cur = -1; playing = false; mini.hidden = true; settle(false); } else cur = curSong ? SONGS.indexOf(curSong) : -1;
+    renderSongs(); updateCounts(); paintStart(); toast("Removed " + gone.t);
+  }, REMOVE_MS);
+}
+/* Swipe a row left to reveal the red trash can. Press and hold, then drag, to reorder: an insertion bar shows the drop position and the list autoscrolls near its edges. */
+const SWIPE_REVEAL_PX = 80, SWIPE_OPEN_PX = 40, LONG_PRESS_MS = 350, EDGE_SCROLL_PX = 70, MINI_CLEARANCE_PX = 90, MAX_SCROLL_PX = 14, REMOVE_MS = 220;
+function setOpen(w, open) {
+  if (!w) return; w.querySelector(".song").style.setProperty("--sx", open ? -SWIPE_REVEAL_PX + "px" : "0px");
+  openRow = open ? w : (openRow === w ? null : openRow);
+}
+document.addEventListener("pointerdown", e => { if (openRow && !openRow.contains(e.target)) setOpen(openRow, false); });
+$("songs").addEventListener("pointerdown", e => {
+  if (e.target.closest(".ci") || e.target.closest(".trash")) return;
+  const row = e.target.closest(".song"); if (!row) return;
+  const w = row.parentElement, i = +w.dataset.i, pane = $("p-list");
+  const x0 = e.clientX, y0 = e.clientY, startX = openRow === w ? -SWIPE_REVEAL_PX : 0, scroll0 = pane.scrollTop;
+  let mode = null, lastY = y0, raf = 0;
+  try { row.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+  const rowH = w.offsetHeight, n = SONGS.length, bar = $("ibar");
+  const slotOf = y => Math.max(0, Math.min(n - 1, Math.floor((i * rowH + (y - y0) + (pane.scrollTop - scroll0) + rowH / 2) / rowH)));
+  const paintReorder = () => {
+    const off = lastY - y0 + (pane.scrollTop - scroll0); row.style.setProperty("--ty", off + "px");
+    const slot = slotOf(lastY), b = slot > i ? slot + 1 : slot;
+    bar.style.display = slot === i ? "none" : "block"; bar.style.top = b * rowH + "px";
+  };
+  const auto = () => {
+    const rect = pane.getBoundingClientRect(), top = rect.top + EDGE_SCROLL_PX, bottom = rect.bottom - EDGE_SCROLL_PX - MINI_CLEARANCE_PX;
+    if (lastY < top) pane.scrollTop -= MAX_SCROLL_PX * Math.min(1, (top - lastY) / EDGE_SCROLL_PX);
+    else if (lastY > bottom) pane.scrollTop += MAX_SCROLL_PX * Math.min(1, (lastY - bottom) / EDGE_SCROLL_PX);
+    paintReorder(); raf = requestAnimationFrame(auto);
+  };
+  const hold = setTimeout(() => {
+    if (mode) return; mode = "reorder"; justDragged = true; setOpen(openRow, false);
+    row.classList.add("lifted"); w.classList.add("liftedwrap"); paintReorder(); raf = requestAnimationFrame(auto);
+  }, LONG_PRESS_MS);
+  const mv = ev => {
+    lastY = ev.clientY; const dx = ev.clientX - x0, dy = ev.clientY - y0;
+    if (!mode && Math.max(Math.abs(dx), Math.abs(dy)) > TAP_SLOP_PX) {
+      clearTimeout(hold); justDragged = true; mode = Math.abs(dx) > Math.abs(dy) ? "swipe" : "scroll";
+      if (mode === "swipe") row.classList.add("drag");
+    }
+    if (mode === "swipe") row.style.setProperty("--sx", Math.max(-SWIPE_REVEAL_PX, Math.min(0, startX + dx)) + "px");
+    else if (mode === "scroll") pane.scrollTop = scroll0 - dy;
+    else if (mode === "reorder") paintReorder();
+  };
+  const up = ev => {
+    clearTimeout(hold); cancelAnimationFrame(raf);
+    row.removeEventListener("pointermove", mv); row.removeEventListener("pointerup", up); row.removeEventListener("pointercancel", up);
+    if (mode === "swipe") {
+      row.classList.remove("drag"); const off = parseFloat(row.style.getPropertyValue("--sx")) || 0;
+      if (openRow && openRow !== w) setOpen(openRow, false);
+      setOpen(w, off <= -SWIPE_OPEN_PX);
+    } else if (mode === "reorder") {
+      const slot = slotOf(ev.clientY), curSong = cur >= 0 ? SONGS[cur] : null;
+      bar.style.display = "none";
+      if (slot !== i) { const [m] = SONGS.splice(i, 1); SONGS.splice(slot, 0, m); cur = curSong ? SONGS.indexOf(curSong) : -1; }
+      renderSongs(); if (cur >= 0) sync();
+    }
+    setTimeout(() => { justDragged = false; }, 0);
+  };
+  row.addEventListener("pointermove", mv); row.addEventListener("pointerup", up); row.addEventListener("pointercancel", up);
+});
 $("start").onclick = () => cur >= 0 ? toggle() : play(shuffle ? Math.floor(Math.random() * SONGS.length) : 0);
 function paintStart() { const on = cur >= 0 && playing; $("start").innerHTML = `<svg class="i"><use href="#${on ? "pause" : "play"}"/></svg>`; $("start").setAttribute("aria-label", on ? "Pause playlist" : cur >= 0 ? "Resume playlist" : "Start playlist"); }
-$("back").onclick = () => { $("p-lists").classList.remove("left"); $("p-list").classList.add("right"); };
+$("back").onclick = goBack;
 $("add").onclick = () => toast("Add Songs: opens the Files chooser");
 
 let tt;
@@ -285,7 +394,7 @@ function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on
 /* playback (simulated clock) */
 function startDownload(i) {
   const s = SONGS[i]; if (s.cloud === "dl") return;
-  runProgress("s" + i, s, "dl", refresh, () => { if (cur === i) { playing = true; pos = 0; } sync(); });
+  runProgress("s" + s.id, s, "dl", refresh, () => { if (cur >= 0 && SONGS[cur] === s) { playing = true; pos = 0; } sync(); });
 }
 function play(i) {
   cur = i; pos = 0; $("mini").hidden = false;
@@ -324,7 +433,7 @@ function sync() {
   $("m-art").innerHTML = artHtml(s, 44);
   $("m-t").textContent = s.t; $("m-a").textContent = sub(s); $("m-a").style.display = sub(s) ? "" : "none";
   $("m-pp").innerHTML = `<svg class="i"><use href="${ic}"/></svg>`; $("b-pp").innerHTML = `<svg class="i"><use href="${ic}"/></svg>`;
-  $("c-from").textContent = PLAYLIST; $("c-t").textContent = s.t;
+  $("c-from").textContent = PLAYLIST; $("c-from").setAttribute("aria-label", "Open playlist " + PLAYLIST); $("c-t").textContent = s.t;
   /* Only the card's top edge moves: the artwork stays put and is uncovered or covered, so keep it until the card has shrunk. */
   clearTimeout(artTimer);
   if (s.art) $("c-art").innerHTML = `<div class="art" style="background:linear-gradient(135deg,${s.art[0]},${s.art[1]})"><svg class="i"><use href="#note"/></svg></div>`;
@@ -337,6 +446,14 @@ function sync() {
 }
 $("m-pp").onclick = e => { e.stopPropagation(); toggle(); };
 $("m-pp").onpointerdown = e => e.stopPropagation();
+let morningAvailable = true;
+$("unavail").onclick = () => { morningAvailable = !morningAvailable; $("unavail").textContent = morningAvailable ? "Make Morning unavailable" : "Make Morning available again"; };
+/* The card stays open; the panel behind navigates to the playlist (opens at the top, no scrolling to the playing song). If the playlist is gone, offer to save it elsewhere: it then becomes an unsaved playlist. */
+$("c-from").onclick = async () => {
+  if (morningAvailable) return showPlaylist();
+  const a = await ask("Playlist not available", "\u201CMorning\u201D can't be opened. Save its songs as a new playlist so you can keep them?", [{ label: "Save Playlist\u2026", value: "save", kind: "def" }, { label: "Cancel", value: "cancel" }]);
+  if (a === "save") toast("Files save sheet opens; the playlist is unsaved until saved");
+};
 $("b-pp").onclick = toggle; $("b-next").onclick = () => next(false); $("b-prev").onclick = prev;
 $("b-shuf").onclick = () => { shuffle = !shuffle; sync(); }; $("b-rep").onclick = () => { repeat = !repeat; sync(); };
 
@@ -379,8 +496,8 @@ function swipe(el, opens, ok) {
 swipe(mini, true);
 swipe(card, false, e => !e.target.closest("[data-nodrag]"));
 
-$("reset").onclick = () => { Object.values(timers).forEach(clearInterval); SONGS.forEach((s, i) => { s.cloud = ORIGINAL[i]; s.failAt = ORIGINAL_FAIL[i]; }); PLAYLISTS.forEach((q, k) => q.cloud = PLAYLIST_ORIGINAL[k]); renderPlaylists(); playing = false; cur = -1; pos = 0; p = 0; mini.hidden = true; setP(0); renderSongs(); paintStart(); $("legend").textContent = ""; };
-renderPlaylists(); renderSongs(); setP(0);
+$("reset").onclick = () => { Object.values(timers).forEach(clearInterval); SONGS.length = 0; SONGS.push(...SONGS0); SONGS.forEach(s => { s.cloud = s.cloud0; s.failAt = s.failAt0; }); PLAYLISTS.forEach((q, k) => q.cloud = PLAYLIST_ORIGINAL[k]); navStack.length = 1; renderNav(); morningAvailable = true; $("unavail").textContent = "Make Morning unavailable"; updateCounts(); playing = false; cur = -1; pos = 0; p = 0; mini.hidden = true; setP(0); renderSongs(); paintStart(); $("legend").textContent = ""; };
+renderSongs(); updateCounts(); setP(0);
 </script>
 </body>
 </html>
