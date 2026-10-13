@@ -32,7 +32,7 @@ import XCTest
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
         app.staticTexts["Demo"].tap()
-        let first = app.buttons["Demo One"]
+        let first = app.tables["song-table"].cells["Demo One"]
         XCTAssertTrue(first.waitForExistence(timeout: 5)); shot(app, "p1-playlist")
         first.tap()
         let controller = app.descendants(matching: .any)["floating-controller"]
@@ -52,14 +52,51 @@ import XCTest
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
         app.staticTexts["Demo"].tap()
-        let two = app.buttons["Demo Two"]
+        let table = app.tables["song-table"]
+        let two = table.cells["Demo Two"]
         XCTAssertTrue(two.waitForExistence(timeout: 5))
+        XCTAssertEqual(table.cells.count, 5)
         two.swipeLeft()
         let remove = app.buttons["Remove from Playlist"]
         XCTAssertTrue(remove.waitForExistence(timeout: 3))
         remove.tap()
-        XCTAssertFalse(app.buttons["Demo Two"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.buttons["Demo One"].exists)
-        XCTAssertTrue(app.staticTexts["1 song"].exists)
+        XCTAssertFalse(table.cells["Demo Two"].waitForExistence(timeout: 2))
+        XCTAssertEqual(table.cells.count, 4)
+        XCTAssertTrue(app.staticTexts["4 songs"].exists)
+    }
+}
+
+@MainActor final class ReorderTests: XCTestCase {
+    private func order(_ table: XCUIElement) -> [String] {
+        table.cells.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }.map(\.label)
+    }
+
+    private func drag(_ table: XCUIElement, _ from: String, toward target: String, below: Bool) {
+        let src = table.cells[from].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let dst = table.cells[target].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: below ? 0.85 : 0.15))
+        src.press(forDuration: 1.0, thenDragTo: dst, withVelocity: .slow, thenHoldForDuration: 0.5)
+        sleep(1)
+    }
+
+    func testReorderStartMiddleAndEnd() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.cells["Demo Five"].waitForExistence(timeout: 5))
+        let start = ["Demo One", "Demo Two", "Demo Three", "Demo Four", "Demo Five"]
+        XCTAssertEqual(order(table), start)
+
+        drag(table, "Demo One", toward: "Demo Five", below: true)              // first to the very end
+        XCTAssertEqual(order(table), ["Demo Two", "Demo Three", "Demo Four", "Demo Five", "Demo One"])
+
+        drag(table, "Demo One", toward: "Demo Two", below: false)              // last to the very beginning
+        XCTAssertEqual(order(table), start)
+
+        drag(table, "Demo Four", toward: "Demo Two", below: false)             // middle up
+        XCTAssertEqual(order(table), ["Demo One", "Demo Four", "Demo Two", "Demo Three", "Demo Five"])
+
+        drag(table, "Demo Two", toward: "Demo Five", below: true)              // middle down to the end
+        XCTAssertEqual(order(table), ["Demo One", "Demo Four", "Demo Three", "Demo Five", "Demo Two"])
     }
 }

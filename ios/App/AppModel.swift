@@ -108,11 +108,13 @@ final class AppModel: ObservableObject {
             return d
         }
         var urls: [URL] = []
-        for (name, hz) in [("Demo One", 440.0), ("Demo Two", 660.0)] {
+        for (name, hz) in [("Demo One", 440.0), ("Demo Two", 520.0), ("Demo Three", 600.0), ("Demo Four", 680.0), ("Demo Five", 760.0)] {
             let url = folder.appendingPathComponent("\(name).wav")
             if !FileManager.default.fileExists(atPath: url.path) { try? tone(60, hz: hz).write(to: url) }
             urls.append(url)
         }
+        // Start every seeded launch from the same playlist, whatever earlier tests changed.
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent("Demo.\(playlistFileExtension)"))
         guard let playlistURL = try? library.create(named: "Demo") else { return }
         let result = adding(urls, to: Playlist(), classifier: FormatClassifier())
         _ = library.save(result.playlist, to: playlistURL)

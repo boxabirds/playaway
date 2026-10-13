@@ -75,24 +75,9 @@ struct PlaylistView: View {
     @State private var importing = false
 
     var body: some View {
-        List {
-            header
-            ForEach(session.playlist.tracks) { track in
-                Button { session.play(track) } label: {
-                    HStack {
-                        Text(track.reference.fileName.fileNameWithoutExtension).foregroundStyle(.primary)
-                        Spacer()
-                        if session.player.current?.id == track.id { Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint) }
-                    }
-                }
-                .buttonStyle(.plain)
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        if let i = session.playlist.tracks.firstIndex(where: { $0.id == track.id }) { session.remove(at: IndexSet(integer: i)) }
-                    } label: { Label("Remove from Playlist", systemImage: "trash") }
-                }
-            }
-            .onMove { from, to in if let f = from.first { session.move(from: f, to: to > f ? to - 1 : to) } }
+        VStack(spacing: 0) {
+            header.padding(.horizontal, 20).padding(.vertical, 12)
+            SongTable(session: session)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -100,7 +85,6 @@ struct PlaylistView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { importing = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add Songs")
             }
-            ToolbarItem(placement: .secondaryAction) { EditButton() }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }

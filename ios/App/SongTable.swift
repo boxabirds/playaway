@@ -1,0 +1,86 @@
+import SwiftUI
+import UIKit
+import PlayawayCore
+
+/// The song list as a system table view: swipe-left trash, press-and-hold drag to reorder (with the system's gap and
+/// automatic scrolling), no Edit mode.
+struct SongTable: UIViewRepresentable {
+    @ObservedObject var session: PlaylistSession
+    @EnvironmentObject var model: AppModel
+
+    func makeCoordinator() -> Coordinator { Coordinator(session: session) }
+
+    func makeUIView(context: Context) -> UITableView {
+        let table = UITableView(frame: .zero, style: .plain)
+        table.dataSource = context.coordinator
+        table.delegate = context.coordinator
+        table.dragDelegate = context.coordinator
+        table.dragInteractionEnabled = true
+        table.register(UITableViewCell.self, forCellReuseIdentifier: Coordinator.cellID)
+        table.accessibilityIdentifier = "song-table"
+        return table
+    }
+
+    func updateUIView(_ table: UITableView, context: Context) {
+        let c = context.coordinator
+        c.session = session
+        c.currentID = session.player.current?.id
+        guard !c.isDragging else { return }
+        table.reloadData()
+    }
+
+    final class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate, UITableViewDragDelegate {
+        static let cellID = "song"
+        var session: PlaylistSession
+        var currentID: UUID?
+        var isDragging = false
+        init(session: PlaylistSession) { self.session = session }
+
+        func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { session.playlist.tracks.count }
+
+        func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+            let cell = tableView.dequeueReusableCell(withIdentifier: Self.cellID, for: indexPath)
+            let track = session.playlist.tracks[indexPath.row]
+            let playing = track.id == currentID
+            cell.contentConfiguration = UIHostingConfiguration {
+                HStack {
+                    Text(track.reference.fileName.fileNameWithoutExtension).foregroundStyle(.primary)
+                    Spacer()
+                    if playing { Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint) }
+                }
+            }
+            cell.accessibilityTraits = .button
+            cell.accessibilityLabel = track.reference.fileName.fileNameWithoutExtension
+            return cell
+        }
+
+        func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+            tableView.deselectRow(at: indexPath, animated: true)
+            Task { @MainActor in self.session.play(self.session.playlist.tracks[indexPath.row]) }
+        }
+
+        func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { true }
+
+        func tableView(_ tableView: UITableView, moveRowAt source: IndexPath, to destination: IndexPath) {
+            Task { @MainActor in self.session.move(from: source.row, to: destination.row) }
+        }
+
+        func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+            let remove = UIContextualAction(style: .destructive, title: nil) { [weak self] _, _, done in
+                Task { @MainActor in self?.session.remove(at: IndexSet(integer: indexPath.row)) }
+                done(true)
+            }
+            remove.image = UIImage(systemName: "trash")
+            remove.accessibilityLabel = "Remove from Playlist"
+            return UISwipeActionsConfiguration(actions: [remove])
+        }
+
+        func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+            let id = self.session.playlist.tracks[indexPath.row].id.uuidString
+            return [UIDragItem(itemProvider: NSItemProvider(object: id as NSString))]
+        }
+
+        func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) { isDragging = true }
+        func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) { isDragging = false }
+    }
+}
