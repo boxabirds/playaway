@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playaway iPhone Mockup</title>
+<style>
+:root {
+  --accent: #0a6cff; --on-accent: #fff;
+  --bg: #fff; --surface: #f2f2f7; --label: #111; --label2: #5f5f66; --hair: #e1e1e6; --fill: #e3e3e8;
+  --page: #e9e9ee; --card: #fff; --cloud-opacity: .5;
+}
+:root[data-theme="dark"] {
+  --accent: #0a84ff; --on-accent: #000;
+  --bg: #000; --surface: #1c1c1e; --label: #fff; --label2: #a1a1a8; --hair: #2c2c2e; --fill: #3a3a3c;
+  --page: #1a1a1c; --card: #1c1c1e;
+}
+* { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+body { margin: 0; padding: 24px 16px 48px; background: var(--page); color: var(--label);
+  font: 14px/1.45 -apple-system, "SF Pro Text", system-ui, sans-serif; display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+.side { width: 330px; } .side h1 { font-size: 22px; margin: 0 0 6px; } .side p, .side li { color: var(--label2); font-size: 13px; }
+.side ul { padding-left: 18px; } .side b { color: var(--label); }
+.side button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--hair); background: var(--card); color: var(--label); cursor: pointer; margin-right: 6px; }
+svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
+
+/* phone */
+.phone { width: 390px; height: 800px; border: 9px solid #1d1d1f; border-radius: 48px; background: var(--bg); position: relative; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.3); flex: none; }
+.notch { position: absolute; top: 9px; left: 50%; width: 100px; height: 28px; margin-left: -50px; background: #1d1d1f; border-radius: 16px; z-index: 50; }
+.sb { height: 48px; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 28px 6px; font-weight: 600; font-size: 14px; }
+.hbar { position: absolute; bottom: 8px; left: 50%; width: 120px; height: 5px; margin-left: -60px; border-radius: 3px; background: var(--label); opacity: .85; z-index: 60; pointer-events: none; }
+.stack { position: absolute; inset: 48px 0 0 0; overflow: hidden; }
+.pane { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 130px; background: var(--bg); transition: transform .28s ease; }
+.pane.right { transform: translateX(100%); } .pane.left { transform: translateX(-30%); }
+
+/* playlists */
+.big { font-size: 30px; font-weight: 700; letter-spacing: -.02em; padding: 18px 18px 10px; }
+.pl { display: flex; align-items: center; gap: 12px; padding: 9px 18px; cursor: pointer; }
+.pl:active { background: var(--surface); }
+.pl .ic { width: 52px; height: 52px; border-radius: 8px; background: var(--surface); display: grid; place-items: center; font-size: 22px; color: var(--accent); }
+.pl .n { font-weight: 600; font-size: 16px; } .pl .m { color: var(--label2); font-size: 13px; }
+
+/* playlist panel */
+.nav { height: 44px; display: flex; justify-content: space-between; align-items: center; padding: 0 14px; color: var(--accent); font-size: 17px; }
+.nav button { background: none; border: 0; color: var(--accent); font: inherit; display: flex; align-items: center; gap: 2px; padding: 8px 6px; cursor: pointer; }
+.nav svg { font-size: 22px; }
+.head { display: flex; align-items: center; justify-content: space-between; padding: 8px 18px 14px; }
+.head h2 { margin: 0; font-size: 24px; letter-spacing: -.01em; line-height: 1.15; } .head .cnt { color: var(--label2); font-size: 13px; }
+.start { width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-size: 24px; cursor: pointer; flex: none; }
+.song { display: flex; align-items: center; gap: 12px; padding: 7px 18px; min-height: 56px; cursor: pointer; }
+.song:active { background: var(--surface); }
+.song .t { flex: 1; min-width: 0; } .song .tt { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song .ar { font-size: 13px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song.now .tt { color: var(--accent); font-weight: 600; }
+.song .eq { width: 18px; color: var(--accent); font-size: 16px; }
+.art { border-radius: 6px; display: grid; place-items: center; color: rgba(255,255,255,.85); flex: none; }
+.art svg { width: 45%; height: 45%; }
+
+/* floating play controller */
+.mini { position: absolute; left: 8px; right: 8px; bottom: 24px; height: 60px; border-radius: 14px; background: var(--surface); box-shadow: 0 2px 16px rgba(0,0,0,.3);
+  display: flex; align-items: center; gap: 10px; padding: 0 8px; z-index: 20; touch-action: none; cursor: grab; overflow: hidden; }
+.mini[hidden] { display: none; }
+.mini .art { width: 44px; height: 44px; } .mini .t { flex: 1; min-width: 0; padding-left: 4px; }
+.mini .tt { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini .ar { font-size: 12px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini .pp { width: 44px; height: 44px; border: 0; background: none; color: var(--label); font-size: 26px; display: grid; place-items: center; cursor: pointer; }
+.mini .prog { position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; background: var(--fill); }
+.mini .prog i { display: block; height: 100%; background: var(--accent); width: 0; }
+
+/* now playing card */
+.scrim { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 30; }
+.card { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; background: var(--card); border-radius: 22px 22px 0 0; box-shadow: 0 -4px 30px rgba(0,0,0,.25);
+  transform: translateY(100%); touch-action: none; padding: 8px 24px 34px; display: flex; flex-direction: column; transition: height .25s ease; }
+.card.anim { transition: transform .28s ease, height .25s ease; }
+.grab { width: 40px; height: 5px; border-radius: 3px; background: var(--fill); margin: 0 auto 10px; flex: none; }
+.from { text-align: center; font-size: 12px; color: var(--label2); flex: none; min-height: 18px; }
+.cart { flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+.cart .art { width: 100%; max-width: 330px; aspect-ratio: 1; margin: 14px 0; flex: none; border-radius: 12px; } .cart .art svg { width: 30%; height: 30%; }
+.r3 { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; margin-top: 4px; }
+.r3 .nm { font-size: 24px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cloud { font-size: 24px; color: var(--accent); flex: none; display: block; width: 1em; height: 1em; opacity: var(--cloud-opacity); } .cloud.none { color: var(--label2); }
+.ci { font-size: 20px; color: var(--accent); flex: none; width: 1em; height: 1em; opacity: var(--cloud-opacity); } .ci.none { color: var(--label2); }
+.song.dim .t { opacity: .45; }
+.ci, .cloud { position: relative; cursor: pointer; } .ci::after, .cloud::after { content: ""; position: absolute; inset: -12px; }  /* 44 pt hit area around a ~20 pt glyph */
+.pl .ci { margin-left: auto; }
+:root { --destr: #d70015; } :root[data-theme="dark"] { --destr: #ff453a; }
+.dlgwrap { position: absolute; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; }
+.dlgwrap[hidden] { display: none; }
+.dscrim { position: absolute; inset: 0; background: rgba(0,0,0,.42); }
+.dlg { position: relative; width: 290px; background: var(--card); border-radius: 18px; overflow: hidden; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+.dlg .t { padding: 18px 16px 14px; } .dlg h5 { margin: 0 0 6px; font-size: 16px; } .dlg p { margin: 0; font-size: 12.5px; color: var(--label2); }
+.dlg button { display: block; width: 100%; min-height: 46px; border: 0; border-top: 1px solid var(--hair); background: none; font: inherit; font-size: 16px; color: var(--accent); cursor: pointer; }
+.dlg button.def { font-weight: 600; } .dlg button.destr { color: var(--destr); }
+.scrub { height: 28px; position: relative; margin-top: 12px; flex: none; cursor: pointer; }
+.scrub .t { position: absolute; left: 0; right: 0; top: 11px; height: 6px; border-radius: 3px; background: var(--fill); }
+.scrub .f { position: absolute; left: 0; top: 11px; height: 6px; border-radius: 3px; background: var(--accent); width: 0; }
+.scrub .k { position: absolute; top: 5px; width: 18px; height: 18px; border-radius: 50%; background: var(--label); margin-left: -9px; left: 0; }
+.times { display: flex; justify-content: space-between; font: 11px ui-monospace, "SF Mono", monospace; color: var(--label2); flex: none; }
+.ctl { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; flex: none; }
+.ctl button { background: none; border: 0; padding: 0; color: var(--label); width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center; font-size: 30px; cursor: pointer; }
+.ctl button.mode { font-size: 24px; color: var(--label2); } .ctl button.mode.on { color: var(--accent); }
+.ctl button.mode.on::after { content: ""; position: absolute; }
+.ctl button.big { width: 76px; height: 76px; padding: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 36px; }
+.toast { position: absolute; left: 24px; right: 24px; top: 70px; padding: 10px 14px; border-radius: 12px; background: var(--label); color: var(--bg); font-size: 13px; z-index: 70; opacity: 0; transition: opacity .2s; pointer-events: none; text-align: center; }
+.toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="pause" viewBox="0 0 24 24"><path d="M6.5 5h3.5v14H6.5zM14 5h3.5v14H14z"/></symbol>
+  <symbol id="next" viewBox="0 0 24 24"><path d="M5 5l10 7-10 7zM17 5h2.5v14H17z"/></symbol>
+  <symbol id="prev" viewBox="0 0 24 24"><path d="M19 5L9 12l10 7zM4.5 5H7v14H4.5z"/></symbol>
+  <symbol id="shuffle" viewBox="0 0 24 24"><path d="M3 7h3.5c3 0 4.5 10 8 10H21M3 17h3.5c1.5 0 2.5-1.8 3.5-3.5M13.5 9.5C14.5 8 15.5 7 17 7h4M18 4l3 3-3 3M18 14l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="repeat" viewBox="0 0 24 24"><path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="note" viewBox="0 0 24 24"><path d="M9 17V6l11-2v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="17.5" r="2.7"/><circle cx="17.5" cy="15.5" r="2.7"/></symbol>
+  <symbol id="wave" viewBox="0 0 24 24"><rect x="4" y="10" width="3.4" height="8" rx="1.2"/><rect x="10.3" y="5" width="3.4" height="14" rx="1.2"/><rect x="16.6" y="8" width="3.4" height="10" rx="1.2"/></symbol>
+  <symbol id="cloud" viewBox="0 0 24 24"><path d="M7 19a4.5 4.5 0 0 1-.9-8.9A6 6 0 0 1 17.6 9 5 5 0 0 1 17.5 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="cloud-x" viewBox="0 0 24 24"><path d="M7 19a4.5 4.5 0 0 1-.9-8.9A6 6 0 0 1 17.6 9 5 5 0 0 1 17.5 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 4l16 16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="side">
+  <h1>Playaway iPhone, take 2</h1>
+  <p>Interactive mockup following your Spotify-style brief. HTML, not an iOS render.</p>
+  <ul>
+    <li><b>Tap a song</b> or the round start button to play.</li>
+    <li><b>Drag the player bar up</b> and the card follows your pointer; let go and it settles fully open (or back closed if you barely moved it). <b>Drag the card down</b> the same way to close it. It never rests half open. Tapping the bar also opens it. It never closes any other way: change song, navigate or skip with it open.</li>
+    <li>A song <b>with artwork</b> opens a full card. One <b>without</b> opens a card that is only as tall as its rows, with the playlist still visible above.</li>
+    <li>Songs differ on purpose: artwork or none, artist and album or none, three cloud icons: crossed-out = this phone only, outline = in iCloud, pie = downloading. Kettle Song starts as in iCloud but not downloaded: tap it and watch the pie. Its first download fails at about 55%: the icon becomes an exclamation mark, tap it to retry (the retry succeeds).</li>
+    <li>The scrubber is draggable. Previous, Next, Shuffle and Repeat work.</li>
+    <li><b>The cloud icon is the control.</b> Tap a crossed-out cloud on a playlist (Playlists screen, right side) or on a song: a dialog asks Move / Copy / Cancel (playlists: Move / Cancel). Choosing one shows the pie, then the outline cloud. Tap the pie to cancel: a sync returns to crossed-out. Tapping an outline cloud does nothing. The playlist screen itself has no playlist icon.</li>
+    <li>Only Morning has songs. Tap <b>+</b> inside it.</li>
+  </ul>
+  <p><button id="theme">Toggle dark / light</button><button id="reset">Reset</button></p>
+  <p id="legend"></p>
+</div>
+
+<div class="phone" id="phone">
+  <div class="notch"></div>
+  <div class="sb"><span>9:41</span><span>●●●</span></div>
+  <div class="stack">
+    <div class="pane" id="p-lists">
+      <div class="big">Playlists</div>
+      <div id="pls"></div>
+    </div>
+    <div class="pane right" id="p-list">
+      <div class="nav"><button id="back"><svg class="i"><use href="#back"/></svg>Playlists</button><button id="add" aria-label="Add Songs"><svg class="i"><use href="#plus"/></svg></button></div>
+      <div class="head"><div><h2>Morning</h2><div class="cnt">5 songs</div></div><button class="start" id="start" aria-label="Start playlist"><svg class="i"><use href="#play"/></svg></button></div>
+      <div id="songs"></div>
+    </div>
+    <div class="mini" id="mini" hidden>
+      <div id="m-art"></div>
+      <div class="t"><div class="tt" id="m-t"></div><div class="ar" id="m-a"></div></div>
+      <button class="pp" id="m-pp" aria-label="Play or pause"><svg class="i"><use href="#pause"/></svg></button>
+      <div class="prog"><i id="m-prog"></i></div>
+    </div>
+    <div class="scrim" id="scrim"></div>
+    <div class="card half" id="card">
+      <div class="grab"></div>
+      <div class="from" id="c-from"></div>
+      <div class="cart" id="c-art"></div>
+      <div class="r3"><div class="nm" id="c-t"></div><span class="cloud" id="c-cloud" data-nodrag></span></div>
+      <div class="scrub" id="scrub" data-nodrag><div class="t"></div><div class="f" id="s-f"></div><div class="k" id="s-k"></div></div>
+      <div class="times"><span id="s-now">0:00</span><span id="s-left">-0:00</span></div>
+      <div class="ctl" data-nodrag>
+        <button class="mode" id="b-shuf" aria-label="Shuffle"><svg class="i"><use href="#shuffle"/></svg></button>
+        <button id="b-prev" aria-label="Previous"><svg class="i"><use href="#prev"/></svg></button>
+        <button class="big" id="b-pp" aria-label="Play or pause"><svg class="i"><use href="#pause"/></svg></button>
+        <button id="b-next" aria-label="Next"><svg class="i"><use href="#next"/></svg></button>
+        <button class="mode" id="b-rep" aria-label="Repeat"><svg class="i"><use href="#repeat"/></svg></button>
+      </div>
+    </div>
+  </div>
+  <div class="dlgwrap" id="dlg" hidden><div class="dscrim"></div><div class="dlg"><div class="t"><h5 id="d-t"></h5><p id="d-b"></p></div><div id="d-btns"></div></div></div>
+  <div class="toast" id="toast"></div>
+  <div class="hbar"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const card = $("card"), scrim = $("scrim"), mini = $("mini");
+const PLAYLIST = "Morning";
+const SONGS = [
+  { t: "Sunrise Drive", artist: "Alba Moon", album: "Early Light", art: ["#ff9a5a", "#d6336c"], cloud: "in", dur: 204 },
+  { t: "track2.mp3", art: null, cloud: "none", dur: 178 },
+  { t: "Kettle Song", artist: "Alba Moon", art: ["#3bb2b8", "#1d4e89"], cloud: "evicted", failAt: 55, dur: 245 },
+  { t: "Late Bus", artist: "Fen", album: "Night Routes", art: null, cloud: "in", dur: 192 },
+  { t: "track5.m4a", art: ["#7b61ff", "#2b1a66"], cloud: "none", dur: 160 },
+];
+const CLOUD_LABEL = { in: "In iCloud, on this phone", none: "Not in iCloud: this phone only", evicted: "In iCloud, not downloaded yet", dl: "Downloading from iCloud", sync: "Syncing to iCloud", fail: "Download failed: tap to retry" };
+const ORIGINAL = SONGS.map(s => s.cloud), ORIGINAL_FAIL = SONGS.map(s => s.failAt);
+const DOWNLOAD_TICK_MS = 100, DOWNLOAD_STEP_PCT = 4, FULL_PCT = 100, PIE_R = 9, PIE_C = 12;
+/* Three icons: crossed-out cloud = local only; outline cloud = in iCloud; pie = downloading after an attempt to play. */
+function pie(pct) {
+  const a = Math.min(pct, FULL_PCT - .1) / FULL_PCT * 2 * Math.PI, x = PIE_C + PIE_R * Math.sin(a), y = PIE_C - PIE_R * Math.cos(a);
+  return `<svg viewBox="0 0 24 24" class="i"><circle cx="${PIE_C}" cy="${PIE_C}" r="${PIE_R}" fill="none" stroke="currentColor" stroke-width="2"/><path d="M${PIE_C} ${PIE_C} L${PIE_C} ${PIE_C - PIE_R} A${PIE_R} ${PIE_R} 0 ${a > Math.PI ? 1 : 0} 1 ${x} ${y} Z" fill="currentColor"/></svg>`;
+}
+const bang = `<svg viewBox="0 0 24 24" class="i"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.3" fill="currentColor"/></svg>`;
+const iconHtml = s => s.cloud === "fail" ? bang : s.cloud === "dl" || s.cloud === "sync" ? pie(s.pct) : `<svg class="i"><use href="#${s.cloud === "none" ? "cloud-x" : "cloud"}"/></svg>`;
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const sub = s => [s.artist, s.album].filter(Boolean).join(" · ");
+const artHtml = (s, size) => s.art
+  ? `<div class="art" style="width:${size}px;height:${size}px;background:linear-gradient(135deg,${s.art[0]},${s.art[1]})"><svg class="i"><use href="#note"/></svg></div>` : "";
+
+let cur = -1, pos = 0, playing = false, shuffle = false, repeat = false, p = 0;
+const st = (k, v) => { try { return v === undefined ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch (e) { return null; } };
+
+/* theme */
+const root = document.documentElement;
+root.dataset.theme = st("pw-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+$("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; st("pw-theme", root.dataset.theme); };
+
+/* playlists: the cloud icon is both status and control */
+const PLAYLISTS = [
+  { n: "Morning", m: "Playlist · 5 songs", cloud: "in", open: true },
+  { n: "Dinner", m: "Playlist · 12 songs", cloud: "none" },
+  { n: "Run", m: "Playlist · 8 songs", cloud: "none" },
+];
+const PLAYLIST_ORIGINAL = PLAYLISTS.map(p => p.cloud);
+function renderPlaylists() {
+  $("pls").innerHTML = PLAYLISTS.map((q, k) => `<div class="pl" data-k="${k}"><div class="ic"><svg class="i"><use href="#note"/></svg></div><div><div class="n">${q.n}</div><div class="m">${q.m}</div></div><span class="ci ${q.cloud === "none" ? "none" : ""}" aria-label="${CLOUD_LABEL[q.cloud]}">${iconHtml(q)}</span></div>`).join("");
+}
+$("pls").onclick = e => {
+  const row = e.target.closest(".pl"); if (!row) return; const k = +row.dataset.k, q = PLAYLISTS[k];
+  if (e.target.closest(".ci")) return tapPlaylistIcon(k);
+  if (q.open) { $("p-lists").classList.add("left"); $("p-list").classList.remove("right"); } else toast("Mockup: only Morning has songs");
+};
+function ask(title, body, buttons) {
+  return new Promise(res => {
+    $("d-t").textContent = title; $("d-b").textContent = body;
+    $("d-btns").innerHTML = buttons.map((b, i) => `<button class="${b.kind || ""}" data-i="${i}">${b.label}</button>`).join("");
+    $("d-btns").onclick = e => { const b = e.target.closest("button"); if (!b) return; $("dlg").hidden = true; res(buttons[+b.dataset.i].value); };
+    $("dlg").hidden = false;
+  });
+}
+const timers = {};
+const DIALOG_FILES = ["Sync with iCloud: Files", "Put this song in iCloud so it is on your other devices?"];
+const DIALOG_PLAYLIST = ["Sync with iCloud: Playlist", "Move this playlist into the Playaway folder in iCloud Drive so it is on your other devices?"];
+/* Tap rules: crossed-out opens the dialog; syncing (pie) cancels back to crossed-out; downloading (pie) cancels (back to dimmed outline: my inference, owner has not decided); outline does nothing. */
+async function tapSongIcon(i) {
+  const s = SONGS[i];
+  if (s.cloud === "none") {
+    const a = await ask(...DIALOG_FILES, [{ label: "Move to iCloud", value: "move", kind: "destr" }, { label: "Copy to iCloud", value: "copy", kind: "def" }, { label: "Cancel", value: "cancel" }]);
+    if (a !== "cancel") runProgress("s" + i, s, "sync", refresh, refresh);
+  } else if (s.cloud === "sync") cancelProgress("s" + i, s, "none", refresh);
+  else if (s.cloud === "dl") cancelProgress("s" + i, s, "evicted", refresh);
+  else if (s.cloud === "fail") startDownload(i);   /* the exclamation mark: tap retries the download */
+}
+async function tapPlaylistIcon(k) {
+  const q = PLAYLISTS[k];
+  if (q.cloud === "none") {
+    const a = await ask(...DIALOG_PLAYLIST, [{ label: "Move to iCloud", value: "move", kind: "def" }, { label: "Cancel", value: "cancel" }]);
+    if (a !== "cancel") runProgress("p" + k, q, "sync", renderPlaylists, renderPlaylists);
+  } else if (q.cloud === "sync") cancelProgress("p" + k, q, "none", renderPlaylists);
+}
+function runProgress(key, obj, kind, onTick, onDone) {
+  clearInterval(timers[key]); obj.cloud = kind; obj.pct = 0;
+  timers[key] = setInterval(() => {
+    obj.pct += DOWNLOAD_STEP_PCT;
+    if (obj.failAt && obj.pct >= obj.failAt) { clearInterval(timers[key]); obj.cloud = "fail"; obj.failAt = null; onTick(); return; }
+    if (obj.pct >= FULL_PCT) { clearInterval(timers[key]); obj.cloud = "in"; onDone(); } else onTick();
+  }, DOWNLOAD_TICK_MS);
+  onTick();
+}
+function cancelProgress(key, obj, backTo, after) { clearInterval(timers[key]); obj.cloud = backTo; after(); }
+function refresh() { renderSongs(); if (cur >= 0) paintCardCloud(); }
+$("c-cloud").onclick = () => { if (cur >= 0) tapSongIcon(cur); };
+
+/* list */
+function renderSongs() {
+  $("songs").innerHTML = SONGS.map((s, i) => `<div class="song${i === cur ? " now" : ""}${["evicted", "dl", "fail"].includes(s.cloud) ? " dim" : ""}" data-i="${i}">
+    <div class="t"><div class="tt">${s.t}</div>${sub(s) ? `<div class="ar">${sub(s)}</div>` : ""}</div>
+    ${i === cur && playing ? '<svg class="i eq"><use href="#wave"/></svg>' : ""}<span class="ci ${s.cloud === "none" ? "none" : ""}" aria-label="${CLOUD_LABEL[s.cloud]}">${iconHtml(s)}</span></div>`).join("");
+}
+$("songs").onclick = e => { const r = e.target.closest(".song"); if (!r) return; if (e.target.closest(".ci")) tapSongIcon(+r.dataset.i); else play(+r.dataset.i); };
+$("start").onclick = () => cur >= 0 ? toggle() : play(shuffle ? Math.floor(Math.random() * SONGS.length) : 0);
+function paintStart() { const on = cur >= 0 && playing; $("start").innerHTML = `<svg class="i"><use href="#${on ? "pause" : "play"}"/></svg>`; $("start").setAttribute("aria-label", on ? "Pause playlist" : cur >= 0 ? "Resume playlist" : "Start playlist"); }
+$("back").onclick = () => { $("p-lists").classList.remove("left"); $("p-list").classList.add("right"); };
+$("add").onclick = () => toast("Add Songs: opens the Files chooser");
+
+let tt;
+function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 1800); }
+
+/* playback (simulated clock) */
+function startDownload(i) {
+  const s = SONGS[i]; if (s.cloud === "dl") return;
+  runProgress("s" + i, s, "dl", refresh, () => { if (cur === i) { playing = true; pos = 0; } sync(); });
+}
+function play(i) {
+  cur = i; pos = 0; $("mini").hidden = false;
+  if (SONGS[i].cloud === "evicted" || SONGS[i].cloud === "fail") { playing = false; startDownload(i); } else playing = SONGS[i].cloud !== "dl";
+  sync();
+}
+function paintCardCloud() { const s = SONGS[cur], c = $("c-cloud"); c.className = "cloud " + (s.cloud === "none" ? "none" : ""); c.innerHTML = iconHtml(s); c.setAttribute("aria-label", CLOUD_LABEL[s.cloud]); }
+function next(auto) {
+  if (shuffle) { let j; do { j = Math.floor(Math.random() * SONGS.length); } while (SONGS.length > 1 && j === cur); return play(j); }
+  if (cur + 1 < SONGS.length) return play(cur + 1);
+  if (repeat) return play(0);
+  if (auto) { playing = false; pos = SONGS[cur].dur; sync(); } else play(cur);
+}
+function prev() { if (pos > 3 || cur === 0) { pos = 0; sync(); } else play(cur - 1); }
+function toggle() { if (cur < 0 || ["dl", "fail"].includes(SONGS[cur].cloud)) return; if (!playing && pos >= SONGS[cur].dur) pos = 0; playing = !playing; sync(); }
+setInterval(() => { if (!playing || cur < 0) return; pos += .25; if (pos >= SONGS[cur].dur) next(true); else paint(); }, 250);
+
+function paint() {
+  if (cur < 0) return; const s = SONGS[cur], f = pos / s.dur;
+  $("m-prog").style.width = f * 100 + "%"; $("s-f").style.width = f * 100 + "%";
+  $("s-k").style.left = f * 100 + "%"; $("s-now").textContent = fmt(pos); $("s-left").textContent = "-" + fmt(s.dur - pos);
+}
+/* Full card for artwork, content-height card without. Heights are set in px so the change animates. */
+function fitCard(full) {
+  const prev = card.offsetHeight;
+  card.classList.toggle("full", full); card.classList.toggle("half", !full);
+  card.style.transition = "none"; card.style.height = "auto";
+  const cart = $("c-art"); cart.style.display = "none";   /* measure without the artwork area */
+  const target = full ? card.parentElement.clientHeight - 6 : card.offsetHeight;
+  cart.style.display = "";
+  card.style.height = prev + "px"; card.offsetHeight; card.style.transition = "";
+  card.style.height = target + "px";
+}
+function sync() {
+  if (cur < 0) return; const s = SONGS[cur], ic = playing ? "#pause" : "#play";
+  $("m-art").innerHTML = artHtml(s, 44);
+  $("m-t").textContent = s.t; $("m-a").textContent = sub(s); $("m-a").style.display = sub(s) ? "" : "none";
+  $("m-pp").innerHTML = `<svg class="i"><use href="${ic}"/></svg>`; $("b-pp").innerHTML = `<svg class="i"><use href="${ic}"/></svg>`;
+  $("c-from").textContent = PLAYLIST; $("c-t").textContent = s.t;
+  /* Only the card's top edge moves: the artwork stays put and is uncovered or covered, so keep it until the card has shrunk. */
+  clearTimeout(artTimer);
+  if (s.art) $("c-art").innerHTML = `<div class="art" style="background:linear-gradient(135deg,${s.art[0]},${s.art[1]})"><svg class="i"><use href="#note"/></svg></div>`;
+  else artTimer = setTimeout(() => { if (!SONGS[cur].art) $("c-art").innerHTML = ""; }, ART_CLEAR_MS);
+  paintCardCloud();
+  fitCard(!!s.art);
+  $("b-shuf").classList.toggle("on", shuffle); $("b-rep").classList.toggle("on", repeat);
+  $("legend").textContent = `Now: ${s.t} · artwork ${s.art ? "yes (full card)" : "no (short card)"} · ${CLOUD_LABEL[s.cloud]}`;
+  renderSongs(); paintStart(); paint(); setP(p);
+}
+$("m-pp").onclick = e => { e.stopPropagation(); toggle(); };
+$("m-pp").onpointerdown = e => e.stopPropagation();
+$("b-pp").onclick = toggle; $("b-next").onclick = () => next(false); $("b-prev").onclick = prev;
+$("b-shuf").onclick = () => { shuffle = !shuffle; sync(); }; $("b-rep").onclick = () => { repeat = !repeat; sync(); };
+
+/* scrubber */
+const scrub = $("scrub");
+function seek(e) { const r = scrub.getBoundingClientRect(); pos = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * SONGS[cur].dur; paint(); }
+scrub.onpointerdown = e => { scrub.setPointerCapture(e.pointerId); seek(e); scrub.onpointermove = seek; };
+scrub.onpointerup = () => { scrub.onpointermove = null; };
+
+/* card position: p = 0 closed, 1 open. Drag simulates the swipe. */
+function setP(v) {
+  p = Math.max(0, Math.min(1, v));
+  card.style.transform = `translateY(${(1 - p) * 100}%)`;
+  }
+function settle(open) { card.classList.add("anim"); setP(open ? 1 : 0); setTimeout(() => card.classList.remove("anim"), 300); }
+/* The card follows the pointer while it is held, and on release always settles fully open or fully closed. */
+const ART_CLEAR_MS = 400; let artTimer;
+const TAP_SLOP_PX = 6, SNAP_DISTANCE_PX = 80, FLICK_PX_PER_MS = 0.4;
+function swipe(el, opens, ok) {
+  el.addEventListener("pointerdown", e => {
+    if (ok && !ok(e)) return;
+    const y0 = e.clientY, p0 = opens ? 0 : 1, t0 = performance.now(); let moved = false, ended = false;
+    el.setPointerCapture(e.pointerId);
+    const mv = ev => {
+      const dy = ev.clientY - y0;
+      if (Math.abs(dy) > TAP_SLOP_PX) moved = true;
+      if (moved) { card.classList.remove("anim"); setP(p0 - dy / card.offsetHeight); }
+    };
+    const up = ev => {
+      if (ended) return; ended = true;
+      el.removeEventListener("pointermove", mv); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
+      const dy = ev.clientY - y0, flick = -dy / Math.max(1, performance.now() - t0);
+      if (!moved) return opens ? settle(true) : null;
+      if (opens) settle(-dy >= SNAP_DISTANCE_PX || flick >= FLICK_PX_PER_MS);
+      else settle(!(dy >= SNAP_DISTANCE_PX || flick <= -FLICK_PX_PER_MS));
+    };
+    el.addEventListener("pointermove", mv); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
+  });
+}
+swipe(mini, true);
+swipe(card, false, e => !e.target.closest("[data-nodrag]"));
+
+$("reset").onclick = () => { Object.values(timers).forEach(clearInterval); SONGS.forEach((s, i) => { s.cloud = ORIGINAL[i]; s.failAt = ORIGINAL_FAIL[i]; }); PLAYLISTS.forEach((q, k) => q.cloud = PLAYLIST_ORIGINAL[k]); renderPlaylists(); playing = false; cur = -1; pos = 0; p = 0; mini.hidden = true; setP(0); renderSongs(); paintStart(); $("legend").textContent = ""; };
+renderPlaylists(); renderSongs(); setP(0);
+</script>
+</body>
+</html>

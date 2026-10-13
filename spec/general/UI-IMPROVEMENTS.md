@@ -152,3 +152,74 @@ I did not build or test any of this. From reading the code: the pure logic (`Adv
 - Dynamic Type for titles and rows; the Now Playing layout must survive the largest sizes.
 - VoiceOver: the seek bar is an adjustable element announcing "1 minute 12 of 3 minutes"; the playing marker is spoken ("playing").
 - Haptic tick on Shuffle and Repeat toggles; nothing animates under Reduce Motion.
+
+## iPhone UI review (second pass, against the iOS and iCloud stories)
+
+Scope: the three phone frames in `ui-mockups.html` (Playlists, one playlist, Now Playing) and the iPhone section above, checked against Ceetrix epics `ios-iphone` (stories 23 to 29) and `icloud-sync` (stories 18 to 22). Reviewed from the rendered HTML and its CSS. Not tested on a device or in a simulator, and not checked in Dark Mode (the mockup has none).
+
+### Critical Issues
+
+#### Issue: The owner's iCloud requirements have no visual design
+**Current State**: None of the three frames shows the sync cloud icon by the playlist name, the per-song cloud icon, the "Sync with iCloud: Playlist" and "Sync with iCloud: Files" interstitials, the "x files ... copies were placed on iCloud, NOT moved" box, or any not-downloaded state.
+**Problem**: Sync is on by default on iPhone (story 26), so these controls are the most common new surface, and they have no home. The row currently has a leading playing marker, and rows need a trailing cloud state plus the missing and downloading states from story 25. The large title has no slot for a cloud toggle.
+**Recommendation**: Design these before building: where the toggle goes (navigation bar trailing item, next to Edit, is the iOS convention; the Mac puts it beside the title), the trailing row layout with three trailing states (in iCloud, not in iCloud, downloading/missing), and the three interstitials as native alerts or a sheet with one default action.
+**Impact**: Avoids building the iPhone UI twice.
+**Implementation Notes**: Cloud state must not rely on colour alone (crossed-out versus plain glyph, plus a VoiceOver label); this is already a requirement in stories 18 and 20.
+
+#### Issue: Repeat has three states but the mockup shows two
+**Current State**: Now Playing shows one Repeat icon, tinted or not (as Shuffle).
+**Problem**: The spec has Repeat off, all and one. A tint cannot show all versus one, and it fails for anyone who cannot distinguish the tint.
+**Recommendation**: Use distinct glyphs (repeat, repeat with a badge for one) and speak the state ("Repeat: all").
+**Impact**: Removes an ambiguity that exists nowhere else on the screen.
+
+### High Priority Improvements
+
+#### Issue: The accent is a fixed hex, not the system tint
+**Current State**: Every interactive element uses `#0a6cff`. White on it measures 4.56:1 and the accent on white measures 4.56:1; the Shuffle label on its tinted background measures 3.98:1.
+**Problem**: The Play circle and nav links only just clear 4.5:1 for text, and the tinted Shuffle label at 15 pt semibold does not clear it. A hard-coded value ignores the user's chosen accent, Increase Contrast and Dark Mode.
+**Recommendation**: Use the system tint and semantic colours in the build, and define only a single named accent in the design. Check the Shuffle label on its tinted background; use a plain tint with the system fill, or darken the label.
+**Impact**: Contrast holds in Dark Mode and with Increase Contrast, and the app follows the user's accent.
+
+#### Issue: Tertiary grey carries information
+**Current State**: `label3` (`#a1a1a6`) is 2.57:1 on white and is used for the Mac's Stop glyph and the volume fill. On iPhone the 11 pt monospaced time labels use secondary grey (5.07:1), which passes, but they are 11 pt.
+**Problem**: Anything informational in the tertiary grey fails; 11 pt is below the iOS caption size and does not scale if drawn at a fixed size.
+**Recommendation**: Use the system Dynamic Type caption style for the times; reserve the tertiary grey for decoration only.
+**Impact**: Readable at the default size and when scaled.
+
+#### Issue: Now Playing will not fit at large text sizes
+**Current State**: A full-width square artwork placeholder, then title, seek bar, a 76 pt Play circle, then toggles, all in one 620 pt frame.
+**Problem**: At the largest accessibility sizes, and on the smallest iPhones, the controls are pushed off screen. The artwork is a decorative lavender gradient with a note glyph for files that usually have no artwork, which spends the most space on the least information.
+**Recommendation**: Cap the artwork height and hide it at accessibility sizes; show embedded artwork when it exists, a plain system fill otherwise. Test the layout at the largest Dynamic Type size on the smallest supported device.
+**Impact**: The primary controls stay reachable for everyone.
+
+### Medium Priority Enhancements
+
+#### Issue: No route picker
+**Current State**: Now Playing has no AirPlay or output-route control.
+**Problem**: With no in-app volume slider (the proposal's choice), the route button is the only audio control that remains, and iPhone players are expected to have it.
+**Recommendation**: Add the system route picker beside the toggles.
+**Impact**: Matches the platform convention.
+
+#### Issue: Two different "+" actions
+**Current State**: "+" on Playlists creates a playlist; "+" on a playlist adds files.
+**Problem**: The same glyph in the same position means different things on adjacent screens.
+**Recommendation**: Label the second one ("Add Songs") or use a menu with the document picker as one item.
+**Impact**: Fewer mistaken taps and clearer VoiceOver.
+
+#### Issue: Landscape and small phones are not shown
+**Current State**: Portrait on one frame size.
+**Problem**: The spec requires nothing about landscape, and the mini player plus the home indicator take a fixed slice of a short screen.
+**Recommendation**: State whether landscape is supported; if so, show it.
+**Impact**: Closes an open question before it becomes a bug.
+
+### Low Priority Suggestions
+
+- The mini player progress line is 2 pt; keep it decorative and make sure the seek bar is the only draggable control.
+- State what a tap on a playing row does (restart or no-op).
+
+### Positive Observations
+
+- One dominant action (filled Play) with Previous and Next secondary, which keeps the hierarchy clear on both platforms.
+- The playing row pairs a marker with weight and colour, so colour is not the only signal. Selecting and playing are separate states.
+- The decision to drop Stop and the in-app volume slider is explained and matches how iPhone players work, but it conflicts with the owner's "UI almost the same", which the owner should confirm.
+- Touch targets are specified at 44 pt or more, and VoiceOver wording is considered.

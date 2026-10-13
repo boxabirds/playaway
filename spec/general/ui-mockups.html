@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LocalPlayer UI Proposal</title>
+<title>Playaway UI Proposal</title>
 <style>
 :root {
   --accent: #0a6cff; --accent-soft: rgba(10,108,255,.12);
@@ -83,6 +83,28 @@ svg.i { width: 1em; height: 1em; display: block; fill: currentColor; }
 .sheet .modes { display: flex; justify-content: space-between; padding: 22px 30px 0; } .sheet .modes .b { width: 48px; height: 48px; font-size: 24px; }
 .legend { max-width: 860px; margin-top: 8px; } .legend li { margin: 4px 0; }
 code { background: var(--fill); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+/* ---------- iPhone v2 (iCloud, bottom controls) ---------- */
+.nav .acts { display: flex; gap: 18px; align-items: center; } .nav .acts svg { font-size: 22px; }
+.nav .cloud-off { color: var(--label2); }
+.ir .cl { margin-left: auto; font-size: 18px; color: var(--accent); }
+.ir .cl.none { color: var(--label2); }
+.ir.dim .nm, .ir.dim .g { opacity: .45; } .ir.dim .cl { opacity: .6; }
+.ir .nm { flex: 1; }
+.bar { position: absolute; left: 8px; right: 8px; bottom: 96px; height: 44px; display: flex; align-items: center; padding: 0 14px; background: rgba(245,245,247,.92); border-radius: 22px; box-shadow: 0 1px 8px rgba(0,0,0,.12); color: var(--accent); font-weight: 600; font-size: 15px; gap: 6px; }
+.bar svg { font-size: 18px; }
+.sheet2 { height: calc(100% - 44px); display: flex; flex-direction: column; text-align: center; padding: 0 24px 36px; }
+.sheet2 .art { flex: 1; width: 100%; aspect-ratio: auto; max-height: 150px; margin-bottom: 10px; }
+.sheet2 .push { flex: 1; }
+.sheet2 .ctl { padding: 10px 0 0; grid-template-columns: 1fr; } .sheet2 .c { justify-content: center; gap: 30px; }
+.sheet2 .b.big { font-size: 34px; width: 56px; height: 56px; } .sheet2 .b.play { width: 76px; height: 76px; font-size: 34px; }
+.sheet2 .modes { display: flex; justify-content: space-between; padding: 14px 30px 0; } .sheet2 .modes .b { width: 44px; height: 44px; font-size: 22px; }
+.sheet2 h4 { margin: 0; font-size: 21px; } .sheet2 .sub { color: var(--label2); font-size: 13px; }
+.sheet2 .scrub { margin-top: 12px; height: 28px; } .sheet2 .scrub .t, .sheet2 .scrub .f { top: 12px; height: 6px; } .sheet2 .scrub .k { top: 6px; width: 18px; height: 18px; left: calc(38% - 9px); }
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.38); }
+.dlg { position: absolute; left: 20px; right: 20px; top: 150px; background: rgba(250,250,252,.97); border-radius: 18px; overflow: hidden; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+.dlg .t { padding: 18px 16px 12px; } .dlg h5 { margin: 0 0 6px; font-size: 16px; } .dlg p { margin: 0; font-size: 12.5px; color: var(--label2); }
+.dlg .bt { height: 46px; display: grid; place-items: center; border-top: 1px solid var(--hair); font-size: 16px; color: var(--accent); }
+.dlg .bt.def { font-weight: 600; } .dlg .bt.destr { color: #d70015; }
 </style>
 </head>
 <body>
@@ -98,9 +120,12 @@ code { background: var(--fill); padding: 1px 5px; border-radius: 4px; font-size:
   <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
   <symbol id="wave" viewBox="0 0 24 24"><rect x="4" y="10" width="3.4" height="8" rx="1.2"/><rect x="10.3" y="5" width="3.4" height="14" rx="1.2"/><rect x="16.6" y="8" width="3.4" height="10" rx="1.2"/></symbol>
   <symbol id="note" viewBox="0 0 24 24"><path d="M9 17V6l11-2v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="17.5" r="2.7"/><circle cx="17.5" cy="15.5" r="2.7"/></symbol>
+  <symbol id="cloud" viewBox="0 0 24 24"><path d="M7 19a4.5 4.5 0 0 1-.9-8.9A6 6 0 0 1 17.6 9 5 5 0 0 1 17.5 19z"/></symbol>
+  <symbol id="cloud-o" viewBox="0 0 24 24"><path d="M7 19a4.5 4.5 0 0 1-.9-8.9A6 6 0 0 1 17.6 9 5 5 0 0 1 17.5 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="cloud-x" viewBox="0 0 24 24"><path d="M7 19a4.5 4.5 0 0 1-.9-8.9A6 6 0 0 1 17.6 9 5 5 0 0 1 17.5 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 4l16 16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
 </svg>
 
-<h1>LocalPlayer UI proposal</h1>
+<h1>Playaway UI proposal</h1>
 <p class="lead">Left: the real playlist window today (screenshot of the running app, playing track 2 of 5). Right: the proposed layout. Mockups are HTML, drawn to show hierarchy, sizes and spacing; they are not pixel-exact AppKit renders.</p>
 
 <h2>1. macOS playlist window</h2>
@@ -161,8 +186,8 @@ code { background: var(--fill); padding: 1px 5px; border-radius: 4px; font-size:
   <figcaption>Selecting a row (to remove it) and playing a row are different states and must look different. Marker and weight carry "playing", so colour is not the only signal.</figcaption>
 </figure></div>
 
-<h2>2. iPhone proposal</h2>
-<p class="lead">Portrait. Three screens: the list of playlists, one playlist with a docked mini player, and the full Now Playing sheet that rises from the mini player.</p>
+<h2>2. iPhone proposal (Playaway)</h2>
+<p class="lead">Portrait, updated for the iCloud stories and the Apple HIG review (owner decisions 2026-10-13). Playback controls sit at the bottom of the screen. Play and Shuffle stay at the top of a playlist as list actions. Add Songs is a labelled button in a bottom toolbar. The sync button sits beside Edit. The accent is system blue, darkened to pass contrast; the dialog wording is illustrative, the stories own the exact text.</p>
 <div class="row">
   <figure>
     <div class="phone"><div class="notch"></div>
@@ -175,33 +200,35 @@ code { background: var(--fill); padding: 1px 5px; border-radius: 4px; font-size:
       <div class="mini"><svg class="i" style="font-size:24px;color:var(--accent)"><use href="#wave"/></svg><div class="t">track2<small>Morning</small></div><button class="b"><svg class="i"><use href="#pause"/></svg></button><button class="b"><svg class="i"><use href="#next"/></svg></button><div class="prog"></div></div>
       <div class="hbar"></div>
     </div>
-    <figcaption><b>Playlists.</b> Files-based documents. Large title, one row per playlist. The playing playlist is marked.</figcaption>
+    <figcaption><b>Playlists.</b> "+" is New Playlist. The player bar sits in the bottom system slot (unverified, spike 23.15).</figcaption>
   </figure>
 
   <figure>
     <div class="phone"><div class="notch"></div>
       <div class="sb"><span>9:41</span><span>●●●</span></div>
-      <div class="nav"><span>‹ Playlists</span><span>Edit</span></div>
+      <div class="nav"><span>‹ Playlists</span><span class="acts"><svg class="i" aria-label="iCloud sync on"><use href="#cloud"/></svg><span>Edit</span></span></div>
       <div class="lt">Morning</div>
       <div class="hdrbtns"><div class="hb fill"><svg class="i"><use href="#play"/></svg>Play</div><div class="hb"><svg class="i"><use href="#shuffle"/></svg>Shuffle</div></div>
-      <div class="ir"><span class="g"></span>track1</div>
-      <div class="ir now"><span class="g"><svg class="i"><use href="#wave"/></svg></span>track2</div>
-      <div class="ir"><span class="g"></span>track3</div>
-      <div class="ir"><span class="g"></span>track4</div>
-      <div class="ir"><span class="g"></span>track5</div>
+      <div class="ir"><span class="g"></span><span class="nm">track1</span><svg class="i cl"><use href="#cloud"/></svg></div>
+      <div class="ir now"><span class="g"><svg class="i"><use href="#wave"/></svg></span><span class="nm">track2</span><svg class="i cl"><use href="#cloud"/></svg></div>
+      <div class="ir"><span class="g"></span><span class="nm">track3</span><svg class="i cl"><use href="#cloud"/></svg></div>
+      <div class="ir"><span class="g"></span><span class="nm">track4</span><svg class="i cl none"><use href="#cloud-x"/></svg></div>
+      <div class="ir dim"><span class="g"></span><span class="nm">track5</span><svg class="i cl"><use href="#cloud"/></svg></div>
+      <div class="bar"><svg class="i"><use href="#plus"/></svg>Add Songs</div>
       <div class="mini"><svg class="i" style="font-size:24px;color:var(--accent)"><use href="#wave"/></svg><div class="t">track2<small>Morning</small></div><button class="b"><svg class="i"><use href="#pause"/></svg></button><button class="b"><svg class="i"><use href="#next"/></svg></button><div class="prog"></div></div>
       <div class="hbar"></div>
     </div>
-    <figcaption><b>One playlist.</b> Big Play and Shuffle at the top. Tap a row to play it. Swipe a row to remove it; Edit reorders.</figcaption>
+    <figcaption><b>A synced playlist.</b> Filled cloud beside Edit = sync on. Row clouds: in iCloud; crossed out = added without syncing (track4); dimmed = in iCloud but not on this phone yet (track5). Add Songs is a labelled button above the player bar.</figcaption>
   </figure>
 
   <figure>
     <div class="phone"><div class="notch"></div>
       <div class="sb"><span>9:41</span><span>●●●</span></div>
-      <div class="sheet">
-        <div class="grab"></div>
+      <div class="sheet2">
+        <div class="grab" style="margin:6px auto 14px"></div>
         <div class="art"><svg class="i"><use href="#note"/></svg></div>
         <h4>track2</h4><div class="sub">Track 2 of 5 · Morning</div>
+        <div class="push"></div>
         <div class="scrub"><div class="t"></div><div class="f"></div><div class="k"></div></div>
         <div class="times"><span>0:03</span><span>-0:27</span></div>
         <div class="ctl"><div class="c">
@@ -213,7 +240,39 @@ code { background: var(--fill); padding: 1px 5px; border-radius: 4px; font-size:
       </div>
       <div class="hbar"></div>
     </div>
-    <figcaption><b>Now Playing.</b> Drag down to dismiss. Volume is the hardware buttons and system control, so there is no volume slider. No Stop button.</figcaption>
+    <figcaption><b>Now Playing.</b> Seek and transport are in the lower half, within thumb reach. Play is the system prominent style with a glyph held to 4.5:1. Volume is the hardware buttons; no Stop.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="phone"><div class="notch"></div>
+      <div class="sb"><span>9:41</span><span>●●●</span></div>
+      <div class="nav"><span>‹ Playlists</span><span class="acts"><svg class="i cloud-off"><use href="#cloud-o"/></svg><span>Edit</span></span></div>
+      <div class="lt">Morning</div>
+      <div class="hdrbtns"><div class="hb fill"><svg class="i"><use href="#play"/></svg>Play</div><div class="hb"><svg class="i"><use href="#shuffle"/></svg>Shuffle</div></div>
+      <div class="ir"><span class="g"></span><span class="nm">track1</span></div>
+      <div class="ir"><span class="g"></span><span class="nm">track2</span></div>
+      <div class="scrim"></div>
+      <div class="dlg"><div class="t"><h5>Sync with iCloud: Playlist</h5><p>Move "Morning" into the Playaway folder in iCloud Drive so it is available on your other devices?</p></div>
+        <div class="bt def">Move</div><div class="bt">Don't Sync</div></div>
+      <div class="hbar"></div>
+    </div>
+    <figcaption><b>Turn sync on, step 1.</b> Tapping the outline cloud asks about the playlist. Same two choices as the Mac.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="phone"><div class="notch"></div>
+      <div class="sb"><span>9:41</span><span>●●●</span></div>
+      <div class="nav"><span>‹ Playlists</span><span class="acts"><svg class="i"><use href="#cloud"/></svg><span>Edit</span></span></div>
+      <div class="lt">Morning</div>
+      <div class="hdrbtns"><div class="hb fill"><svg class="i"><use href="#play"/></svg>Play</div><div class="hb"><svg class="i"><use href="#shuffle"/></svg>Shuffle</div></div>
+      <div class="ir"><span class="g"></span><span class="nm">track1</span></div>
+      <div class="ir"><span class="g"></span><span class="nm">track2</span></div>
+      <div class="scrim"></div>
+      <div class="dlg"><div class="t"><h5>Sync with iCloud: Files</h5><p>3 songs are not in iCloud. Songs added to this playlist, by Add Songs or by dragging in, get the same choice.</p></div>
+        <div class="bt destr">Move to iCloud</div><div class="bt def">Copy to iCloud</div><div class="bt">Add Without Syncing</div></div>
+      <div class="hbar"></div>
+    </div>
+    <figcaption><b>Step 2, and any song added later.</b> Move is destructive, Copy is the default, and Add Without Syncing keeps sync on and moves nothing.</figcaption>
   </figure>
 </div>
 </body>
