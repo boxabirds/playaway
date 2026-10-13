@@ -86,8 +86,12 @@ struct PlaylistView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        if let i = session.playlist.tracks.firstIndex(where: { $0.id == track.id }) { session.remove(at: IndexSet(integer: i)) }
+                    } label: { Label("Remove from Playlist", systemImage: "trash") }
+                }
             }
-            .onDelete { session.remove(at: $0) }
             .onMove { from, to in if let f = from.first { session.move(from: f, to: to > f ? to - 1 : to) } }
         }
         .navigationTitle("")

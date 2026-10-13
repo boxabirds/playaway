@@ -46,3 +46,20 @@ import XCTest
         XCTAssertTrue(app.buttons["Shuffle"].exists); XCTAssertTrue(app.buttons["Next"].exists)
     }
 }
+
+@MainActor final class EditingTests: XCTestCase {
+    func testSwipeLeftRemovesASong() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
+        app.staticTexts["Demo"].tap()
+        let two = app.buttons["Demo Two"]
+        XCTAssertTrue(two.waitForExistence(timeout: 5))
+        two.swipeLeft()
+        let remove = app.buttons["Remove from Playlist"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 3))
+        remove.tap()
+        XCTAssertFalse(app.buttons["Demo Two"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Demo One"].exists)
+        XCTAssertTrue(app.staticTexts["1 song"].exists)
+    }
+}
