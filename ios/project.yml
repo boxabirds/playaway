@@ -1,0 +1,41 @@
+name: Playaway
+options:
+  deploymentTarget: {iOS: "26.0"}
+  generateEmptyDirectories: true
+packages:
+  PlayawaySources:
+    path: ..
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGNING_ALLOWED: NO
+    GENERATE_INFOPLIST_FILE: YES
+targets:
+  Playaway:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: PlayawaySources
+        product: PlayawayCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.playaway.app
+        PRODUCT_NAME: Playaway
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Playaway
+        TARGETED_DEVICE_FAMILY: "1"
+        OTHER_SWIFT_FLAGS: "-package-name localplayer"
+  PlayawayUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies: [{target: Playaway}]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.playaway.app.uitests
+        TEST_TARGET_NAME: Playaway
+schemes:
+  Playaway:
+    build: {targets: {Playaway: all}}
+    test: {targets: [PlayawayUITests]}
