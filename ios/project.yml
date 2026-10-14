@@ -18,6 +18,12 @@ targets:
     dependencies:
       - package: PlayawaySources
         product: PlayawayCore
+    entitlements:
+      path: App/Playaway.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers: [iCloud.software.away.play]
+        com.apple.developer.icloud-services: [CloudDocuments]
+        com.apple.developer.ubiquity-container-identifiers: [iCloud.software.away.play]
     info:
       path: App/Info.plist
       properties:
@@ -48,7 +54,7 @@ targets:
         DEVELOPMENT_TEAM: SANCRLNZFW
         CODE_SIGN_STYLE: Automatic
         CODE_SIGNING_ALLOWED: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.playaway.app
+        PRODUCT_BUNDLE_IDENTIFIER: software.away.play
         PRODUCT_NAME: Playaway
         TARGETED_DEVICE_FAMILY: "1"
         OTHER_SWIFT_FLAGS: "-package-name localplayer"
@@ -59,7 +65,7 @@ targets:
     dependencies: [{target: Playaway}]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.playaway.app.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: software.away.play.uitests
         TEST_TARGET_NAME: Playaway
 schemes:
   Playaway:
