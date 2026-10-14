@@ -69,6 +69,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var entries: [PlaylistEntry] = []
     @Published var cardOpen = false
     @Published var path: [URL] = []
+    private(set) lazy var scrubber = ScrubDebouncer { [weak self] seconds in try? self?.transport.seek(toSeconds: seconds) }
     @Published private(set) var activeSession: PlaylistSession?
     @Published private(set) var metadata: TrackMetadata?
     private var metadataURL: URL?

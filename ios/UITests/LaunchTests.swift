@@ -44,6 +44,13 @@ import XCTest
         controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
         XCTAssertTrue(app.descendants(matching: .any)["player-card"].waitForExistence(timeout: 3)); sleep(1); shot(app, "p3-card")
         XCTAssertTrue(app.buttons["Shuffle"].exists); XCTAssertTrue(app.buttons["Next"].exists)
+        // The card's identifier lands on its first child (the playlist link), so its top is that element's top.
+        let cardTop = app.descendants(matching: .any)["player-card"].firstMatch.frame.minY
+        let controlsBottom = app.buttons["Next"].frame.maxY
+        let screen = app.windows.firstMatch.frame
+        let homeIndicatorAllowance: CGFloat = 120
+        XCTAssertGreaterThan(cardTop, screen.height * 0.5, "card should hug its content, not fill the screen")
+        XCTAssertGreaterThan(controlsBottom, screen.maxY - homeIndicatorAllowance, "controls should sit at the bottom edge")
     }
 }
 

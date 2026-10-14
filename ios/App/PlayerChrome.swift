@@ -6,7 +6,7 @@ private enum Chrome {
     static let artworkSide: CGFloat = 44
     static let cardCorner: CGFloat = 24
     static let settleThreshold: CGFloat = 0.5
-    static let cardNoArtworkFraction: CGFloat = 0.62
+    static let cardFirstFrameFraction: CGFloat = 0.4
     static let playButtonSide: CGFloat = 76
     static let scrubberStep: Double = 1
 }
@@ -16,19 +16,20 @@ private enum Chrome {
 struct PlayerChrome: View {
     @EnvironmentObject var model: AppModel
     @State private var drag: CGFloat = 0
+    @State private var cardContentHeight: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
             let active = model.transport.state != .idle
             let hasArtwork = model.metadata?.artworkData != nil
-            let cardHeight = hasArtwork ? geo.size.height : geo.size.height * Chrome.cardNoArtworkFraction
+            let cardHeight = cardContentHeight > 0 ? min(cardContentHeight, geo.size.height) : geo.size.height * Chrome.cardFirstFrameFraction
             let progress = max(0, min(1, (model.cardOpen ? 1 : 0) - drag / max(cardHeight, 1)))
             ZStack(alignment: .bottom) {
                 if active {
                     if progress > 0 { Color.black.opacity(0.25 * progress).ignoresSafeArea().onTapGesture { close() } }
                     if progress > 0 {
-                        PlayerCard(height: cardHeight)
-                            .frame(height: cardHeight)
+                        PlayerCard(contentHeight: $cardContentHeight)
+                            .frame(height: cardHeight, alignment: .bottom)
                             .offset(y: (cardHeight + geo.safeAreaInsets.bottom) * (1 - progress))
                             .gesture(dragGesture(cardHeight))
                             .transition(.move(edge: .bottom))
@@ -99,7 +100,8 @@ struct FloatingController: View {
 
 struct PlayerCard: View {
     @EnvironmentObject var model: AppModel
-    let height: CGFloat
+    @Binding var contentHeight: CGFloat
+    @State private var scrubPosition: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -117,9 +119,10 @@ struct PlayerCard: View {
             Text(model.metadata?.title ?? model.transport.nowPlaying).font(.title2.weight(.bold)).lineLimit(2)
             scrubber
             controls
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 24).padding(.top, 10).padding(.bottom, 24)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         .background {
             UnevenRoundedRectangle(topLeadingRadius: Chrome.cardCorner, topTrailingRadius: Chrome.cardCorner)
                 .fill(.regularMaterial).ignoresSafeArea(edges: .bottom)
@@ -128,14 +131,17 @@ struct PlayerCard: View {
     }
 
     private var scrubber: some View {
-        VStack(spacing: 2) {
-            Slider(value: Binding(get: { model.transport.position }, set: { try? model.transport.seek(toSeconds: $0) }),
-                   in: 0...max(model.transport.duration, 1), step: Chrome.scrubberStep)
-                .accessibilityLabel("Playback position")
+        let shown = scrubPosition ?? model.transport.position
+        return VStack(spacing: 2) {
+            Slider(value: Binding(get: { shown }, set: { scrubPosition = $0; model.scrubber.scrub(to: $0) }),
+                   in: 0...max(model.transport.duration, 1), step: Chrome.scrubberStep) { editing in
+                if !editing, let last = scrubPosition { model.scrubber.finish(at: last); scrubPosition = nil }
+            }
+            .accessibilityLabel("Playback position")
             HStack {
-                Text(TransportViewModel.formatTime(model.transport.position))
+                Text(TransportViewModel.formatTime(shown))
                 Spacer()
-                Text("-" + TransportViewModel.formatTime(max(model.transport.duration - model.transport.position, 0)))
+                Text("-" + TransportViewModel.formatTime(max(model.transport.duration - shown, 0)))
             }
             .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
         }
