@@ -54,6 +54,26 @@ import XCTest
     }
 }
 
+@MainActor final class NavigationTests: XCTestCase {
+    func testBackTitleAndTheCardLinkRecordsOneEntry() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars.buttons["Playlists"].exists, "back control is titled with where it returns to")
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any)["floating-controller"]
+        XCTAssertTrue(controller.waitForExistence(timeout: 5))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["player-card"].waitForExistence(timeout: 3))
+        // The playlist is already shown, so the link records nothing: one Back reaches the Playlists screen.
+        app.buttons["Demo"].firstMatch.tap()
+        sleep(1)
+        app.navigationBars.buttons["Playlists"].tap()
+        XCTAssertTrue(app.navigationBars["Playlists"].waitForExistence(timeout: 3), "one Back reaches the Playlists screen")
+    }
+}
+
 @MainActor final class RememberTests: XCTestCase {
     func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
         let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()

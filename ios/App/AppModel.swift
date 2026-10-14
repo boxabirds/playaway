@@ -7,7 +7,7 @@ import PlayawayCore
 /// One open playlist: its songs, its player, and saving after every change.
 @MainActor
 final class PlaylistSession: ObservableObject {
-    let url: URL
+    private(set) var url: URL
     @Published private(set) var playlist: Playlist
     @Published private(set) var notice: String?
     let player: PlaylistPlayer
@@ -29,6 +29,13 @@ final class PlaylistSession: ObservableObject {
     private final class Box { weak var session: PlaylistSession? }
 
     var name: String { url.deletingPathExtension().lastPathComponent }
+
+    /// The playlist now lives at a new place, for example after its unsaved songs were saved to a file.
+    func rebase(to newURL: URL) {
+        _ = newURL.startAccessingSecurityScopedResource()
+        url = newURL
+        objectWillChange.send()
+    }
 
     func add(_ urls: [URL]) {
         let result = adding(urls, to: playlist, classifier: FormatClassifier())
@@ -203,7 +210,65 @@ final class AppModel: ObservableObject {
         nowPlaying.update()
     }
 
-    func openPlaylist(_ url: URL) { path.append(url) }
+    /// Going to a playlist is a navigation in the one shared history: going to the one already shown records nothing.
+    func openPlaylist(_ url: URL) {
+        var history = NavigationHistory<URL>(playlists: path)
+        history.navigate(to: .playlist(url))
+        path = history.playlistTrail
+    }
+
+    /// What the back control says: where it returns to.
+    var backTitle: String {
+        if case .playlist(let url)? = NavigationHistory<URL>(playlists: path).previous {
+            return url.deletingPathExtension().lastPathComponent
+        }
+        return "Playlists"
+    }
+
+    /// A playlist opened from the Files app, in place.
+    func openExternal(_ url: URL) {
+        guard url.pathExtension == playlistFileExtension else { return }
+        _ = url.startAccessingSecurityScopedResource()
+        if session(for: url) == nil { failureMessage = "That playlist can't be opened. It may be damaged or made by a newer version of Playaway." }
+        else { openPlaylist(url) }
+    }
+
+    // MARK: The playlist link on the player card
+
+    @Published var showUnsavedOffer = false
+    @Published var failureMessage: String?
+
+    func availability(of session: PlaylistSession) -> PlaylistAvailability {
+        FileManager.default.fileExists(atPath: session.url.path) ? .available : .deleted
+    }
+
+    func playlistLinkTapped() {
+        guard let session = activeSession else { return }
+        switch linkAction(for: availability(of: session)) {
+        case .navigate: cardOpen = false; openPlaylist(session.url)
+        case .offerSave: showUnsavedOffer = true
+        case .noLink: break
+        }
+    }
+
+    /// Offers the Files save sheet for a playlist whose file is gone, and keeps it unsaved unless a file is written.
+    func saveUnsavedPlaylist() {
+        guard let session = activeSession else { return }
+        Task { @MainActor [weak self] in
+            let result = await PlayawayCore.saveUnsavedPlaylist(session.playlist, suggestedName: session.name, using: FilesSaveSheet())
+            guard let self else { return }
+            switch result {
+            case .saved(let newURL):
+                let old = session.url
+                self.sessions[old] = nil
+                session.rebase(to: newURL)
+                self.sessions[newURL] = session
+                self.path = self.path.map { $0 == old ? newURL : $0 }
+            case .cancelled: break
+            case .failed: self.failureMessage = "The playlist could not be saved."
+            }
+        }
+    }
 
     func refresh() { entries = library.entries() }
 

@@ -14,6 +14,7 @@ struct RootView: View {
                 }
         }
         .overlay { PlayerChrome() }
+        .onOpenURL { model.openExternal($0) }
     }
 }
 
@@ -79,8 +80,9 @@ struct PlaylistView: View {
             header.padding(.horizontal, 20).padding(.vertical, 12)
             SongTable(session: session)
         }
-        .navigationTitle("")
+        .navigationTitle(session.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { importing = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add Songs")

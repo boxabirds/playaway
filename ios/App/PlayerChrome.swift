@@ -47,6 +47,13 @@ struct PlayerChrome: View {
             .animation(.snappy(duration: 0.25), value: hasArtwork)
         }
         .ignoresSafeArea(.keyboard)
+        .alert("This playlist is no longer available", isPresented: $model.showUnsavedOffer) {
+            Button("Save Playlist…") { model.saveUnsavedPlaylist() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Its file was deleted or moved. You can save its songs as a new playlist file.") }
+        .alert("Playlist", isPresented: Binding(get: { model.failureMessage != nil }, set: { if !$0 { model.failureMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(model.failureMessage ?? "") }
     }
 
     private func open() { withAnimation(.snappy(duration: 0.25)) { model.cardOpen = true } }
@@ -107,7 +114,7 @@ struct PlayerCard: View {
         VStack(alignment: .leading, spacing: 14) {
             Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5).frame(maxWidth: .infinity)
             if let name = model.activeSession?.name {
-                Button { model.cardOpen = false; model.openPlaylist(model.activeSession!.url) } label: {
+                Button { model.playlistLinkTapped() } label: {
                     Text(name).font(.footnote).foregroundStyle(.tint)
                 }
                 .accessibilityHint("Opens the playlist")
