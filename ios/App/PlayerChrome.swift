@@ -1,8 +1,15 @@
 import SwiftUI
 import PlayawayCore
 
+/// The floating controller's footprint at the bottom of the screen, so lists can scroll clear of it.
+enum PlayerBar {
+    static let height: CGFloat = 64
+    static let bottomMargin: CGFloat = 4
+    static let gapAboveIt: CGFloat = 8
+    static let inset: CGFloat = height + bottomMargin + gapAboveIt
+}
+
 private enum Chrome {
-    static let controllerHeight: CGFloat = 64
     static let artworkSide: CGFloat = 44
     static let cardCorner: CGFloat = 24
     static let settleThreshold: CGFloat = 0.5
@@ -93,9 +100,9 @@ struct FloatingController: View {
             .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
         }
         .padding(.horizontal, 16)
-        .frame(height: Chrome.controllerHeight)
+        .frame(height: PlayerBar.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal, 8).padding(.bottom, 4)
+        .padding(.horizontal, 8).padding(.bottom, PlayerBar.bottomMargin)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("floating-controller")
     }

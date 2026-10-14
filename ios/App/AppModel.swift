@@ -187,7 +187,9 @@ final class AppModel: ObservableObject {
         if keepExisting, FileManager.default.fileExists(atPath: folder.appendingPathComponent("Demo.\(playlistFileExtension)").path) { return }
         try? FileManager.default.removeItem(at: folder.appendingPathComponent("Demo.\(playlistFileExtension)"))
         guard let playlistURL = try? library.create(named: "Demo") else { return }
-        let result = adding(urls, to: Playlist(), classifier: FormatClassifier())
+        // A list longer than the screen, so tests can scroll to the last song.
+        let repeats = ProcessInfo.processInfo.arguments.contains("-PlayawayLongList") ? 6 : 1
+        let result = adding(Array(repeating: urls, count: repeats).flatMap { $0 }, to: Playlist(), classifier: FormatClassifier())
         _ = library.save(result.playlist, to: playlistURL)
     }
     #endif
@@ -236,6 +238,8 @@ final class AppModel: ObservableObject {
     // MARK: The playlist link on the player card
 
     @Published var showUnsavedOffer = false
+    /// True while the floating controller is on screen, so screens leave room for it.
+    var playerBarVisible: Bool { transport.state != .idle || resumePoint != nil }
     @Published var failureMessage: String?
 
     func availability(of session: PlaylistSession) -> PlaylistAvailability {

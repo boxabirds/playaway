@@ -74,6 +74,28 @@ import XCTest
     }
 }
 
+@MainActor final class ListEndTests: XCTestCase {
+    func testLastSongCanBeScrolledClearOfTheController() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayLongList"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+        table.cells.element(boundBy: 0).tap()
+        let controller = app.descendants(matching: .any)["floating-controller"]
+        XCTAssertTrue(controller.waitForExistence(timeout: 5))
+        app.buttons["Pause"].firstMatch.tap()    // paused, so a song starting afterwards can only come from the tap below
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 3))
+        for _ in 0..<10 { table.swipeUp(velocity: .fast) }
+        sleep(2)    // let the scrolling settle, so the tap selects a song instead of stopping the scroll
+        // Tap just above the controller: after scrolling to the end, the last song (Demo Five) is what is there.
+        let aboveController = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: app.frame.width / 2, dy: controller.frame.minY - 25))
+        aboveController.tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 5), "tapping the song just above the controller plays it")
+    }
+}
+
 @MainActor final class RememberTests: XCTestCase {
     func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
         let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()

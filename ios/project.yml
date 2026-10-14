@@ -30,7 +30,7 @@ targets:
         CFBundleDisplayName: Playaway
         ITSAppUsesNonExemptEncryption: false
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "3"
+        CFBundleVersion: "4"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true

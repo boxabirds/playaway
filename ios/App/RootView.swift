@@ -33,6 +33,7 @@ struct PlaylistsView: View {
                 List(model.entries) { entry in
                     NavigationLink(value: entry.url) { row(entry) }
                 }
+                .contentMargins(.bottom, model.playerBarVisible ? PlayerBar.inset : 0, for: .scrollContent)
             }
         }
         .navigationTitle("Playlists")
