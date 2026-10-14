@@ -476,4 +476,30 @@ final class PlaylistPlayerTests: XCTestCase {
         store.clearMark(of: track)
         XCTAssertEqual(store.mark(of: track), .readable)
     }
+
+    // MARK: resume from a remembered place
+
+    func testResumePlaysTheSongFromTheRememberedPosition() {
+        let rig = PlayerRig()
+        let track = rig.fixture.tracks[2]
+        rig.player.resume(track: track, atSeconds: 1.5)
+        XCTAssertEqual(rig.currentName, "track3.mp3")
+        XCTAssertEqual(rig.engine.position, 1.5)
+        XCTAssertEqual(rig.player.current, track)
+    }
+
+    func testResumeBeyondTheEndPlaysFromTheStart() {
+        let rig = PlayerRig()
+        rig.player.resume(track: rig.fixture.tracks[0], atSeconds: 100_000)
+        XCTAssertEqual(rig.currentName, "track1.mp3")
+        XCTAssertEqual(rig.engine.position, 0)
+    }
+
+    func testResumeOfASongThatIsGoneStartsNothing() {
+        let rig = PlayerRig()
+        rig.fixture.deleteFile(at: 1)
+        rig.player.resume(track: rig.fixture.tracks[1], atSeconds: 1)
+        XCTAssertEqual(rig.engine.state, .idle)
+        XCTAssertNil(rig.player.current)
+    }
 }

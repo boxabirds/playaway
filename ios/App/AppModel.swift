@@ -69,6 +69,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var entries: [PlaylistEntry] = []
     @Published var cardOpen = false
     @Published var path: [URL] = []
+    /// Where the last launch left off, shown paused until the person presses play.
+    @Published private(set) var resumePoint: ResumePoint?
+    private let memoryStore = ListeningMemoryStore()
+    private var lastPositionSave: Date?
     private(set) lazy var scrubber = ScrubDebouncer { [weak self] seconds in try? self?.transport.seek(toSeconds: seconds) }
     @Published private(set) var activeSession: PlaylistSession?
     @Published private(set) var metadata: TrackMetadata?
@@ -89,14 +93,71 @@ final class AppModel: ObservableObject {
         settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         engine.events.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.engineChanged() }.store(in: &cancellables)
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-PlayawaySeedDemo") { seedDemoPlaylist(in: documents) }
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-PlayawaySeedDemo") {
+            if !arguments.contains("-PlayawayKeepMemory") { memoryStore.save(.empty) }
+            seedDemoPlaylist(in: documents, keepExisting: arguments.contains("-PlayawayKeepMemory"))
+        }
         #endif
         refresh()
+        transport.startHandler = { [weak self] in self?.resumeFromMemory() ?? false }
+        restoreMemory()
+        $path.dropFirst().sink { [weak self] _ in self?.saveMemory(force: true) }.store(in: &cancellables)
+        transport.$position.sink { [weak self] _ in self?.saveMemory(force: false) }.store(in: &cancellables)
+    }
+
+    // MARK: Remembering what was playing
+
+    private func restoreMemory() {
+        let existing = Set(entries.map { $0.url.lastPathComponent })
+        let memory = memoryStore.load().restoring(existingPlaylists: existing) { [library] name, id in
+            if case .loaded(let playlist) = library.load(library.folder.appendingPathComponent(name)) {
+                return playlist.track(withID: id) != nil
+            }
+            return false
+        }
+        path = memory.openPlaylists.map { library.folder.appendingPathComponent($0) }
+        guard let point = memory.nowPlaying else { return }
+        let url = library.folder.appendingPathComponent(point.playlistFileName)
+        guard let session = session(for: url), let track = session.playlist.track(withID: point.trackID),
+              case .resolved(let file) = TrackResolver().resolve(track.reference).0 else { return }
+        activeSession = session
+        resumePoint = point
+        metadataURL = file
+        metadata = TrackMetadata.fallback(for: file)
+        Task { [weak self] in
+            let loaded = await loadTrackMetadata(for: file)
+            await MainActor.run { if self?.metadataURL == file { self?.metadata = loaded } }
+        }
+    }
+
+    /// Play pressed with nothing loaded: carries on from the remembered song and place.
+    private func resumeFromMemory() -> Bool {
+        guard let point = resumePoint, let session = activeSession,
+              let track = session.playlist.track(withID: point.trackID) else { return false }
+        resumePoint = nil
+        session.model = self
+        session.player.resume(track: track, atSeconds: point.positionSeconds)
+        return engine.state != .idle
+    }
+
+    /// Writes what the next launch needs. Position ticks are throttled; every other change passes `force`.
+    func saveMemory(force: Bool) {
+        if !force {
+            guard engine.state == .playing, shouldSavePosition(lastSaved: lastPositionSave, now: Date()) else { return }
+        }
+        lastPositionSave = Date()
+        var nowPlaying = resumePoint
+        if engine.state != .idle, let session = activeSession, let track = session.player.current {
+            nowPlaying = ResumePoint(playlistFileName: session.url.lastPathComponent, trackID: track.id,
+                                     positionSeconds: engine.position)
+        }
+        memoryStore.save(ListeningMemory(openPlaylists: path.map { $0.lastPathComponent }, nowPlaying: nowPlaying))
     }
 
     #if DEBUG
     /// Test aid: a playlist of two short generated tones, so UI tests can play real files.
-    private func seedDemoPlaylist(in folder: URL) {
+    private func seedDemoPlaylist(in folder: URL, keepExisting: Bool) {
         func tone(_ seconds: Int, hz: Double) -> Data {
             let rate = 8000, samples = rate * seconds
             var d = Data()
@@ -114,7 +175,9 @@ final class AppModel: ObservableObject {
             if !FileManager.default.fileExists(atPath: url.path) { try? tone(60, hz: hz).write(to: url) }
             urls.append(url)
         }
-        // Start every seeded launch from the same playlist, whatever earlier tests changed.
+        // Start every seeded launch from the same playlist, whatever earlier tests changed, unless a test is checking
+        // what a second launch remembers.
+        if keepExisting, FileManager.default.fileExists(atPath: folder.appendingPathComponent("Demo.\(playlistFileExtension)").path) { return }
         try? FileManager.default.removeItem(at: folder.appendingPathComponent("Demo.\(playlistFileExtension)"))
         guard let playlistURL = try? library.create(named: "Demo") else { return }
         let result = adding(urls, to: Playlist(), classifier: FormatClassifier())
@@ -127,6 +190,8 @@ final class AppModel: ObservableObject {
 
     private func engineChanged() {
         let url = engine.currentURL
+        if engine.state != .idle { resumePoint = nil }
+        saveMemory(force: engine.state != .playing || url != metadataURL)
         if url != metadataURL {
             metadataURL = url
             metadata = url.map { TrackMetadata.fallback(for: $0) }

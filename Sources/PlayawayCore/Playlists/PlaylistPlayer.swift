@@ -112,6 +112,13 @@ package final class PlaylistPlayer: SessionEnding {
         }
     }
 
+    /// Carries on from a remembered place: plays the track and moves to `seconds`. A place beyond the end of the
+    /// track, or one the engine refuses, leaves the track playing from 0:00.
+    package func resume(track: Track, atSeconds seconds: Double) {
+        play(track: track)
+        if current == track, seconds > 0 { _ = engine.seek(toSeconds: seconds) }
+    }
+
     // MARK: Next and previous
 
     package func next() {

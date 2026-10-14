@@ -54,6 +54,31 @@ import XCTest
     }
 }
 
+@MainActor final class RememberTests: XCTestCase {
+    func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
+        let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()
+        XCTAssertTrue(first.staticTexts["Demo"].waitForExistence(timeout: 8))
+        first.staticTexts["Demo"].tap()
+        first.tables["song-table"].cells["Demo Two"].tap()
+        XCTAssertTrue(first.descendants(matching: .any)["floating-controller"].waitForExistence(timeout: 5))
+        sleep(7)    // long enough for at least one periodic position save
+        first.terminate()
+
+        let second = XCUIApplication(); second.launchArguments = ["-PlayawaySeedDemo", "-PlayawayKeepMemory"]; second.launch()
+        XCTAssertTrue(second.tables["song-table"].waitForExistence(timeout: 8), "the playlist that was open is open again")
+        let controller = second.descendants(matching: .any)["floating-controller"]
+        XCTAssertTrue(controller.waitForExistence(timeout: 5), "the song that was playing is shown")
+        XCTAssertTrue(second.buttons["Play"].exists, "it comes back paused, not playing")
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(second.descendants(matching: .any)["player-card"].waitForExistence(timeout: 3))
+        XCTAssertTrue(second.staticTexts["Demo Two"].exists, "the same song")
+        let savedPlace = second.staticTexts.matching(NSPredicate(format: "label MATCHES '0:0[3-9]'"))
+        XCTAssertGreaterThan(savedPlace.count, 0, "the place in the song is remembered")
+        second.buttons["Play"].firstMatch.tap()
+        XCTAssertTrue(second.buttons["Pause"].waitForExistence(timeout: 3), "Play carries on from the remembered song")
+    }
+}
+
 @MainActor final class EditingTests: XCTestCase {
     func testSwipeLeftRemovesASong() {
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()

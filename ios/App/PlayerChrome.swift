@@ -20,7 +20,7 @@ struct PlayerChrome: View {
 
     var body: some View {
         GeometryReader { geo in
-            let active = model.transport.state != .idle
+            let active = model.transport.state != .idle || model.resumePoint != nil
             let hasArtwork = model.metadata?.artworkData != nil
             let cardHeight = cardContentHeight > 0 ? min(cardContentHeight, geo.size.height) : geo.size.height * Chrome.cardFirstFrameFraction
             let progress = max(0, min(1, (model.cardOpen ? 1 : 0) - drag / max(cardHeight, 1)))
@@ -131,17 +131,19 @@ struct PlayerCard: View {
     }
 
     private var scrubber: some View {
-        let shown = scrubPosition ?? model.transport.position
+        let shown = scrubPosition ?? model.resumePoint?.positionSeconds ?? model.transport.position
+        let resting = model.resumePoint != nil
         return VStack(spacing: 2) {
             Slider(value: Binding(get: { shown }, set: { scrubPosition = $0; model.scrubber.scrub(to: $0) }),
                    in: 0...max(model.transport.duration, 1), step: Chrome.scrubberStep) { editing in
                 if !editing, let last = scrubPosition { model.scrubber.finish(at: last); scrubPosition = nil }
             }
             .accessibilityLabel("Playback position")
+            .disabled(resting)
             HStack {
                 Text(TransportViewModel.formatTime(shown))
                 Spacer()
-                Text("-" + TransportViewModel.formatTime(max(model.transport.duration - shown, 0)))
+                Text(resting ? "-:--" : "-" + TransportViewModel.formatTime(max(model.transport.duration - shown, 0)))
             }
             .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
         }
