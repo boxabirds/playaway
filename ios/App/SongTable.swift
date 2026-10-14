@@ -51,7 +51,36 @@ struct SongTable: UIViewRepresentable {
             }
             cell.accessibilityTraits = .button
             cell.accessibilityLabel = track.reference.fileName.fileNameWithoutExtension
+            let count = session.playlist.tracks.count
+            cell.accessibilityCustomActions = songRowActions(index: indexPath.row, count: count).map { action in
+                let name: String
+                switch action {
+                case .moveUp: name = "Move Up"
+                case .moveDown: name = "Move Down"
+                case .remove: name = "Remove from Playlist"
+                }
+                return UIAccessibilityCustomAction(name: name) { [weak self] _ in
+                    Task { @MainActor in self?.perform(action, at: indexPath.row) }
+                    return true
+                }
+            }
             return cell
+        }
+
+        /// The VoiceOver alternative to swiping and dragging, announcing where the song ended up.
+        @MainActor private func perform(_ action: SongRowAction, at row: Int) {
+            let count = session.playlist.tracks.count
+            switch action {
+            case .moveUp:
+                session.move(from: row, to: row - 1)
+                UIAccessibility.post(notification: .announcement, argument: "Moved to position \(row) of \(count)")
+            case .moveDown:
+                session.move(from: row, to: row + 1)
+                UIAccessibility.post(notification: .announcement, argument: "Moved to position \(row + 2) of \(count)")
+            case .remove:
+                session.remove(at: IndexSet(integer: row))
+                UIAccessibility.post(notification: .announcement, argument: "Removed from playlist")
+            }
         }
 
         func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
