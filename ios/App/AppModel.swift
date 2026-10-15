@@ -79,6 +79,12 @@ final class OpenAdapter: PlaylistOpening, NoticePresenting {
 @MainActor
 final class AppModel: ObservableObject {
     let library: PlaylistLibrary
+    /// The shared Playaway folder in iCloud Drive, once the system has told us where it is.
+    private(set) var cloudLibrary: PlaylistLibrary?
+    private let cloudMover: CloudMoving
+    @Published var syncTarget: PlaylistEntry?
+    private static let cloudFolderKey = "cloudFolderPath"
+    private static let cloudContainer = "iCloud.software.away.play"
     let settings = PlayModeSettings()
     let engine = AVPlaybackEngine()
     let registry = ActiveSessionRegistry()
@@ -120,6 +126,22 @@ final class AppModel: ObservableObject {
     init() {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         library = PlaylistLibrary(folder: documents)
+        #if DEBUG
+        let fakeCloud = ProcessInfo.processInfo.arguments.contains("-PlayawayFakeCloud")
+        #else
+        let fakeCloud = false
+        #endif
+        cloudMover = fakeCloud ? PlainFileMover() : UbiquitousMover()
+        if fakeCloud {
+            let fake = documents.appendingPathComponent("FakeICloud")
+            if ProcessInfo.processInfo.arguments.contains("-PlayawaySeedDemo"),
+               !ProcessInfo.processInfo.arguments.contains("-PlayawayKeepMemory") { try? FileManager.default.removeItem(at: fake) }
+            try? FileManager.default.createDirectory(at: fake, withIntermediateDirectories: true)
+            cloudLibrary = PlaylistLibrary(folder: fake, layout: .folderPerPlaylist)
+        } else if let cached = UserDefaults.standard.string(forKey: Self.cloudFolderKey),
+                  FileManager.default.fileExists(atPath: cached) {
+            cloudLibrary = PlaylistLibrary(folder: URL(fileURLWithPath: cached), layout: .folderPerPlaylist)
+        }
         let now = Date()
         if let start = LaunchFacts.processStart(), let boot = LaunchFacts.deviceBoot() {
             launchTimer = LaunchTimer(processStart: start, kind: launchKind(previousLaunch: launchStore.lastLaunch, deviceBoot: boot))
@@ -141,6 +163,7 @@ final class AppModel: ObservableObject {
         }
         #endif
         openAdapter.model = self
+        if !fakeCloud { resolveICloud() }
         cloud.onEvent = { [weak self] event in
             guard let self else { return }
             self.downloads.handle(event)
@@ -161,15 +184,14 @@ final class AppModel: ObservableObject {
 
     private func restoreMemory() {
         let existing = Set(entries.map { $0.url.lastPathComponent })
-        let memory = memoryStore.load().restoring(existingPlaylists: existing) { [library] name, id in
-            if case .loaded(let playlist) = library.load(library.folder.appendingPathComponent(name)) {
-                return playlist.track(withID: id) != nil
-            }
+        let memory = memoryStore.load().restoring(existingPlaylists: existing) { [self] name, id in
+            let url = playlistURL(forFileName: name)
+            if case .loaded(let playlist) = library(for: url).load(url) { return playlist.track(withID: id) != nil }
             return false
         }
-        path = memory.openPlaylists.map { library.folder.appendingPathComponent($0) }
+        path = memory.openPlaylists.map { playlistURL(forFileName: $0) }
         guard let point = memory.nowPlaying else { return }
-        let url = library.folder.appendingPathComponent(point.playlistFileName)
+        let url = playlistURL(forFileName: point.playlistFileName)
         guard let session = session(for: url), let track = session.playlist.track(withID: point.trackID),
               case .resolved(let file) = TrackResolver().resolve(track.reference).0 else { return }
         activeSession = session
@@ -325,14 +347,52 @@ final class AppModel: ObservableObject {
 
     /// Shows the playlist names at once, then fills in counts and notes without blocking the screen or reordering rows.
     func refresh() {
-        if entries.isEmpty { entries = library.quickEntries() }
+        if entries.isEmpty { entries = Self.combined(library.quickEntries(), cloudLibrary?.quickEntries() ?? []) }
         refreshGeneration += 1
         let generation = refreshGeneration
         let library = self.library
+        let cloudLibrary = self.cloudLibrary
         Task.detached(priority: .userInitiated) { [weak self] in
-            let full = library.entries()
+            let full = Self.combined(library.entries(), cloudLibrary?.entries() ?? [])
             await MainActor.run { if let self, self.refreshGeneration == generation { self.entries = full } }
         }
+    }
+
+    nonisolated private static func combined(_ phone: [PlaylistEntry], _ cloud: [PlaylistEntry]) -> [PlaylistEntry] {
+        (phone + cloud).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func allEntries() -> [PlaylistEntry] { Self.combined(library.entries(), cloudLibrary?.entries() ?? []) }
+
+    /// The library that holds a playlist file, by where the file is.
+    func library(for url: URL) -> PlaylistLibrary {
+        if let cloudLibrary, url.path.hasPrefix(cloudLibrary.folder.path) { return cloudLibrary }
+        return library
+    }
+
+    /// A remembered playlist is found by its file name among the playlists in both places.
+    private func playlistURL(forFileName name: String) -> URL {
+        entries.first { $0.url.lastPathComponent == name }?.url ?? library.folder.appendingPathComponent(name)
+    }
+
+    /// Asks the system where the shared iCloud folder is. The first answer can take a moment, so it is asked off the
+    /// main thread, and the answer is remembered so the next launch has it at once.
+    private func resolveICloud() {
+        Task.detached(priority: .utility) { [weak self] in
+            let base = FileManager.default.url(forUbiquityContainerIdentifier: Self.cloudContainer)
+            await MainActor.run { self?.attachCloud(base) }
+        }
+    }
+
+    private func attachCloud(_ base: URL?) {
+        guard let base else { return }
+        let documents = base.appendingPathComponent("Documents")
+        try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        UserDefaults.standard.set(documents.path, forKey: Self.cloudFolderKey)
+        guard cloudLibrary?.folder.path != documents.path else { return }
+        cloudLibrary = PlaylistLibrary(folder: documents, layout: .folderPerPlaylist)
+        entries = []
+        refresh()
     }
 
     /// Called once when the Playlists screen first appears: records how long the launch took.
@@ -350,7 +410,7 @@ final class AppModel: ObservableObject {
     /// A song was chosen. If its file is in iCloud and not on this device it is downloaded first and plays when it
     /// has arrived; otherwise it plays at once.
     func requestPlay(_ track: Track, in session: PlaylistSession) {
-        guard cloud.isAvailable, case .resolved(let url) = TrackResolver().resolve(track.reference).0 else {
+        guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else {
             becameActive(session); session.player.play(track: track); return
         }
         let song = cloud.id(for: url)
@@ -368,7 +428,7 @@ final class AppModel: ObservableObject {
 
     /// What a song row shows about iCloud, nil when no iCloud account is available.
     func cloudDisplay(for track: Track) -> SongRowCloudDisplay? {
-        guard cloud.isAvailable, case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return nil }
+        guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return nil }
         let song = cloud.id(for: url)
         let tracked = downloads.state(of: song)
         return SongRowCloudDisplay(presence: cloud.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
@@ -384,6 +444,52 @@ final class AppModel: ObservableObject {
         case .openSyncDialog, .none, .cancelSync: break    // the sync dialog belongs to the iCloud sync stories
         }
         cloudRevision += 1
+    }
+
+    // MARK: Move a playlist to iCloud
+
+    /// The sync dialog for a playlist that is on this phone. If iCloud cannot be reached the person is told why.
+    func beginSync(_ entry: PlaylistEntry) {
+        guard cloudLibrary != nil else {
+            failureMessage = "iCloud isn't available right now. Check that you are signed in to iCloud and that iCloud Drive is on for Playaway in Settings."
+            return
+        }
+        syncTarget = entry
+    }
+
+    /// Moves the playlist file into the shared Playaway folder in iCloud Drive. Moving is the one thing that changes
+    /// where files live; songs are never moved by this.
+    func confirmSync() {
+        guard let entry = syncTarget, let cloudLibrary else { return }
+        syncTarget = nil
+        let mover = cloudMover
+        Task { @MainActor [weak self] in
+            let result = await Task.detached { Result { try cloudLibrary.adopt(entry.url, using: mover) } }.value
+            guard let self else { return }
+            switch result {
+            case .success(let newURL):
+                self.rekey(from: entry.url, to: newURL)
+                self.entries = self.allEntries()
+                self.saveMemory(force: true)
+                UIAccessibility.post(notification: .announcement, argument: "\(entry.name) moved to iCloud")
+            case .failure(let error):
+                if case LibraryError.alreadyExists = error {
+                    self.failureMessage = "A playlist named “\(entry.name)” is already in the Playaway folder in iCloud. Nothing was moved."
+                } else {
+                    self.failureMessage = "The playlist could not be moved to iCloud. It is still on this iPhone."
+                }
+            }
+        }
+    }
+
+    /// Every place that knows a playlist by its file follows it to its new file.
+    private func rekey(from old: URL, to new: URL) {
+        if let session = sessions.removeValue(forKey: old) { session.rebase(to: new); sessions[new] = session }
+        path = path.map { $0 == old ? new : $0 }
+        if var point = resumePoint, point.playlistFileName == old.lastPathComponent {
+            point.playlistFileName = new.lastPathComponent
+            resumePoint = point
+        }
     }
 
     // MARK: Rename and delete
@@ -417,16 +523,11 @@ final class AppModel: ObservableObject {
     func confirmRename() {
         guard let url = renameTarget else { return }
         do {
-            let newURL = try library.rename(url, to: renameText)
+            let newURL = try library(for: url).rename(url, to: renameText)
             cancelRename()
             guard newURL != url else { return }
-            if let session = sessions.removeValue(forKey: url) { session.rebase(to: newURL); sessions[newURL] = session }
-            path = path.map { $0 == url ? newURL : $0 }
-            if var point = resumePoint, point.playlistFileName == url.lastPathComponent {
-                point.playlistFileName = newURL.lastPathComponent
-                resumePoint = point
-            }
-            entries = library.entries()
+            rekey(from: url, to: newURL)
+            entries = allEntries()
             saveMemory(force: true)
             UIAccessibility.post(notification: .announcement, argument: "Renamed to \(newURL.deletingPathExtension().lastPathComponent)")
         } catch let error as LibraryError {
@@ -447,7 +548,7 @@ final class AppModel: ObservableObject {
         guard let entry = deleteTarget else { return }
         deleteTarget = nil
         do {
-            try library.delete(entry.url)
+            try library(for: entry.url).delete(entry.url)
         } catch {
             failureMessage = "The playlist could not be deleted. It is still in the list."
             return
@@ -461,7 +562,7 @@ final class AppModel: ObservableObject {
             endActiveSession()
         }
         if resumePoint?.playlistFileName == entry.url.lastPathComponent { resumePoint = nil }
-        entries = library.entries()
+        entries = allEntries()
         saveMemory(force: true)
         UIAccessibility.post(notification: .announcement, argument: "Playlist deleted")
     }
@@ -474,15 +575,17 @@ final class AppModel: ObservableObject {
     }
 
     func createPlaylist(named name: String) throws -> URL {
-        let url = try library.create(named: name)
+        let url = try (cloudLibrary ?? library).create(named: name)
+        entries = allEntries()
         refresh()
         return url
     }
 
     func session(for url: URL) -> PlaylistSession? {
         if let existing = sessions[url] { return existing }
-        guard case .loaded(let playlist) = library.load(url) else { return nil }
-        let session = PlaylistSession(url: url, playlist: playlist, library: library, model: self)
+        let owner = library(for: url)
+        guard case .loaded(let playlist) = owner.load(url) else { return nil }
+        let session = PlaylistSession(url: url, playlist: playlist, library: owner, model: self)
         session.model = self
         sessions[url] = session
         session.objectWillChange.sink { [weak self] in self?.objectWillChange.send(); self?.refresh() }.store(in: &cancellables)
@@ -498,3 +601,11 @@ final class AppModel: ObservableObject {
 
 
 extension AppModel: SongPlaybackStarting {}
+
+
+/// Hands a playlist file to the system so it lives in iCloud Drive and syncs to the person's other devices.
+struct UbiquitousMover: CloudMoving {
+    func moveIntoCloud(_ source: URL, to destination: URL) throws {
+        try FileManager.default.setUbiquitous(true, itemAt: source, destinationURL: destination)
+    }
+}

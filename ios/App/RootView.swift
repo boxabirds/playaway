@@ -15,6 +15,12 @@ struct RootView: View {
         }
         .overlay { PlayerChrome() }
         .sheet(isPresented: $model.renameShown) { RenameSheet() }
+        .alert("Sync with iCloud", isPresented: Binding(get: { model.syncTarget != nil }, set: { if !$0 { model.syncTarget = nil } })) {
+            Button("Move to iCloud") { model.confirmSync() }
+            Button("Cancel", role: .cancel) { model.syncTarget = nil }
+        } message: {
+            Text("“\(model.syncTarget?.name ?? "")” will be moved to the Playaway folder in iCloud Drive so your other devices can see it. Your songs are not moved.")
+        }
         .alert("Delete “\(model.deleteTarget?.name ?? "")”?", isPresented: Binding(get: { model.deleteTarget != nil },
                                                                                    set: { if !$0 { model.deleteTarget = nil } })) {
             Button("Delete", role: .destructive) { model.confirmDelete() }
@@ -41,6 +47,9 @@ struct PlaylistsView: View {
             } else {
                 List(model.entries) { entry in
                     NavigationLink(value: entry.url) { row(entry) }
+                        .overlay(alignment: .trailing) {
+                            PlaylistCloudIcon(entry: entry) { model.beginSync(entry) }.padding(.trailing, 28)
+                        }
                         .contextMenu {
                             if case .ok = entry.status {
                                 Button { model.beginRename(entry.url) } label: { Label("Rename", systemImage: "pencil") }
@@ -185,5 +194,30 @@ struct RenameSheet: View {
         .presentationDetents([.height(220)])
         .onAppear { focused = true }
         .onDisappear { model.cancelRename() }
+    }
+}
+
+
+/// The cloud icon at the right edge of a playlist row. A crossed-out cloud means the playlist is only on this phone and
+/// tapping it offers to move it to iCloud; an outline cloud means it is already in iCloud and does nothing.
+struct PlaylistCloudIcon: View {
+    let entry: PlaylistEntry
+    let tapped: () -> Void
+
+    private var state: CloudIconState { entry.location == .iCloud ? .outline : .crossedOut }
+
+    var body: some View {
+        Button {
+            if cloudIconTapAction(state: state, kind: .playlist) == .openSyncDialog(.playlist) { tapped() }
+        } label: {
+            Image(systemName: state == .outline ? "icloud" : "icloud.slash")
+                .foregroundStyle(.secondary)
+                .frame(width: cloudIconDrawnSize.width, height: cloudIconDrawnSize.height)
+                .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(state == .outline ? "In iCloud" : "Only on this iPhone. Moves it to iCloud.")
+        .accessibilityIdentifier("playlist-cloud-icon")
     }
 }

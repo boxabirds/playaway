@@ -282,6 +282,57 @@ import XCTest
     }
 }
 
+@MainActor final class ICloudPlaylistTests: XCTestCase {
+    private func icon(_ app: XCUIApplication, row: String) -> XCUIElement {
+        app.cells.containing(.staticText, identifier: row).buttons["playlist-cloud-icon"]
+    }
+
+    func testMovingAPlaylistToICloudAndNewPlaylistsStartInICloud() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+
+        // A playlist already on the phone is marked as only on this iPhone.
+        XCTAssertEqual(icon(app, row: "Demo").label, "Only on this iPhone. Moves it to iCloud.")
+
+        // Cancel in the dialog changes nothing.
+        icon(app, row: "Demo").tap()
+        let dialog = app.alerts["Sync with iCloud"]
+        XCTAssertTrue(dialog.waitForExistence(timeout: 10))
+        XCTAssertTrue(dialog.staticTexts["“Demo” will be moved to the Playaway folder in iCloud Drive so your other devices can see it. Your songs are not moved."].exists)
+        dialog.buttons["Cancel"].tap()
+        XCTAssertEqual(icon(app, row: "Demo").label, "Only on this iPhone. Moves it to iCloud.")
+
+        // Move to iCloud: the icon becomes the outline cloud and the playlist still opens, with its songs.
+        icon(app, row: "Demo").tap()
+        XCTAssertTrue(app.alerts["Sync with iCloud"].waitForExistence(timeout: 10))
+        app.alerts["Sync with iCloud"].buttons["Move to iCloud"].tap()
+        expectation(for: NSPredicate(format: "label == 'In iCloud'"), evaluatedWith: icon(app, row: "Demo"))
+        waitForExpectations(timeout: 15)
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.tables["song-table"].cells.count, 5, "the songs are all still there")
+        app.tables["song-table"].cells["Demo One"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "and it plays")
+        app.navigationBars.buttons["Playlists"].tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.tables["song-table"])
+        waitForExpectations(timeout: 15)
+
+        // A new playlist is created in iCloud from the start.
+        app.buttons["New Playlist"].tap()
+        let field = app.alerts.textFields["Name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.typeText("Fresh")
+        for _ in 0..<3 where !app.buttons["Add Songs"].exists {
+            if app.alerts.buttons["Create"].exists { app.alerts.buttons["Create"].tap() }
+            _ = app.buttons["Add Songs"].waitForExistence(timeout: 4)
+        }
+        XCTAssertTrue(app.buttons["Add Songs"].waitForExistence(timeout: 15))
+        app.navigationBars.buttons["Playlists"].tap()
+        expectation(for: NSPredicate(format: "label == 'In iCloud'"), evaluatedWith: icon(app, row: "Fresh"))
+        waitForExpectations(timeout: 15)
+    }
+}
+
 @MainActor final class RememberTests: XCTestCase {
     func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
         let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()

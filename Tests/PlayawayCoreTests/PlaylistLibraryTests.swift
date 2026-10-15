@@ -227,3 +227,125 @@ final class PlaylistDeleteTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 }
+
+final class FolderPerPlaylistTests: XCTestCase {
+    private var dir: TempDir!
+    private var local: PlaylistLibrary!
+    private var cloud: PlaylistLibrary!
+
+    override func setUp() {
+        dir = TempDir("folderlayout")
+        let localFolder = dir.url.appendingPathComponent("phone")
+        let cloudFolder = dir.url.appendingPathComponent("icloud")
+        try? FileManager.default.createDirectory(at: localFolder, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: cloudFolder, withIntermediateDirectories: true)
+        local = PlaylistLibrary(folder: localFolder)
+        cloud = PlaylistLibrary(folder: cloudFolder, layout: .folderPerPlaylist)
+    }
+
+    func testCreateMakesAFolderNamedAfterThePlaylistWithTheFileInside() throws {
+        let url = try cloud.create(named: "Road")
+        XCTAssertEqual(url, cloud.folder.appendingPathComponent("Road/Road.\(playlistFileExtension)"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(cloud.entries().map(\.name), ["Road"])
+        XCTAssertEqual(cloud.entries().first?.location, .iCloud)
+        XCTAssertEqual(local.entries().first?.location, nil)
+    }
+
+    func testCreatingAPlaylistWhoseFolderExistsIsRefused() throws {
+        try cloud.create(named: "Road")
+        XCTAssertThrowsError(try cloud.create(named: "Road")) { XCTAssertEqual($0 as? LibraryError, .alreadyExists) }
+    }
+
+    func testPhonePlaylistsReportThePhoneAsTheirLocation() throws {
+        try local.create(named: "Gym")
+        XCTAssertEqual(local.entries().first?.location, .thisPhone)
+    }
+
+    func testRenamingRenamesTheFolderAndTheFileAndKeepsSongsInTheFolder() throws {
+        let url = try cloud.create(named: "Road")
+        let song = url.deletingLastPathComponent().appendingPathComponent("song.mp3")
+        let songBytes = Data("pretend audio".utf8)
+        try songBytes.write(to: song)
+        let playlist = Playlist(tracks: Array(PlaylistFixture().tracks.prefix(2)))
+        XCTAssertEqual(cloud.save(playlist, to: url), .saved)
+
+        let renamed = try cloud.rename(url, to: "Trip")
+
+        XCTAssertEqual(renamed, cloud.folder.appendingPathComponent("Trip/Trip.\(playlistFileExtension)"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cloud.folder.appendingPathComponent("Road").path))
+        XCTAssertEqual(try Data(contentsOf: cloud.folder.appendingPathComponent("Trip/song.mp3")), songBytes, "songs travel with the folder, untouched")
+        guard case .loaded(let loaded) = cloud.load(renamed) else { return XCTFail("did not load") }
+        XCTAssertEqual(loaded, playlist)
+    }
+
+    func testRenamingToAnExistingPlaylistIsRefusedAndChangesNothing() throws {
+        let a = try cloud.create(named: "A")
+        try cloud.create(named: "B")
+        XCTAssertThrowsError(try cloud.rename(a, to: "B")) { XCTAssertEqual($0 as? LibraryError, .alreadyExists) }
+        XCTAssertEqual(cloud.entries().map(\.name), ["A", "B"])
+    }
+
+    func testCaseOnlyRenameOfAFolderPlaylistWorks() throws {
+        let url = try cloud.create(named: "road")
+        let renamed = try cloud.rename(url, to: "Road")
+        XCTAssertEqual(cloud.entries().map(\.name), ["Road"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: renamed.path))
+    }
+
+    func testDeleteRemovesOnlyThePlaylistFileAndKeepsSongsAndTheirFolder() throws {
+        let url = try cloud.create(named: "Road")
+        let song = url.deletingLastPathComponent().appendingPathComponent("song.mp3")
+        try Data("pretend audio".utf8).write(to: song)
+        try cloud.delete(url)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: song.path), "a song kept in the folder is never deleted with the playlist")
+        XCTAssertTrue(cloud.entries().isEmpty, "with no playlist file the folder is not listed as a playlist")
+    }
+
+    func testDeleteRemovesTheFolderWhenNothingElseIsInIt() throws {
+        let url = try cloud.create(named: "Road")
+        try cloud.delete(url)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.deletingLastPathComponent().path))
+    }
+
+    func testMoveIntoICloudMovesTheFileAndLeavesNothingBehind() throws {
+        let source = try local.create(named: "Gym")
+        let playlist = Playlist(tracks: Array(PlaylistFixture().tracks.prefix(3)))
+        XCTAssertEqual(local.save(playlist, to: source), .saved)
+        let moved = try cloud.adopt(source, using: PlainFileMover())
+        XCTAssertEqual(moved, cloud.folder.appendingPathComponent("Gym/Gym.\(playlistFileExtension)"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path), "it is moved, not copied")
+        guard case .loaded(let loaded) = cloud.load(moved) else { return XCTFail("did not load") }
+        XCTAssertEqual(loaded, playlist)
+        XCTAssertTrue(local.entries().isEmpty)
+        XCTAssertEqual(cloud.entries().map(\.name), ["Gym"])
+    }
+
+    func testMoveIntoICloudRefusesATakenNameAndLeavesTheSourceUntouched() throws {
+        try cloud.create(named: "Gym")
+        let source = try local.create(named: "Gym")
+        let bytes = try Data(contentsOf: source)
+        XCTAssertThrowsError(try cloud.adopt(source, using: PlainFileMover())) { XCTAssertEqual($0 as? LibraryError, .alreadyExists) }
+        XCTAssertEqual(try Data(contentsOf: source), bytes)
+    }
+
+    func testAFailedMoveLeavesTheSourceAndNoFolderBehind() throws {
+        struct FailingMover: CloudMoving {
+            func moveIntoCloud(_ source: URL, to destination: URL) throws { throw CocoaError(.fileWriteOutOfSpace) }
+        }
+        let source = try local.create(named: "Gym")
+        XCTAssertThrowsError(try cloud.adopt(source, using: FailingMover())) {
+            guard case .writeFailed? = $0 as? LibraryError else { return XCTFail("expected writeFailed, got \($0)") }
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path), "the source is still there")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cloud.folder.appendingPathComponent("Gym").path), "no empty folder is left")
+    }
+
+    func testOnlyPlaylistFilesCanBeMoved() throws {
+        let song = dir.url.appendingPathComponent("song.mp3")
+        try Data("x".utf8).write(to: song)
+        XCTAssertThrowsError(try cloud.adopt(song, using: PlainFileMover())) { XCTAssertEqual($0 as? LibraryError, .notAPlaylist) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: song.path))
+    }
+}

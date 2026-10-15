@@ -30,10 +30,15 @@ targets:
         CFBundleDisplayName: Playaway
         ITSAppUsesNonExemptEncryption: false
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "5"
+        CFBundleVersion: "6"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true
+        NSUbiquitousContainers:
+          iCloud.software.away.play:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: Playaway
+            NSUbiquitousContainerSupportedFolderLevels: Any
         LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UTExportedTypeDeclarations:
