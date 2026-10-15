@@ -109,4 +109,46 @@ final class DownloadOnPlayIntegrationTests: XCTestCase {
         XCTAssertEqual(f.rig.playlist, playlistBefore)
         XCTAssertEqual(f.filesBefore, filesBefore, "no audio file is changed by any icon tap")
     }
+
+    func testARequestForASongAlreadyDownloadingJoinsThatDownloadInsteadOfStartingAnother() {         // TC-31
+        let f = Fixture()
+        f.coordinator.request(f.songs[2], source: .list, isOnDevice: false)
+        f.coordinator.request(f.songs[2], source: .next, isOnDevice: false)
+        XCTAssertEqual(f.downloader.started, [f.songs[2]], "one download, not two")
+        f.coordinator.handle(.finished(f.songs[2]))
+        XCTAssertEqual(f.started, ["track3.mp3"], "and it plays once")
+    }
+
+    func testASlowOrUnfinishedDownloadNeverRemovesTheSongFromThePlaylist() {                          // TC-45
+        let f = Fixture()
+        let before = f.rig.playlist
+        f.coordinator.request(f.songs[1], source: .list, isOnDevice: false)
+        f.coordinator.handle(.progress(f.songs[1], reportedPercent: nil))
+        f.coordinator.handle(.progress(f.songs[1], reportedPercent: 40))
+        XCTAssertEqual(f.rig.playlist, before)
+        XCTAssertNotNil(f.rig.playlist.track(withID: f.rig.fixture.tracks[1].id))
+    }
+
+    func testARetryThatFinishesWhileItsSongIsStillCurrentStartsPlaybackOnce() {                       // TC-62
+        let f = Fixture()
+        f.coordinator.request(f.songs[3], source: .list, isOnDevice: false)
+        f.coordinator.handle(.failed(f.songs[3]))
+        f.coordinator.retry(f.songs[3])
+        f.coordinator.handle(.finished(f.songs[3]))
+        f.coordinator.handle(.finished(f.songs[3]))      // a repeated finish does nothing
+        XCTAssertEqual(f.started, ["track4.mp3"], "playback starts once")
+    }
+
+    func testAFailureAndACancelLeavePlaylistOrderAndFilesUnchangedAndNeverPlay() {                    // TC-11, TC-12, TC-46, TC-67
+        let f = Fixture()
+        let playlistBefore = f.rig.playlist
+        let filesBefore = f.filesBefore
+        f.coordinator.request(f.songs[1], source: .list, isOnDevice: false)
+        f.coordinator.handle(.failed(f.songs[1]))
+        f.coordinator.request(f.songs[2], source: .list, isOnDevice: false)
+        f.coordinator.cancel(f.songs[2])
+        XCTAssertTrue(f.started.isEmpty)
+        XCTAssertEqual(f.rig.playlist, playlistBefore)
+        XCTAssertEqual(f.filesBefore, filesBefore)
+    }
 }
