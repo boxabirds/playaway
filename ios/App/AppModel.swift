@@ -56,7 +56,7 @@ final class PlaylistSession: ObservableObject {
 
     func dismissNotice() { notice = nil }
 
-    func play(_ track: Track) { model?.becameActive(self); player.play(track: track) }
+    func play(_ track: Track) { if let model { model.requestPlay(track, in: self) } else { player.play(track: track) } }
     func start() { model?.becameActive(self); player.start() }
     weak var model: AppModel?
 
@@ -91,6 +91,17 @@ final class AppModel: ObservableObject {
     @Published private(set) var resumePoint: ResumePoint?
     private let memoryStore = ListeningMemoryStore()
     private let openAdapter = OpenAdapter()
+    private(set) lazy var cloud: CloudSongs = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-PlayawayFakeCloud") {
+            return CloudSongs(scripted: ["Demo Two": .succeeds(after: 2), "Demo Three": .fails(after: 5)])
+        }
+        #endif
+        return CloudSongs()
+    }()
+    private(set) lazy var downloads = DownloadOnPlayCoordinator(downloader: cloud, player: self)
+    private var pendingPlays: [SongID: (session: PlaylistSession, track: Track)] = [:]
+    @Published private(set) var cloudRevision = 0
     private(set) lazy var openCoordinator = OpenCoordinator(classifier: FormatClassifier(), engine: engine,
                                                             notices: openAdapter, playlists: openAdapter)
     private let launchTimer: LaunchTimer?
@@ -130,8 +141,17 @@ final class AppModel: ObservableObject {
         }
         #endif
         openAdapter.model = self
+        cloud.onEvent = { [weak self] event in
+            guard let self else { return }
+            self.downloads.handle(event)
+            self.cloudRevision += 1
+        }
         refresh()
-        transport.startHandler = { [weak self] in self?.resumeFromMemory() ?? false }
+        transport.startHandler = { [weak self] in
+            guard let self else { return false }
+            if self.downloads.transportPlay() == .ignored { return true }     // a song is still downloading
+            return self.resumeFromMemory()
+        }
         restoreMemory()
         $path.dropFirst().sink { [weak self] _ in self?.saveMemory(force: true) }.store(in: &cancellables)
         transport.$position.sink { [weak self] _ in self?.saveMemory(force: false) }.store(in: &cancellables)
@@ -322,6 +342,47 @@ final class AppModel: ObservableObject {
             .info("launch \(report.kind.rawValue) \(report.seconds, format: .fixed(precision: 3)) s")
     }
 
+    // MARK: Download on play
+
+    /// A song was chosen. If its file is in iCloud and not on this device it is downloaded first and plays when it
+    /// has arrived; otherwise it plays at once.
+    func requestPlay(_ track: Track, in session: PlaylistSession) {
+        guard cloud.isAvailable, case .resolved(let url) = TrackResolver().resolve(track.reference).0 else {
+            becameActive(session); session.player.play(track: track); return
+        }
+        let song = cloud.id(for: url)
+        pendingPlays[song] = (session, track)
+        downloads.request(song, source: .list, isOnDevice: cloud.presence(of: url) != .inCloudNotOnDevice)
+        cloudRevision += 1
+    }
+
+    func startPlayback(of song: SongID) {
+        guard let pending = pendingPlays[song] else { return }
+        becameActive(pending.session)
+        pending.session.player.play(track: pending.track)
+        cloudRevision += 1
+    }
+
+    /// What a song row shows about iCloud, nil when no iCloud account is available.
+    func cloudDisplay(for track: Track) -> SongRowCloudDisplay? {
+        guard cloud.isAvailable, case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return nil }
+        let song = cloud.id(for: url)
+        let tracked = downloads.state(of: song)
+        return SongRowCloudDisplay(presence: cloud.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
+    }
+
+    func cloudIconTapped(_ track: Track, session: PlaylistSession) {
+        guard let display = cloudDisplay(for: track), case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return }
+        let song = cloud.id(for: url)
+        pendingPlays[song] = (session, track)
+        switch cloudIconTapAction(state: display.icon, kind: .song) {
+        case .cancelDownload: downloads.cancel(song)
+        case .retryDownload: downloads.retry(song)
+        case .openSyncDialog, .none, .cancelSync: break    // the sync dialog belongs to the iCloud sync stories
+        }
+        cloudRevision += 1
+    }
+
     // MARK: Rename and delete
 
     @Published var renameTarget: URL?
@@ -431,3 +492,6 @@ final class AppModel: ObservableObject {
         try? audio.setActive(true)
     }
 }
+
+
+extension AppModel: SongPlaybackStarting {}

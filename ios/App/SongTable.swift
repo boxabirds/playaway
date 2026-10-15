@@ -24,6 +24,7 @@ struct SongTable: UIViewRepresentable {
     func updateUIView(_ table: UITableView, context: Context) {
         let c = context.coordinator
         c.session = session
+        c.model = model
         c.currentID = session.player.current?.id
         // Room for the floating controller, so the last song can be scrolled up clear of it.
         let bottom = model.playerBarVisible ? PlayerBar.inset : 0
@@ -38,6 +39,7 @@ struct SongTable: UIViewRepresentable {
         var session: PlaylistSession
         var currentID: UUID?
         var isDragging = false
+        weak var model: AppModel?
         init(session: PlaylistSession) { self.session = session }
 
         func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { session.playlist.tracks.count }
@@ -46,11 +48,19 @@ struct SongTable: UIViewRepresentable {
             let cell = tableView.dequeueReusableCell(withIdentifier: Self.cellID, for: indexPath)
             let track = session.playlist.tracks[indexPath.row]
             let playing = track.id == currentID
+            let display = model?.cloudDisplay(for: track)
+            let name = track.reference.fileName.fileNameWithoutExtension
             cell.contentConfiguration = UIHostingConfiguration {
                 HStack {
-                    Text(track.reference.fileName.fileNameWithoutExtension).foregroundStyle(.primary)
+                    Text(name).foregroundStyle(.primary).opacity(display?.dimmed == true ? 0.45 : 1)
                     Spacer()
                     if playing { Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint) }
+                    if let display {
+                        CloudIconButton(display: display) { [weak self] in
+                            guard let self, let model = self.model else { return }
+                            model.cloudIconTapped(track, session: self.session)
+                        }
+                    }
                 }
             }
             cell.accessibilityTraits = .button
@@ -115,5 +125,57 @@ struct SongTable: UIViewRepresentable {
 
         func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) { isDragging = true }
         func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) { isDragging = false }
+    }
+}
+
+
+/// The cloud icon at the end of a song row. It is drawn small but its tappable area is at least 44 by 44 points.
+struct CloudIconButton: View {
+    let display: SongRowCloudDisplay
+    let tapped: () -> Void
+
+    var body: some View {
+        Button(action: tapped) {
+            icon
+                .frame(width: cloudIconDrawnSize.width, height: cloudIconDrawnSize.height)
+                .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("cloud-icon")
+        .accessibilityValue(valueText)
+    }
+
+    @ViewBuilder private var icon: some View {
+        switch display.icon {
+        case .crossedOut: Image(systemName: "icloud.slash").foregroundStyle(.secondary)
+        case .outline: Image(systemName: "icloud").foregroundStyle(.secondary)
+        case .exclamation: Image(systemName: "exclamationmark.icloud").foregroundStyle(.red)
+        case .pieDownload, .pieSync:
+            if let fraction = display.fraction, fraction > 0 {
+                ZStack {
+                    Circle().stroke(.secondary.opacity(0.3), lineWidth: 3)
+                    Circle().trim(from: 0, to: fraction).stroke(.tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+            } else {
+                ProgressView().scaleEffect(0.7)    // the system's percentage is not known, so no pie fill
+            }
+        }
+    }
+
+    private var label: String {
+        switch display.icon {
+        case .crossedOut: return "Not in iCloud"
+        case .outline: return display.dimmed ? "In iCloud, not on this iPhone" : "In iCloud"
+        case .pieDownload, .pieSync: return "Downloading, tap to cancel"
+        case .exclamation: return DownloadState.failedAccessibilityLabel
+        }
+    }
+
+    private var valueText: String {
+        guard let fraction = display.fraction, fraction > 0 else { return "" }
+        return "\(Int(fraction * 100)) percent"
     }
 }

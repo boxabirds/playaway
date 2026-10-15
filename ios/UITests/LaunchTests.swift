@@ -210,6 +210,47 @@ import XCTest
     }
 }
 
+@MainActor final class DownloadOnPlayTests: XCTestCase {
+    private func icon(_ app: XCUIApplication, row: String) -> XCUIElement {
+        app.tables["song-table"].cells[row].buttons["cloud-icon"]
+    }
+
+    func testASongNotOnThisDeviceDownloadsThenPlaysAndAFailureCanBeRetriedOrCancelled() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+
+        // A song on the device is local only; the two scripted songs are in iCloud and not on the device.
+        XCTAssertEqual(icon(app, row: "Demo One").label, "Not in iCloud")
+        XCTAssertEqual(icon(app, row: "Demo Two").label, "In iCloud, not on this iPhone")
+
+        // Choosing it starts the download; nothing plays until it arrives, then it plays by itself.
+        table.cells["Demo Two"].tap()
+        expectation(for: NSPredicate(format: "label == 'Downloading, tap to cancel'"), evaluatedWith: icon(app, row: "Demo Two"))
+        waitForExpectations(timeout: 10)
+        XCTAssertFalse(app.buttons["Pause"].exists, "nothing plays while it downloads")
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 20), "it plays when the download has finished")
+        expectation(for: NSPredicate(format: "label == 'In iCloud'"), evaluatedWith: icon(app, row: "Demo Two"))
+        waitForExpectations(timeout: 10)    // and is now on the device
+
+        // A failed download shows the exclamation mark; tapping it tries again.
+        table.cells["Demo Three"].tap()
+        let failed = NSPredicate(format: "label == %@", "Download failed, tap to retry")
+        expectation(for: failed, evaluatedWith: icon(app, row: "Demo Three"))
+        waitForExpectations(timeout: 20)
+        icon(app, row: "Demo Three").tap()
+        expectation(for: NSPredicate(format: "label == 'Downloading, tap to cancel'"), evaluatedWith: icon(app, row: "Demo Three"))
+        waitForExpectations(timeout: 10)    // retry starts the download again
+
+        // Tapping the pie cancels: the row goes back to in iCloud and not on this iPhone.
+        icon(app, row: "Demo Three").tap()
+        expectation(for: NSPredicate(format: "label == 'In iCloud, not on this iPhone'"), evaluatedWith: icon(app, row: "Demo Three"))
+        waitForExpectations(timeout: 10)
+    }
+}
+
 @MainActor final class RememberTests: XCTestCase {
     func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
         let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()
