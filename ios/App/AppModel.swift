@@ -338,7 +338,10 @@ final class AppModel: ObservableObject {
     }
 
     /// A refused rename keeps the form open and says why.
-    private func reshowRename(_ message: String) { renameMessage = message }
+    private func reshowRename(_ message: String) {
+        renameMessage = message
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
 
     func cancelRename() {
         renameShown = false
@@ -361,6 +364,7 @@ final class AppModel: ObservableObject {
             }
             entries = library.entries()
             saveMemory(force: true)
+            UIAccessibility.post(notification: .announcement, argument: "Renamed to \(newURL.deletingPathExtension().lastPathComponent)")
         } catch let error as LibraryError {
             switch error {
             case .nameEmpty: reshowRename("Enter a name for the playlist.")
@@ -395,6 +399,7 @@ final class AppModel: ObservableObject {
         if resumePoint?.playlistFileName == entry.url.lastPathComponent { resumePoint = nil }
         entries = library.entries()
         saveMemory(force: true)
+        UIAccessibility.post(notification: .announcement, argument: "Playlist deleted")
     }
 
     /// A song or playlist opened from outside replaces the playlist that was playing.
