@@ -233,9 +233,12 @@ final class SongIntakeFlowTests: XCTestCase {
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
+    private var fixturesKeptAlive: [PlaylistFixture] = []
+
     /// A playlist of real audio files in an "elsewhere" folder, plus one already inside the Playaway folder.
     private func makePlaylist(elsewhere: Int, inside: Int = 0) throws -> (Playlist, [URL]) {
         let source = PlaylistFixture(trackNames: Array(Fixtures.trackNames.prefix(elsewhere)))
+        fixturesKeptAlive.append(source)       // its files are deleted when it goes, so it lives as long as the test
         var tracks = source.tracks
         var urls = source.urls
         if inside > 0 {
@@ -243,7 +246,9 @@ final class SongIntakeFlowTests: XCTestCase {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             for index in 0..<inside {
                 let url = folder.appendingPathComponent("inside\(index).mp3")
-                try FileManager.default.copyItem(at: PlaylistFixture().urls[0], to: url)
+                let original = PlaylistFixture()
+                fixturesKeptAlive.append(original)
+                try FileManager.default.copyItem(at: original.urls[0], to: url)
                 urls.append(url)
                 tracks.append(Track(id: UUID(), reference: TrackReference.make(for: url)!))
             }

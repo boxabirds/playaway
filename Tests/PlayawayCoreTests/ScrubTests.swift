@@ -65,3 +65,44 @@ final class ScrubTests: XCTestCase {
         XCTAssertEqual(engine.state, .playing)
     }
 }
+
+/// Reproduces "moving the slider stops the music": the finger lifting was never reported (another gesture took the touch),
+/// so the song stayed paused for good.
+final class ScrubWatchdogTests: XCTestCase {
+    private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval = 3) {
+        let done = expectation(description: "condition")
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { timer in
+            if condition() { timer.invalidate(); done.fulfill() }
+        }
+        wait(for: [done], timeout: timeout)
+        timer.invalidate()
+    }
+
+    func testAScrubWhoseLiftIsNeverReportedStillResumesPlayback() {
+        let backend = RecordingAudioBackend()
+        let engine = makeEngine(backend: backend)
+        _ = engine.play(PlaylistFixture().urls[0])
+        let transport = TransportViewModel(engine: engine, registry: ActiveSessionRegistry(), runsTimer: false)
+        transport.scrubTimeout = 0.15
+        transport.beginScrub()
+        XCTAssertEqual(engine.state, .paused)
+        waitUntil { engine.state == .playing }
+        XCTAssertEqual(engine.state, .playing, "the song carries on by itself")
+    }
+
+    func testMovesKeepAScrubAliveAndTheLiftEndsItAtOnce() throws {
+        let engine = makeEngine()
+        _ = engine.play(PlaylistFixture().urls[0])
+        let transport = TransportViewModel(engine: engine, registry: ActiveSessionRegistry(), runsTimer: false)
+        transport.scrubTimeout = 0.4
+        transport.beginScrub()
+        for place in [0.5, 1.0, 1.5] {
+            Thread.sleep(forTimeInterval: 0.25)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            try transport.seek(toSeconds: place)
+            XCTAssertEqual(engine.state, .paused, "still scrubbing while the finger moves")
+        }
+        try transport.endScrub(toSeconds: 1.5)
+        XCTAssertEqual(engine.state, .playing)
+    }
+}

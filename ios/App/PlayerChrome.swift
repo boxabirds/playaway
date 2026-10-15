@@ -15,30 +15,28 @@ private enum Chrome {
     static let playButtonSide: CGFloat = 76
     static let playButtonMaxSide: CGFloat = 112
     static let scrubberStep: Double = 1
-    /// Room for the system's drag indicator above the card's content.
-    static let dragIndicatorRoom: CGFloat = 28
-    /// The most of the screen the card may use before it scrolls.
-    static let cardMaxScreenFraction: CGFloat = 0.9
+    static let cardCorner: CGFloat = 24
+    /// The sheet is always this much of the screen, and never changes size: the card is drawn inside it. That way the
+    /// controls cannot move when the card above them grows or shrinks.
+    static let sheetFraction: CGFloat = 0.9
+    /// The sheet's height for the instant before the card has measured its content.
+    static let firstSheetHeight: CGFloat = 320
+    /// How tall the card may be before its content scrolls.
+    static let cardMaxFraction: CGFloat = 0.85
+    static let cardResize = Animation.snappy(duration: 0.35)
     /// How far up a drag on the controller must go before it counts as opening the card.
     static let openDragDistance: CGFloat = 24
 }
 
-/// The floating controller at the bottom, and the player card, which is a standard system sheet: the system draws the
-/// drag indicator, follows the finger, decides when to settle open or closed and rubber-bands. Nothing here tracks a
-/// drag. Tapping the controller or dragging it up opens the card.
+/// The floating controller at the bottom, and the player card, which opens in a standard system sheet: the system draws
+/// the dimming, follows the finger and decides when to settle open or closed. Tapping the controller or dragging it up
+/// opens the card.
 struct PlayerChrome: View {
     @EnvironmentObject var model: AppModel
-    @State private var cardContentHeight: CGFloat = 0
-    /// The sheet's heights while it moves from one to another, and the one it is at. A sheet whose height simply changes
-    /// snaps; selecting between two heights inside an animation makes the system slide its top edge.
-    @State private var detentHeights: [CGFloat] = []
-    @State private var selectedDetent: PresentationDetent = .large
-    @State private var settledHeight: CGFloat?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
-            let active = model.transport.state != .idle || model.resumePoint != nil
+            let active = model.transport.state != .idle
             ZStack(alignment: .bottom) {
                 if active {
                     FloatingController()
@@ -51,14 +49,8 @@ struct PlayerChrome: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .sheet(isPresented: $model.cardOpen) {
-                PlayerCard(contentHeight: $cardContentHeight, scrolls: cardHeight(in: geo) >= geo.size.height * Chrome.cardMaxScreenFraction)
-                    .presentationDetents(Set(detentHeights.map { PresentationDetent.height($0) }.ifEmpty([.large])), selection: $selectedDetent)
-                    .presentationDragIndicator(.visible)
-                    .presentationBackground(.regularMaterial)
-                    .onAppear { resize(to: cardHeight(in: geo), in: geo, animated: false) }
-                    .onChange(of: cardHeight(in: geo)) { _, new in resize(to: new, in: geo, animated: true) }
+                PlayerCard(maxHeight: geo.size.height * Chrome.cardMaxFraction)
             }
-            .onChange(of: model.cardOpen) { _, open in if open { settledHeight = nil } }
             .onChange(of: active) { _, isActive in if !isActive { model.cardOpen = false } }
         }
         .ignoresSafeArea(.keyboard)
@@ -79,37 +71,6 @@ struct PlayerChrome: View {
             Button("OK", role: .cancel) {}
         } message: { Text(model.failureMessage ?? "") }
     }
-
-    /// The card is as tall as its content, so the sheet is too; it grows and shrinks with the content (artwork arriving)
-    /// as the system resizes the sheet from its bottom edge.
-    private func cardHeight(in geo: GeometryProxy) -> CGFloat {
-        let content = cardContentHeight > 0 ? cardContentHeight + Chrome.dragIndicatorRoom : geo.size.height * 0.4
-        return min(content, geo.size.height)
-    }
-
-    /// Moves the sheet to a new height. The old and new heights are both offered while the system slides between them,
-    /// and the old one is dropped when the slide has finished.
-    private func resize(to height: CGFloat, in geo: GeometryProxy, animated: Bool) {
-        let tall = height >= geo.size.height * Chrome.cardMaxScreenFraction
-        let target: PresentationDetent = tall ? .large : .height(height)
-        guard let old = settledHeight, animated, !reduceMotion, abs(old - height) > 1 else {
-            detentHeights = tall ? [] : [height]
-            selectedDetent = target
-            settledHeight = height
-            return
-        }
-        detentHeights = tall ? [old] : [old, height]
-        settledHeight = height
-        withAnimation(.snappy(duration: 0.35)) {
-            selectedDetent = target
-        } completion: {
-            detentHeights = tall ? [] : [height]
-        }
-    }
-}
-
-extension Array {
-    fileprivate func ifEmpty(_ fallback: [Element]) -> [Element] { isEmpty ? fallback : self }
 }
 
 struct FloatingController: View {
@@ -149,27 +110,28 @@ struct FloatingController: View {
 
 struct PlayerCard: View {
     @EnvironmentObject var model: AppModel
-    @Binding var contentHeight: CGFloat
-    let scrolls: Bool
-    @State private var scrubPosition: Double?
+    let maxHeight: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var contentHeight: CGFloat = 0
     @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
+    /// What the card shows is the engine's own state, read where it is drawn. The only state here is the height of the
+    /// card's content, which sets the height of the sheet. The content is anchored to the bottom of the sheet, so when
+    /// artwork arrives or goes the sheet's top edge moves and the controls, being at the bottom, do not.
     var body: some View {
-        // The content is anchored to the bottom of the sheet, so when artwork arrives or goes the top of the sheet moves
-        // and the controls stay where they are. It scrolls only when it is taller than the screen allows.
-        Group {
-            if scrolls {
-                ScrollView { content }.scrollBounceBehavior(.basedOnSize)
-            } else {
-                content.frame(maxHeight: .infinity, alignment: .bottom)
-            }
+        let height = min(contentHeight, maxHeight)
+        return Group {
+            if contentHeight > maxHeight { ScrollView { content }.scrollBounceBehavior(.basedOnSize) } else { content }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .presentationDetents([.height(contentHeight > 0 ? height : Chrome.firstSheetHeight)])
+        .presentationDragIndicator(.hidden)
         .accessibilityIdentifier("player-card")
     }
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5).frame(maxWidth: .infinity).padding(.top, 6)
             if let name = model.activeSession?.name {
                 Button { model.playlistLinkTapped() } label: {
                     Text(name).font(.footnote).foregroundStyle(.tint)
@@ -187,29 +149,38 @@ struct PlayerCard: View {
         }
         .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
         .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { newHeight in
+            if contentHeight == 0 {            // the first measurement is the card appearing, not a resize
+                var transaction = Transaction(); transaction.disablesAnimations = true
+                withTransaction(transaction) { contentHeight = newHeight }
+            } else {
+                withAnimation(reduceMotion ? nil : Chrome.cardResize) { contentHeight = newHeight }
+            }
+        }
     }
 
+    /// The position slider and the two times. They are drawn on a clock straight from the engine, so they are always the
+    /// engine's position. While a finger is on the slider the song is paused and every move seeks the engine itself, so the
+    /// slider, the times and the sound can never disagree.
     private var scrubber: some View {
-        let shown = scrubPosition ?? model.resumePoint?.positionSeconds ?? model.transport.position
-        let resting = model.resumePoint != nil
-        return VStack(spacing: 2) {
-            // The song pauses while a finger is on the slider and seeks once when it lifts, so nothing is heard from the
-            // places the slider passes through and no stretch is played twice.
-            Slider(value: Binding(get: { shown }, set: { scrubPosition = $0 }),
-                   in: 0...max(model.transport.duration, 1), step: Chrome.scrubberStep) { editing in
-                if editing { model.transport.beginScrub() }
-                else { try? model.transport.endScrub(toSeconds: scrubPosition ?? model.transport.position); scrubPosition = nil }
+        TimelineView(.animation(minimumInterval: 0.25, paused: model.transport.state != .playing)) { _ in
+            let position = model.transport.position
+            let duration = model.transport.duration
+            VStack(spacing: 2) {
+                Slider(value: Binding(get: { position }, set: { try? model.transport.seek(toSeconds: $0) }),
+                       in: 0...max(duration, 1), step: Chrome.scrubberStep) { editing in
+                    if editing { model.transport.beginScrub() }
+                    else { try? model.transport.endScrub(toSeconds: model.transport.position) }
+                }
+                .accessibilityLabel("Playback position")
+                .accessibilityValue("\(TransportViewModel.formatTime(position)) of \(TransportViewModel.formatTime(duration))")
+                HStack {
+                    Text(TransportViewModel.formatTime(position))
+                    Spacer()
+                    Text("-" + TransportViewModel.formatTime(max(duration - position, 0)))
+                }
+                .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
             }
-            .accessibilityLabel("Playback position")
-            .accessibilityValue(resting ? "" : "\(TransportViewModel.formatTime(shown)) of \(TransportViewModel.formatTime(model.transport.duration))")
-            .disabled(resting)
-            HStack {
-                Text(TransportViewModel.formatTime(shown))
-                Spacer()
-                Text(resting ? "-:--" : "-" + TransportViewModel.formatTime(max(model.transport.duration - shown, 0)))
-            }
-            .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
         }
     }
 

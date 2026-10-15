@@ -112,11 +112,19 @@ package final class PlaylistPlayer: SessionEnding {
         }
     }
 
-    /// Carries on from a remembered place: plays the track and moves to `seconds`. A place beyond the end of the
-    /// track, or one the engine refuses, leaves the track playing from 0:00.
-    package func resume(track: Track, atSeconds seconds: Double) {
-        play(track: track)
-        if current == track, seconds > 0 { _ = engine.seek(toSeconds: seconds) }
+    /// Loads a song paused at a remembered place and makes it the current song of this playlist, so the player shows it
+    /// exactly as it shows any paused song and Play carries on from there. Nothing is heard. A song that cannot be loaded
+    /// changes nothing.
+    @discardableResult
+    package func load(track: Track, atSeconds seconds: Double) -> Bool {
+        guard playlistProvider().track(withID: track.id) != nil, case .ready(let url) = prepare(track) else { return false }
+        guard engine.prepare(url, at: seconds) == .ready else { return false }
+        beginSession()
+        current = track
+        passIsShuffled = settings.shuffleOn
+        pass = settings.shuffleOn ? order.pass(for: playlistProvider(), startingWith: track) : []
+        noteStartedOrder()
+        return true
     }
 
     // MARK: Next and previous

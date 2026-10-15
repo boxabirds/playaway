@@ -64,6 +64,29 @@ package final class AVPlaybackEngine: PlaybackEngine {
         return .playing
     }
 
+    package func prepare(_ url: URL, at seconds: Double) -> PrepareResult {
+        guard devices.hasOutputDevice else { return .noOutputDevice }
+        let newPlayer: AudioPlayerHandle
+        do {
+            newPlayer = try backend.makePlayer(for: url)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+        generation += 1
+        let token = generation
+        newPlayer.onFinish = { [weak self] in self?.trackFinished(token: token, url: url) }
+        newPlayer.gain = effectiveGain
+        newPlayer.currentTime = min(max(seconds.isFinite ? seconds : 0, 0), newPlayer.duration)
+        let previous = player
+        player = newPlayer
+        currentURL = url
+        state = .paused
+        previous?.onFinish = nil
+        previous?.stop()
+        subject.send(.stateChanged)
+        return .ready
+    }
+
     package func pause() {
         guard state == .playing, let player else { return }
         player.pause()

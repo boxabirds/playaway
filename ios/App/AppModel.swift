@@ -107,8 +107,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var entries: [PlaylistEntry] = []
     @Published var cardOpen = false
     @Published var path: [URL] = []
-    /// Where the last launch left off, shown paused until the person presses play.
-    @Published private(set) var resumePoint: ResumePoint?
     private let memoryStore = ListeningMemoryStore()
     private let openAdapter = OpenAdapter()
     /// Test aid: in a fake cloud, files under this folder count as iCloud Drive files.
@@ -165,7 +163,9 @@ final class AppModel: ObservableObject {
             launchTimer = LaunchTimer(processStart: start, kind: launchKind(previousLaunch: launchStore.lastLaunch, deviceBoot: boot))
         } else { launchTimer = nil }
         launchStore.noteLaunch(at: now)
-        transport = TransportViewModel(engine: engine, registry: registry)
+        // The playing position is drawn by the screen on its own clock, straight from the engine, so the transport does not
+        // need to announce it four times a second.
+        transport = TransportViewModel(engine: engine, registry: registry, runsTimer: false)
         transport.activePlayerProvider = { [weak self] in self?.activeSession?.player }
         configureAudioSession()
         nowPlaying.attach(model: self)
@@ -191,8 +191,7 @@ final class AppModel: ObservableObject {
         refresh()
         transport.startHandler = { [weak self] in
             guard let self else { return false }
-            if self.downloads.transportPlay() == .ignored { return true }     // a song is still downloading
-            return self.resumeFromMemory()
+            return self.downloads.transportPlay() == .ignored      // a song is still downloading: Play is taken and ignored
         }
         restoreMemory()
         #if DEBUG
@@ -208,7 +207,9 @@ final class AppModel: ObservableObject {
         }
         #endif
         $path.dropFirst().sink { [weak self] _ in self?.saveMemory(force: true) }.store(in: &cancellables)
-        transport.$position.sink { [weak self] _ in self?.saveMemory(force: false) }.store(in: &cancellables)
+        // The place is saved about every five seconds while a song plays (the throttle is in saveMemory).
+        Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+            .sink { [weak self] _ in self?.saveMemory(force: false) }.store(in: &cancellables)
     }
 
     // MARK: Remembering what was playing
@@ -223,26 +224,14 @@ final class AppModel: ObservableObject {
         path = memory.openPlaylists.map { playlistURL(forFileName: $0) }
         guard let point = memory.nowPlaying else { return }
         let url = playlistURL(forFileName: point.playlistFileName)
+        // The remembered song is loaded into the engine paused at its place, so everything that shows it (the title, the
+        // length, the place) is the engine's own, exactly as for any paused song. A song that is not on this device is not
+        // waited for: it is not restored.
         guard let session = session(for: url), let track = session.playlist.track(withID: point.trackID),
-              case .resolved(let file) = TrackResolver().resolve(track.reference).0 else { return }
-        activeSession = session
-        resumePoint = point
-        metadataURL = file
-        metadata = TrackMetadata.fallback(for: file)
-        Task { [weak self] in
-            let loaded = await loadTrackMetadata(for: file)
-            await MainActor.run { if self?.metadataURL == file { self?.metadata = loaded } }
-        }
-    }
-
-    /// Play pressed with nothing loaded: carries on from the remembered song and place.
-    private func resumeFromMemory() -> Bool {
-        guard let point = resumePoint, let session = activeSession,
-              let track = session.playlist.track(withID: point.trackID) else { return false }
-        resumePoint = nil
+              case .resolved(let file) = TrackResolver().resolve(track.reference).0,
+              cloud.presence(of: file).isOnDevice else { return }
         session.model = self
-        session.player.resume(track: track, atSeconds: point.positionSeconds)
-        return engine.state != .idle
+        if session.player.load(track: track, atSeconds: point.positionSeconds) { becameActive(session) }
     }
 
     /// Writes what the next launch needs. Position ticks are throttled; every other change passes `force`.
@@ -251,7 +240,7 @@ final class AppModel: ObservableObject {
             guard engine.state == .playing, shouldSavePosition(lastSaved: lastPositionSave, now: Date()) else { return }
         }
         lastPositionSave = Date()
-        var nowPlaying = resumePoint
+        var nowPlaying: ResumePoint?
         if engine.state != .idle, let session = activeSession, let track = session.player.current {
             nowPlaying = ResumePoint(playlistFileName: memoryKey(session.url), trackID: track.id,
                                      positionSeconds: engine.position)
@@ -298,7 +287,6 @@ final class AppModel: ObservableObject {
 
     private func engineChanged() {
         let url = engine.currentURL
-        if engine.state != .idle { resumePoint = nil }
         saveMemory(force: engine.state != .playing || url != metadataURL)
         if url != metadataURL {
             metadataURL = url
@@ -350,7 +338,7 @@ final class AppModel: ObservableObject {
     @Published var playerBarHeight: CGFloat = PlayerBar.height
     var playerBarInset: CGFloat { playerBarVisible ? PlayerBar.inset(forHeight: playerBarHeight) : 0 }
     /// True while the floating controller is on screen, so screens leave room for it.
-    var playerBarVisible: Bool { transport.state != .idle || resumePoint != nil }
+    var playerBarVisible: Bool { transport.state != .idle }
     @Published var failureMessage: String?
     private var queuedMessages: [String] = []
 
@@ -613,10 +601,6 @@ final class AppModel: ObservableObject {
         songURLs.removeAll()
         if let session = sessions.removeValue(forKey: old) { session.rebase(to: new); sessions[new] = session }
         path = path.map { $0 == old ? new : $0 }
-        if var point = resumePoint, point.playlistFileName == memoryKey(old) {
-            point.playlistFileName = memoryKey(new)
-            resumePoint = point
-        }
     }
 
     // MARK: Rename and delete
@@ -688,7 +672,6 @@ final class AppModel: ObservableObject {
             cardOpen = false
             endActiveSession()
         }
-        if resumePoint?.playlistFileName == memoryKey(entry.url) { resumePoint = nil }
         entries = allEntries()
         saveMemory(force: true)
         UIAccessibility.post(notification: .announcement, argument: "Playlist deleted")
@@ -698,7 +681,6 @@ final class AppModel: ObservableObject {
     func endActiveSession() {
         activeSession?.player.end()
         activeSession = nil
-        resumePoint = nil
     }
 
     func createPlaylist(named name: String) throws -> URL {

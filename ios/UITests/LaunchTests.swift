@@ -469,31 +469,42 @@ import UIKit
 }
 
 @MainActor final class CardAnimationTests: XCTestCase {
-    /// The top edge of the sheet, found in a screenshot (so it is where the sheet is drawn right now, not where an
-    /// animation is heading): the first row, scanning down the right-hand margin, that is as light as the sheet's material
-    /// rather than the dimmed screen behind it.
-    private func sheetTop(_ app: XCUIApplication) -> Int? {
+    /// One screenshot, read as drawn right now (accessibility frames always report where something is heading, so they
+    /// cannot show an animation): the top edge of the card, and the middle of the round play and pause button.
+    private func read(_ app: XCUIApplication) -> (cardTop: Int?, controlsY: Int?) {
         let shot = app.screenshot()
-        guard let cg = shot.image.cgImage else { return nil }
+        guard let cg = shot.image.cgImage else { return (nil, nil) }
         let scale = shot.image.scale
-        let x = Int(Double(cg.width) * 0.96)
-        guard let column = cg.cropping(to: CGRect(x: x, y: 0, width: 1, height: cg.height)) else { return nil }
-        var data = [UInt8](repeating: 0, count: cg.height * 4)
-        let context = CGContext(data: &data, width: 1, height: cg.height, bitsPerComponent: 8, bytesPerRow: 4,
-                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        context.draw(column, in: CGRect(x: 0, y: 0, width: 1, height: cg.height))
-        let skip = Int(150 * scale)                       // below the status bar and the navigation bar
-        for y in skip..<cg.height {
-            let luminance = (Int(data[y * 4]) + Int(data[y * 4 + 1]) + Int(data[y * 4 + 2])) / 3
-            if luminance >= 228 { return Int(Double(y) / scale) }
+        func column(at fraction: Double) -> [Int]? {
+            guard let strip = cg.cropping(to: CGRect(x: Int(Double(cg.width) * fraction), y: 0, width: 1, height: cg.height)) else { return nil }
+            var data = [UInt8](repeating: 0, count: cg.height * 4)
+            let context = CGContext(data: &data, width: 1, height: cg.height, bitsPerComponent: 8, bytesPerRow: 4,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(strip, in: CGRect(x: 0, y: 0, width: 1, height: cg.height))
+            return (0..<cg.height).map { (Int(data[$0 * 4]) + Int(data[$0 * 4 + 1]) + Int(data[$0 * 4 + 2])) / 3 }
         }
-        return nil
+        var top: Int?
+        if let margin = column(at: 0.96) {
+            for y in Int(150 * scale)..<margin.count where margin[y] >= 228 { top = Int(Double(y) / scale); break }
+        }
+        var controls: Int?
+        if let middle = column(at: 0.5) {
+            var runStart: Int?
+            var runs: [(Int, Int)] = []
+            for (y, value) in middle.enumerated() {
+                if value < 50 { if runStart == nil { runStart = y } }
+                else if let start = runStart { runs.append((start, y)); runStart = nil }
+            }
+            let pointRuns = runs.map { (Double($0.0) / scale, Double($0.1) / scale) }.filter { $0.1 - $0.0 > 50 && $0.1 - $0.0 < 95 }
+            if let lowest = pointRuns.max(by: { $0.0 < $1.0 }) { controls = Int((lowest.0 + lowest.1) / 2) }
+        }
+        return (top, controls)
     }
 
-    /// Reproduces "there's no animation now, it just snaps" when artwork appears or goes. Animations run ten times slower
-    /// here, and the app moves to the next songs by itself, so the test only watches: each resize of the sheet must be seen
-    /// at several places on its way, not as one jump.
-    func testTheTopOfTheCardSlidesWhenArtworkAppearsAndGoes() {
+    /// Reproduces "player controls DO NOT MOVE AT ALL": when artwork appears or goes, the area above the controls expands or
+    /// shrinks, slowly enough to be seen here, and the controls stay exactly where they are on every frame. This is the
+    /// third time the same thing was reported, so it is measured on screen, not assumed.
+    func testTheControlsNeverMoveWhileTheArtworkAreaExpandsAndShrinks() {
         let app = XCUIApplication()
         app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeArtwork", "-PlayawaySlowAnimations", "-PlayawayAutoNext"]
         app.launch()
@@ -504,24 +515,34 @@ import UIKit
         table.cells["Demo One"].tap()
         let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
         XCTAssertTrue(controller.waitForExistence(timeout: 20))
-        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()    // the app advances 10 s and 30 s later
-        var seen: [Int] = []
-        let deadline = Date().addingTimeInterval(50)
-        while Date() < deadline { if let top = sheetTop(app) { seen.append(top) } }
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "player-card").firstMatch.waitForExistence(timeout: 30))
+        sleep(8)                                                   // the sheet's own opening, slowed down, finishes
 
-        // Split the samples into the runs where the top edge was moving, and judge each run that went a real distance.
+        var tops: [Int] = []
+        var controlsRows: [Int] = []
+        let deadline = Date().addingTimeInterval(50)               // the app moves to the next song at 10 s and at 30 s
+        while Date() < deadline {
+            let reading = read(app)
+            if let top = reading.cardTop { tops.append(top) }
+            if let controls = reading.controlsY { controlsRows.append(controls) }
+        }
+
         var runs: [[Int]] = []
-        var current: [Int] = [seen[0]]
-        for value in seen.dropFirst() {
+        var current: [Int] = [tops[0]]
+        for value in tops.dropFirst() {
             if value != current.last! { current.append(value) }
-            else { if current.count > 1 { runs.append(current); current = [value] } else { current = [value] } }
+            else { if current.count > 1 { runs.append(current) }; current = [value] }
         }
         if current.count > 1 { runs.append(current) }
-        let resizes = runs.filter { abs($0.first! - $0.last!) > 60 && $0.first! > 200 }     // not the sheet opening from the bottom
-        XCTAssertGreaterThanOrEqual(resizes.count, 2, "the sheet resized for the artwork and again when it went; saw \(runs)")
-        for run in resizes {
-            XCTAssertGreaterThanOrEqual(run.count, 4, "a resize must be seen at several places, not as one jump: \(run)")
-        }
+        let resizes = runs.filter { abs($0.first! - $0.last!) > 60 }
+        XCTAssertGreaterThanOrEqual(resizes.count, 1, "the card resized as artwork came or went (under load the first change can land before sampling starts); saw \(runs)")
+
+        XCTAssertGreaterThan(controlsRows.count, 20, "the controls were found in the screenshots")
+        let sorted = controlsRows.sorted()
+        let median = sorted[sorted.count / 2]
+        let moved = controlsRows.filter { abs($0 - median) > 3 }
+        XCTAssertTrue(moved.isEmpty, "the controls moved on \(moved.count) of \(controlsRows.count) frames (rest at \(median)): \(Set(controlsRows).sorted())")
     }
 }
 
@@ -669,6 +690,57 @@ import UIKit
         XCTAssertTrue(pauseButton.waitForExistence(timeout: 5), "playback carries on after the finger lifts")
         let moved = app.staticTexts.matching(NSPredicate(format: "label MATCHES '0:(2|3|4)[0-9]'")).count
         XCTAssertGreaterThan(moved, 0, "the place moved to around the middle of the song")
+    }
+
+    /// Reproduces "moving the slider stops the music": a finger that wanders down while dragging can have the touch taken by
+    /// the sheet, so the lift is never reported to the slider. Playback must carry on regardless.
+    func testASlantedDragOnTheSliderNeverLeavesTheSongPaused() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["player-card"].waitForExistence(timeout: 10))
+        let slider = app.sliders["Playback position"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        for dy in [CGFloat(2), 6, 12] {        // each drag wanders further down, towards the sheet's own dismiss gesture
+            let start = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 160, dy: dy * 10)))
+            XCTAssertTrue(app.buttons.matching(identifier: "Pause").firstMatch.waitForExistence(timeout: 6),
+                          "the song is playing again after a drag that wandered \(dy * 10) pt down")
+            if !slider.exists { break }            // the sheet was dismissed; nothing more to drag
+        }
+    }
+}
+
+@MainActor final class PlaybackStateUITests: XCTestCase {
+    /// Reproduces "the play position when moving between songs is not at the beginning".
+    func testAnotherSongStartsAtTheBeginningAndTheSliderShowsExactlyThat() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        let slider = app.sliders["Playback position"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 10))
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)))
+        sleep(1)
+        let farIn = app.staticTexts.matching(NSPredicate(format: "label MATCHES '0:(3|4)[0-9]'")).count
+        XCTAssertGreaterThan(farIn, 0, "the first song is well into its length")
+        app.buttons["Next"].tap()
+        sleep(1)
+        XCTAssertGreaterThan(app.staticTexts.matching(NSPredicate(format: "label MATCHES '0:0[0-2]'")).count, 0,
+                             "the next song starts at the beginning")
+        XCTAssertEqual(slider.value as? String, "0:01 of 1:00".replacingOccurrences(of: "0:01", with: (slider.value as? String ?? "").components(separatedBy: " of ").first ?? ""))
+        let shownPlace = (slider.value as? String ?? "").components(separatedBy: " of ").first ?? ""
+        XCTAssertTrue(["0:00", "0:01", "0:02"].contains(shownPlace), "the slider says \(shownPlace), the same as the time label and the song")
     }
 }
 

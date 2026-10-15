@@ -6,15 +6,20 @@ import Combine
 package final class TransportViewModel: ObservableObject {
     package static let positionUpdateInterval: TimeInterval = 0.25
 
-    @Published package private(set) var state: TransportState
-    @Published package private(set) var position: Double = 0
-    @Published package private(set) var duration: Double = 0
-    @Published package private(set) var volume: Double
-    @Published package private(set) var isMuted: Bool
-    @Published package private(set) var nowPlaying: String = ""
-    @Published package private(set) var hasPlaylistSession: Bool = false
+    // Everything below is read from the engine at the moment it is asked for. There is no stored copy of any of it, so
+    // what a screen shows can never differ from what the engine is actually doing. The engine is the one place where
+    // playback state lives; this class is a view of it plus the actions on it.
+    package var state: TransportState { engine.state }
+    package var position: Double { engine.position }
+    package var duration: Double { engine.duration }
+    package var volume: Double { engine.volume }
+    package var isMuted: Bool { engine.isMuted }
+    package var nowPlaying: String { engine.currentURL?.lastPathComponent ?? "" }
+    package var hasPlaylistSession: Bool { activePlayerProvider()?.isSessionActive == true }
     /// "Track 2 of 5" while a playlist session has a current track in the playlist; empty otherwise.
-    @Published package private(set) var trackPosition: String = ""
+    package var trackPosition: String {
+        hasPlaylistSession ? activePlayerProvider()?.currentPosition.map { "Track \($0.place) of \($0.of)" } ?? "" : ""
+    }
 
     private let engine: PlaybackEngine
     private let registry: ActiveSessionRegistry
@@ -26,16 +31,13 @@ package final class TransportViewModel: ObservableObject {
     /// Asks the playlist session that is active, if any.
     package var activePlayerProvider: () -> PlaylistPlayer? = { nil }
 
-    /// The first state published already holds the restored volume and mute, never a default replaced later.
+    /// `runsTimer` makes observers hear about the playing position four times a second. A screen that draws the position
+    /// itself on a clock does not need it.
     package init(engine: PlaybackEngine, registry: ActiveSessionRegistry, runsTimer: Bool = true) {
         self.engine = engine
         self.registry = registry
-        state = engine.state
-        volume = engine.volume
-        isMuted = engine.isMuted
         engine.events.sink { [weak self] _ in self?.refresh() }.store(in: &cancellables)
         if runsTimer { startTimer() }
-        refresh()
     }
 
     deinit { timer?.invalidate() }
@@ -46,17 +48,8 @@ package final class TransportViewModel: ObservableObject {
     package var trackControlsAvailable: Bool { state != .idle }
     package var skipControlsAvailable: Bool { state != .idle && activePlayerProvider()?.isSessionActive == true }
 
-    package func refresh() {
-        state = engine.state
-        position = engine.position
-        duration = engine.duration
-        volume = engine.volume
-        isMuted = engine.isMuted
-        nowPlaying = engine.currentURL?.lastPathComponent ?? ""
-        hasPlaylistSession = activePlayerProvider()?.isSessionActive == true
-        trackPosition = hasPlaylistSession
-            ? activePlayerProvider()?.currentPosition.map { "Track \($0.place) of \($0.of)" } ?? "" : ""
-    }
+    /// Tells observers that something they show may have changed. The values themselves are read live from the engine.
+    package func refresh() { objectWillChange.send() }
 
     private func startTimer() {
         let timer = Timer(timeInterval: Self.positionUpdateInterval, repeats: true) { [weak self] _ in
@@ -105,12 +98,18 @@ package final class TransportViewModel: ObservableObject {
     package func seek(toSeconds seconds: Double) throws {
         guard engine.state != .idle else { throw ActionError.nothingPlaying }
         guard engine.seek(toSeconds: seconds) else { throw ActionError.invalidSeekPosition }
+        if isScrubbing { armScrubWatchdog() }
+        refresh()
     }
 
     // MARK: Scrubbing
 
     private var scrubWasPlaying = false
     private var isScrubbing = false
+    private var scrubWatchdog: Timer?
+    /// If a scrub shows no sign of life for this long (no move and no lift reported, for example because another gesture
+    /// took the touch away) playback carries on, so a scrub can never leave the song paused for good.
+    package var scrubTimeout: TimeInterval = 2
 
     /// The person put a finger on the position slider. Playback pauses for the drag, as in the system apps, so nothing
     /// is heard from the places the slider passes through and nothing is replayed.
@@ -119,11 +118,22 @@ package final class TransportViewModel: ObservableObject {
         isScrubbing = true
         scrubWasPlaying = engine.state == .playing
         if scrubWasPlaying { engine.pause() }
+        armScrubWatchdog()
+    }
+
+    private func armScrubWatchdog() {
+        scrubWatchdog?.invalidate()
+        let watchdog = Timer(timeInterval: scrubTimeout, repeats: false) { [weak self] _ in
+            guard let self, self.isScrubbing else { return }
+            try? self.endScrub(toSeconds: self.engine.position)
+        }
+        RunLoop.main.add(watchdog, forMode: .common)
+        scrubWatchdog = watchdog
     }
 
     /// The finger lifted at `seconds`: one seek to that place, then playback carries on if it was playing before.
     package func endScrub(toSeconds seconds: Double) throws {
-        defer { isScrubbing = false; scrubWasPlaying = false }
+        defer { isScrubbing = false; scrubWasPlaying = false; scrubWatchdog?.invalidate(); scrubWatchdog = nil }
         guard engine.state != .idle else { throw ActionError.nothingPlaying }
         guard engine.seek(toSeconds: seconds) else {
             if scrubWasPlaying { engine.resume() }       // an impossible place leaves the song playing from where it was

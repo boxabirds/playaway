@@ -22,6 +22,12 @@ package enum EngineEvent: Equatable {
     case levelChanged
 }
 
+package enum PrepareResult: Equatable {
+    case ready
+    case failed(String)
+    case noOutputDevice
+}
+
 package protocol PlaybackEngine: AnyObject {
     var events: AnyPublisher<EngineEvent, Never> { get }
     var state: TransportState { get }
@@ -34,6 +40,9 @@ package protocol PlaybackEngine: AnyObject {
     var isMuted: Bool { get }
 
     func play(_ url: URL) -> PlayResult
+    /// Loads a file paused at `seconds`, without making a sound, so that what is shown (the title, the length, the place) is
+    /// exactly what the engine holds, as for any other paused song.
+    func prepare(_ url: URL, at seconds: Double) -> PrepareResult
     func pause()
     func resume()
     func stop()

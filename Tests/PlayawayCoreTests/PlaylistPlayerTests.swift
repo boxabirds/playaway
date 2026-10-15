@@ -477,28 +477,38 @@ final class PlaylistPlayerTests: XCTestCase {
         XCTAssertEqual(store.mark(of: track), .readable)
     }
 
-    // MARK: resume from a remembered place
+    // MARK: load paused at a remembered place
 
-    func testResumePlaysTheSongFromTheRememberedPosition() {
+    func testLoadShowsTheSongPausedAtTheRememberedPlaceAndMakesNoSound() {
         let rig = PlayerRig()
         let track = rig.fixture.tracks[2]
-        rig.player.resume(track: track, atSeconds: 1.5)
+        XCTAssertTrue(rig.player.load(track: track, atSeconds: 1.5))
+        XCTAssertEqual(rig.engine.state, .paused)
         XCTAssertEqual(rig.currentName, "track3.mp3")
         XCTAssertEqual(rig.engine.position, 1.5)
+        XCTAssertEqual(rig.engine.duration, rig.backend.defaultDuration, "the length is known, as for any paused song")
         XCTAssertEqual(rig.player.current, track)
+        XCTAssertTrue(rig.startedNames.isEmpty, "nothing was started")
     }
 
-    func testResumeBeyondTheEndPlaysFromTheStart() {
+    func testPlayAfterALoadCarriesOnFromThatPlace() {
         let rig = PlayerRig()
-        rig.player.resume(track: rig.fixture.tracks[0], atSeconds: 100_000)
-        XCTAssertEqual(rig.currentName, "track1.mp3")
-        XCTAssertEqual(rig.engine.position, 0)
+        rig.player.load(track: rig.fixture.tracks[0], atSeconds: 2)
+        rig.engine.resume()
+        XCTAssertEqual(rig.engine.state, .playing)
+        XCTAssertEqual(rig.engine.position, 2)
     }
 
-    func testResumeOfASongThatIsGoneStartsNothing() {
+    func testLoadBeyondTheEndClampsToTheEndOfTheSong() {
+        let rig = PlayerRig()
+        XCTAssertTrue(rig.player.load(track: rig.fixture.tracks[0], atSeconds: 100_000))
+        XCTAssertEqual(rig.engine.position, rig.backend.defaultDuration)
+    }
+
+    func testLoadOfASongThatIsGoneChangesNothing() {
         let rig = PlayerRig()
         rig.fixture.deleteFile(at: 1)
-        rig.player.resume(track: rig.fixture.tracks[1], atSeconds: 1)
+        XCTAssertFalse(rig.player.load(track: rig.fixture.tracks[1], atSeconds: 1))
         XCTAssertEqual(rig.engine.state, .idle)
         XCTAssertNil(rig.player.current)
     }
