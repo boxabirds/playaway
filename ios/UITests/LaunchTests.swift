@@ -96,6 +96,120 @@ import XCTest
     }
 }
 
+@MainActor final class RenameDeleteTests: XCTestCase {
+    private func makePlaylist(_ app: XCUIApplication, _ name: String) {
+        app.buttons["New Playlist"].tap()
+        let field = app.alerts.textFields["Name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        field.typeText(name)
+        // The simulator sometimes ignores the first tap on an alert button while the keyboard is settling.
+        for _ in 0..<3 where !app.buttons["Add Songs"].exists {
+            if app.alerts.buttons["Create"].exists { app.alerts.buttons["Create"].tap() }
+            _ = app.buttons["Add Songs"].waitForExistence(timeout: 4)
+        }
+        XCTAssertTrue(app.buttons["Add Songs"].waitForExistence(timeout: 15))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Playlists"].waitForExistence(timeout: 15))
+    }
+
+    private func replaceText(in field: XCUIElement, with text: String) {
+        field.tap()
+        let current = (field.value as? String) ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count) + text)
+    }
+
+    private func beginRename(_ app: XCUIApplication, row name: String) {
+        app.staticTexts[name].press(forDuration: 1.2)
+        app.buttons["Rename"].tap()
+        XCTAssertTrue(app.textFields["rename-field"].waitForExistence(timeout: 15))
+    }
+
+    private var renameField: XCUIElement { XCUIApplication().textFields["rename-field"] }
+
+    func testRenameFromTheListAndRefusals() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        let alpha = "Alpha"
+        makePlaylist(app, alpha)
+
+        // A name already used is refused: the panel comes back with the reason and the typed text.
+        beginRename(app, row: alpha)
+        replaceText(in: app.textFields["rename-field"], with: "Demo")
+        app.navigationBars["Rename Playlist"].buttons["Rename"].tap()
+        XCTAssertTrue(app.staticTexts["A playlist with that name already exists."].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.textFields["rename-field"].value as? String, "Demo", "the typed text is kept")
+
+        // A name with a slash is refused.
+        replaceText(in: app.textFields["rename-field"], with: "a/b")
+        app.navigationBars["Rename Playlist"].buttons["Rename"].tap()
+        XCTAssertTrue(app.staticTexts["A playlist name can't contain / or :."].waitForExistence(timeout: 15))
+
+        // A good name renames it.
+        replaceText(in: app.textFields["rename-field"], with: "Beta")
+        app.navigationBars["Rename Playlist"].buttons["Rename"].tap()
+        XCTAssertTrue(app.staticTexts["Beta"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts[alpha].exists)
+    }
+
+    func testRenameFromInsideAPlaylistKeepsTheSongs() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        app.buttons["playlist-name"].tap()
+        XCTAssertTrue(app.textFields["rename-field"].waitForExistence(timeout: 15))
+        replaceText(in: app.textFields["rename-field"], with: "Tunes")
+        app.navigationBars["Rename Playlist"].buttons["Rename"].tap()
+        let header = app.buttons["playlist-name"]
+        expectation(for: NSPredicate(format: "label == 'Tunes'"), evaluatedWith: header)
+        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.tables["song-table"].cells["Demo One"].exists, "the songs are still there")
+        XCTAssertEqual(app.tables["song-table"].cells.count, 5)
+    }
+
+    func testDeleteAsksFirstAndCancelChangesNothing() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        makePlaylist(app, "Doomed")
+        app.staticTexts["Doomed"].swipeLeft()
+        app.buttons["Delete"].tap()
+        let alert = app.alerts["Delete “Doomed”?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 15))
+        XCTAssertTrue(alert.staticTexts["Only the playlist is deleted. Your songs are not."].exists)
+        alert.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Doomed"].exists, "cancel leaves it")
+        app.staticTexts["Doomed"].swipeLeft()
+        app.buttons["Delete"].tap()
+        app.alerts["Delete “Doomed”?"].buttons["Delete"].tap()
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: app.staticTexts["Doomed"])
+        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.staticTexts["Demo"].exists, "another playlist is untouched")
+    }
+
+    func testDeletingThePlayingPlaylistStopsThePlayer() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any)["floating-controller"]
+        XCTAssertTrue(controller.waitForExistence(timeout: 15))
+        app.navigationBars.buttons["Playlists"].tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.tables["song-table"])
+        waitForExpectations(timeout: 15)
+        let row = app.staticTexts["Demo"]
+        row.coordinate(withNormalizedOffset: CGVector(dx: 4, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: row.coordinate(withNormalizedOffset: CGVector(dx: -4, dy: 0.5)))
+        try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/pa-swiped.png"))
+        app.buttons["Delete"].tap()
+        app.alerts.buttons["Delete"].tap()
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: controller)
+        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.staticTexts["No Playlists"].waitForExistence(timeout: 15))
+    }
+}
+
 @MainActor final class RememberTests: XCTestCase {
     func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
         let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()

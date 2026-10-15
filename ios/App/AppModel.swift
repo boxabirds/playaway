@@ -209,7 +209,9 @@ final class AppModel: ObservableObject {
         // Start every seeded launch from the same playlist, whatever earlier tests changed, unless a test is checking
         // what a second launch remembers.
         if keepExisting, FileManager.default.fileExists(atPath: folder.appendingPathComponent("Demo.\(playlistFileExtension)").path) { return }
-        try? FileManager.default.removeItem(at: folder.appendingPathComponent("Demo.\(playlistFileExtension)"))
+        if let leftovers = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
+            for file in leftovers where file.pathExtension == playlistFileExtension { try? FileManager.default.removeItem(at: file) }
+        }
         guard let playlistURL = try? library.create(named: "Demo") else { return }
         // A list longer than the screen, so tests can scroll to the last song.
         let repeats = ProcessInfo.processInfo.arguments.contains("-PlayawayLongList") ? 6 : 1
@@ -318,6 +320,81 @@ final class AppModel: ObservableObject {
         launchStore.add(report)
         Logger(subsystem: "software.away.play", category: "launch")
             .info("launch \(report.kind.rawValue) \(report.seconds, format: .fixed(precision: 3)) s")
+    }
+
+    // MARK: Rename and delete
+
+    @Published var renameTarget: URL?
+    @Published var renameText = ""
+    @Published var renameMessage: String?
+    @Published var renameShown = false
+    @Published var deleteTarget: PlaylistEntry?
+
+    func beginRename(_ url: URL) {
+        renameText = url.deletingPathExtension().lastPathComponent
+        renameMessage = nil
+        renameTarget = url
+        renameShown = true
+    }
+
+    /// A refused rename keeps the form open and says why.
+    private func reshowRename(_ message: String) { renameMessage = message }
+
+    func cancelRename() {
+        renameShown = false
+        renameTarget = nil
+        renameMessage = nil
+    }
+
+    /// Renames the playlist and makes every screen, the navigation and the player follow the new file.
+    func confirmRename() {
+        guard let url = renameTarget else { return }
+        do {
+            let newURL = try library.rename(url, to: renameText)
+            cancelRename()
+            guard newURL != url else { return }
+            if let session = sessions.removeValue(forKey: url) { session.rebase(to: newURL); sessions[newURL] = session }
+            path = path.map { $0 == url ? newURL : $0 }
+            if var point = resumePoint, point.playlistFileName == url.lastPathComponent {
+                point.playlistFileName = newURL.lastPathComponent
+                resumePoint = point
+            }
+            entries = library.entries()
+            saveMemory(force: true)
+        } catch let error as LibraryError {
+            switch error {
+            case .nameEmpty: reshowRename("Enter a name for the playlist.")
+            case .invalidCharacters: reshowRename("A playlist name can't contain / or :.")
+            case .alreadyExists: reshowRename("A playlist with that name already exists.")
+            case .writeFailed, .notAPlaylist: reshowRename("The playlist could not be renamed. Its name has not changed.")
+            }
+        } catch {
+            reshowRename("The playlist could not be renamed. Its name has not changed.")
+        }
+    }
+
+    /// Deletes the playlist file only. If it was the playlist playing, playback stops and the player closes; if it was
+    /// open, the app returns to the Playlists screen.
+    func confirmDelete() {
+        guard let entry = deleteTarget else { return }
+        deleteTarget = nil
+        do {
+            try library.delete(entry.url)
+        } catch {
+            failureMessage = "The playlist could not be deleted. It is still in the list."
+            return
+        }
+        let wasPlaying = activeSession?.url == entry.url
+        sessions[entry.url] = nil
+        path.removeAll { $0 == entry.url }
+        if wasPlaying {
+            engine.stop()
+            cardOpen = false
+            endActiveSession()
+        }
+        if resumePoint?.playlistFileName == entry.url.lastPathComponent { resumePoint = nil }
+        entries = library.entries()
+        saveMemory(force: true)
     }
 
     /// A song or playlist opened from outside replaces the playlist that was playing.

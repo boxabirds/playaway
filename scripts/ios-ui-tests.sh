@@ -4,7 +4,7 @@
 set -u
 cd "$(dirname "$0")/../ios" || exit 2
 DEVICE="${PLAYAWAY_SIM_DEVICE:-iPhone 17}"
-DERIVED="${PLAYAWAY_DERIVED:-/tmp/playaway-ios-dd}"
+DERIVED="${PLAYAWAY_DERIVED:-/tmp/playaway-ios-dd.noindex}"
 LOG="$(mktemp -t playaway-ui-tests)"
 REPORTS="$HOME/Library/Logs/DiagnosticReports"
 START="$(mktemp -t playaway-start)"

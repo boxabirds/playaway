@@ -14,6 +14,12 @@ struct RootView: View {
                 }
         }
         .overlay { PlayerChrome() }
+        .sheet(isPresented: $model.renameShown) { RenameSheet() }
+        .alert("Delete “\(model.deleteTarget?.name ?? "")”?", isPresented: Binding(get: { model.deleteTarget != nil },
+                                                                                   set: { if !$0 { model.deleteTarget = nil } })) {
+            Button("Delete", role: .destructive) { model.confirmDelete() }
+            Button("Cancel", role: .cancel) { model.deleteTarget = nil }
+        } message: { Text("Only the playlist is deleted. Your songs are not.") }
         .onOpenURL { url in
             _ = url.startAccessingSecurityScopedResource()
             model.openCoordinator.open(url)
@@ -35,6 +41,16 @@ struct PlaylistsView: View {
             } else {
                 List(model.entries) { entry in
                     NavigationLink(value: entry.url) { row(entry) }
+                        .contextMenu {
+                            if case .ok = entry.status {
+                                Button { model.beginRename(entry.url) } label: { Label("Rename", systemImage: "pencil") }
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { model.deleteTarget = entry } label: { Label("Delete", systemImage: "trash") }
+                        }
+                        .accessibilityAction(named: "Delete") { model.deleteTarget = entry }
+                        .accessibilityAction(named: "Rename") { if case .ok = entry.status { model.beginRename(entry.url) } }
                 }
                 .contentMargins(.bottom, model.playerBarVisible ? PlayerBar.inset : 0, for: .scrollContent)
             }
@@ -107,7 +123,10 @@ struct PlaylistView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading) {
-                Text(session.name).font(.headline)
+                Button { model.beginRename(session.url) } label: { Text(session.name).font(.headline) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Renames the playlist")
+                    .accessibilityIdentifier("playlist-name")
                 let count = session.playlist.tracks.count
                 Text("\(count) \(count == 1 ? "song" : "songs")").font(.caption).foregroundStyle(.secondary)
             }
@@ -135,4 +154,36 @@ struct PlaylistView: View {
 
 extension String {
     var fileNameWithoutExtension: String { (self as NSString).deletingPathExtension }
+}
+
+
+/// Renaming a playlist: a small form that keeps what was typed and says why a name was refused, in place.
+struct RenameSheet: View {
+    @EnvironmentObject var model: AppModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name", text: $model.renameText)
+                        .focused($focused)
+                        .submitLabel(.done)
+                        .onSubmit { model.confirmRename() }
+                        .accessibilityIdentifier("rename-field")
+                } footer: {
+                    if let message = model.renameMessage { Text(message).foregroundStyle(.red).accessibilityIdentifier("rename-message") }
+                }
+            }
+            .navigationTitle("Rename Playlist")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.cancelRename() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Rename") { model.confirmRename() } }
+            }
+        }
+        .presentationDetents([.height(220)])
+        .onAppear { focused = true }
+        .onDisappear { model.cancelRename() }
+    }
 }

@@ -23,7 +23,7 @@ final class PlaylistLibraryTests: XCTestCase {
 
     func testCreateRefusesEmptyNamesBadCharactersAndCollisions() throws {
         XCTAssertThrowsError(try library.create(named: "   ")) { XCTAssertEqual($0 as? LibraryError, .nameEmpty) }
-        XCTAssertThrowsError(try library.create(named: "a/b")) { XCTAssertEqual($0 as? LibraryError, .nameEmpty) }
+        XCTAssertThrowsError(try library.create(named: "a/b")) { XCTAssertEqual($0 as? LibraryError, .invalidCharacters) }
         let url = try library.create(named: "Run")
         let before = try Data(contentsOf: url)
         XCTAssertThrowsError(try library.create(named: "Run")) { XCTAssertEqual($0 as? LibraryError, .alreadyExists) }
@@ -66,5 +66,164 @@ final class QuickEntriesTests: XCTestCase {
         XCTAssertEqual(quick.map(\.name), library.entries().map(\.name), "the same order, so nothing moves when counts arrive")
         XCTAssertTrue(quick.allSatisfy { $0.status == .loading })
         XCTAssertEqual(quick.count, 3, "an unreadable file is listed; reading it later decides its status")
+    }
+}
+
+
+final class PlaylistRenameTests: XCTestCase {
+    private var dir: TempDir!
+    private var library: PlaylistLibrary!
+    private let store = PlaylistStore()
+
+    override func setUp() {
+        dir = TempDir("rename")
+        library = PlaylistLibrary(folder: dir.url)
+    }
+
+    private func makePlaylist(_ name: String, songs: Int = 3) throws -> (URL, Playlist) {
+        let fixture = PlaylistFixture()
+        let playlist = Playlist(tracks: Array(fixture.tracks.prefix(songs)))
+        let url = try library.create(named: name)
+        XCTAssertEqual(library.save(playlist, to: url), .saved)
+        return (url, playlist)
+    }
+
+    func testRenameMovesTheFileAndKeepsSongsAndOrder() throws {                       // TC-01
+        let (url, playlist) = try makePlaylist("Morning")
+        let new = try library.rename(url, to: "Evening")
+        XCTAssertEqual(new.deletingLastPathComponent().path, url.deletingLastPathComponent().path)
+        XCTAssertEqual(new.deletingPathExtension().lastPathComponent, "Evening")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "the old file is gone")
+        guard case .loaded(let loaded) = library.load(new) else { return XCTFail("did not load") }
+        XCTAssertEqual(loaded, playlist)
+    }
+
+    func testRenameToTheSameNameDoesNothing() throws {                                // TC-02
+        let (url, _) = try makePlaylist("Morning")
+        XCTAssertEqual(try library.rename(url, to: "Morning"), url)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testCaseOnlyRenameIsNotAClash() throws {                                     // TC-03
+        let (url, playlist) = try makePlaylist("morning")
+        let new = try library.rename(url, to: "Morning")
+        XCTAssertEqual(library.entries().map(\.name), ["Morning"])
+        guard case .loaded(let loaded) = library.load(new) else { return XCTFail("did not load") }
+        XCTAssertEqual(loaded, playlist)
+    }
+
+    func testClashWithAnotherPlaylistChangesNothing() throws {                        // TC-04
+        let (a, playlistA) = try makePlaylist("A", songs: 2)
+        let (b, playlistB) = try makePlaylist("B", songs: 3)
+        XCTAssertThrowsError(try library.rename(a, to: "B")) { XCTAssertEqual($0 as? LibraryError, .alreadyExists) }
+        guard case .loaded(let la) = library.load(a), case .loaded(let lb) = library.load(b) else { return XCTFail("did not load") }
+        XCTAssertEqual(la, playlistA); XCTAssertEqual(lb, playlistB)
+    }
+
+    func testEmptyAndSpacesOnlyNamesAreRefused() throws {                             // TC-05, TC-06
+        let (url, _) = try makePlaylist("A")
+        for bad in ["", "   ", "\n\t"] {
+            XCTAssertThrowsError(try library.rename(url, to: bad)) { XCTAssertEqual($0 as? LibraryError, .nameEmpty) }
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testSlashAndColonAreRefused() throws {                                       // TC-07, TC-08
+        let (url, _) = try makePlaylist("A")
+        for bad in ["a/b", "a:b"] {
+            XCTAssertThrowsError(try library.rename(url, to: bad)) { XCTAssertEqual($0 as? LibraryError, .invalidCharacters) }
+        }
+        XCTAssertEqual(library.entries().map(\.name), ["A"])
+    }
+
+    func testRenamingAFileThatIsGoneFailsAndCreatesNothing() throws {                 // TC-09
+        let (url, _) = try makePlaylist("A")
+        try FileManager.default.removeItem(at: url)
+        XCTAssertThrowsError(try library.rename(url, to: "B")) {
+            guard case .writeFailed? = $0 as? LibraryError else { return XCTFail("expected writeFailed, got \($0)") }
+        }
+        XCTAssertTrue(library.entries().isEmpty)
+    }
+
+    func testReadOnlyFolderFailsAndLeavesTheOldFile() throws {                        // TC-10
+        let (url, _) = try makePlaylist("A")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.url.path) }
+        XCTAssertThrowsError(try library.rename(url, to: "B")) {
+            guard case .writeFailed? = $0 as? LibraryError else { return XCTFail("expected writeFailed, got \($0)") }
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testSurroundingSpacesAreTrimmed() throws {                                   // TC-11
+        let (url, _) = try makePlaylist("A")
+        XCTAssertEqual(try library.rename(url, to: "  Gym  ").deletingPathExtension().lastPathComponent, "Gym")
+    }
+
+    func testADamagedFileIsMovedAsIs() throws {                                       // TC-12
+        let url = dir.url.appendingPathComponent("Broken.\(playlistFileExtension)")
+        let bytes = Data("not a playlist".utf8)
+        try bytes.write(to: url)
+        let new = try library.rename(url, to: "Still broken")
+        XCTAssertEqual(try Data(contentsOf: new), bytes, "contents are byte-identical: a rename never rewrites")
+    }
+}
+
+
+final class PlaylistDeleteTests: XCTestCase {
+    private var dir: TempDir!
+    private var library: PlaylistLibrary!
+
+    override func setUp() {
+        dir = TempDir("delete")
+        library = PlaylistLibrary(folder: dir.url)
+    }
+
+    func testDeleteRemovesOnlyThePlaylistFileAndLeavesSongsAndOtherPlaylists() throws {   // the story-33 negative cases
+        let songs = PlaylistFixture(dir: dir)                      // song files in the same folder as the playlists
+        let before = try songs.urls.map { try Data(contentsOf: $0) }
+        let doomed = try library.create(named: "Doomed")
+        let other = try library.create(named: "Other")
+        XCTAssertEqual(library.save(songs.playlist, to: doomed), .saved)
+        XCTAssertEqual(library.save(songs.playlist, to: other), .saved)
+        let otherBytes = try Data(contentsOf: other)
+
+        try library.delete(doomed)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: doomed.path))
+        XCTAssertEqual(try songs.urls.map { try Data(contentsOf: $0) }, before, "song files untouched, byte for byte")
+        XCTAssertEqual(try Data(contentsOf: other), otherBytes, "another playlist with the same songs is untouched")
+        XCTAssertEqual(library.entries().map(\.name), ["Other"])
+    }
+
+    func testAnythingThatIsNotAPlaylistFileIsRefused() throws {
+        let songs = PlaylistFixture(dir: dir)
+        XCTAssertThrowsError(try library.delete(songs.urls[0])) { XCTAssertEqual($0 as? LibraryError, .notAPlaylist) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: songs.urls[0].path))
+    }
+
+    func testDeletingAFileThatIsGoneFails() throws {
+        let url = try library.create(named: "A")
+        try FileManager.default.removeItem(at: url)
+        XCTAssertThrowsError(try library.delete(url)) {
+            guard case .writeFailed? = $0 as? LibraryError else { return XCTFail("expected writeFailed, got \($0)") }
+        }
+    }
+
+    func testReadOnlyFolderFailsAndKeepsThePlaylist() throws {
+        let url = try library.create(named: "A")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.url.path) }
+        XCTAssertThrowsError(try library.delete(url)) {
+            guard case .writeFailed? = $0 as? LibraryError else { return XCTFail("expected writeFailed, got \($0)") }
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testADamagedPlaylistCanBeDeleted() throws {
+        let url = dir.url.appendingPathComponent("Broken.\(playlistFileExtension)")
+        try Data("nope".utf8).write(to: url)
+        try library.delete(url)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 }
