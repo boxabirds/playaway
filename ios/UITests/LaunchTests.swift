@@ -688,6 +688,10 @@ import UIKit
             .press(forDuration: 0.1, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)))
         let pauseButton = app.buttons.matching(identifier: "Pause").firstMatch
         XCTAssertTrue(pauseButton.waitForExistence(timeout: 5), "playback carries on after the finger lifts")
+        let traceElement = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Drag trace")).firstMatch
+        XCTAssertTrue(traceElement.waitForExistence(timeout: 3), "the drag trace is on the card")
+        let trace = traceElement.label
+        XCTAssertTrue(trace.contains("lift") && trace.contains("playhead moving 0") || trace.contains("playhead moving 1"), "the drag trace names the lift and the playhead: \(trace)")
         let moved = app.staticTexts.matching(NSPredicate(format: "label MATCHES '0:(2|3|4)[0-9]'")).count
         XCTAssertGreaterThan(moved, 0, "the place moved to around the middle of the song")
     }

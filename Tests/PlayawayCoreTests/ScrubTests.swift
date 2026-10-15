@@ -106,3 +106,39 @@ final class ScrubWatchdogTests: XCTestCase {
         XCTAssertEqual(engine.state, .playing)
     }
 }
+
+final class ScrubTraceTests: XCTestCase {
+    func testTheSummaryReadsOffTheWholeDragInOrder() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        var trace = ScrubTrace()
+        XCTAssertEqual(trace.summary, "no drag yet")
+        trace.fingerDown(at: t0, wasPlaying: true)
+        trace.moved(at: t0.addingTimeInterval(0.5)); trace.moved(at: t0.addingTimeInterval(1.25))
+        trace.end(.lift, at: t0.addingTimeInterval(1.5))
+        trace.resumeRequested(at: t0.addingTimeInterval(1.5))
+        XCTAssertTrue(trace.awaitingPlayhead)
+        trace.playheadSeenMoving(at: t0.addingTimeInterval(1.6))
+        XCTAssertFalse(trace.awaitingPlayhead)
+        XCTAssertEqual(trace.summary, "down 0 · 2 moves, last 1.25 · lift 1.50 · resume 1.50 · playhead moving 1.60")
+    }
+
+    func testALostLiftIsNamedAsTheSafetyTimer() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        var trace = ScrubTrace()
+        trace.fingerDown(at: t0, wasPlaying: true)
+        trace.end(.safetyTimer, at: t0.addingTimeInterval(2))
+        XCTAssertTrue(trace.summary.contains("SAFETY TIMER"))
+    }
+
+    func testTheTransportRecordsADragForTheTrace() throws {
+        let engine = makeEngine()
+        _ = engine.play(PlaylistFixture().urls[0])
+        let transport = TransportViewModel(engine: engine, registry: ActiveSessionRegistry(), runsTimer: false)
+        transport.beginScrub()
+        try transport.seek(toSeconds: 1); try transport.seek(toSeconds: 2)
+        try transport.endScrub(toSeconds: 2)
+        XCTAssertTrue(transport.scrubTrace.summary.contains("2 moves"))
+        XCTAssertTrue(transport.scrubTrace.summary.contains("lift"))
+        XCTAssertFalse(transport.scrubTrace.summary.contains("resume –"), "the resume was recorded")
+    }
+}

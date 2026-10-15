@@ -145,6 +145,7 @@ struct PlayerCard: View {
             }
             Text(model.metadata?.title ?? model.transport.nowPlaying).font(.title2.weight(.bold)).lineLimit(2)
             scrubber
+            scrubTraceLine
             controls
         }
         .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
@@ -182,6 +183,14 @@ struct PlayerCard: View {
                 .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
             }
         }
+    }
+
+    /// Temporary, for build 16: what the last slider drag did and when, read off the screen.
+    private var scrubTraceLine: some View {
+        Text("Drag trace (temporary): " + model.transport.scrubTrace.summary)
+            .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("scrub-trace")
     }
 
     private var controls: some View {

@@ -98,7 +98,7 @@ package final class TransportViewModel: ObservableObject {
     package func seek(toSeconds seconds: Double) throws {
         guard engine.state != .idle else { throw ActionError.nothingPlaying }
         guard engine.seek(toSeconds: seconds) else { throw ActionError.invalidSeekPosition }
-        if isScrubbing { armScrubWatchdog() }
+        if isScrubbing { scrubTrace.moved(at: clock()); armScrubWatchdog() }
         refresh()
     }
 
@@ -107,6 +107,10 @@ package final class TransportViewModel: ObservableObject {
     private var scrubWasPlaying = false
     private var isScrubbing = false
     private var scrubWatchdog: Timer?
+    private var playheadWatch: Timer?
+    /// What the last drag did, for the debug line on the card.
+    package private(set) var scrubTrace = ScrubTrace()
+    package var clock: () -> Date = Date.init
     /// If a scrub shows no sign of life for this long (no move and no lift reported, for example because another gesture
     /// took the touch away) playback carries on, so a scrub can never leave the song paused for good.
     package var scrubTimeout: TimeInterval = 2
@@ -117,30 +121,59 @@ package final class TransportViewModel: ObservableObject {
         guard engine.state != .idle, !isScrubbing else { return }
         isScrubbing = true
         scrubWasPlaying = engine.state == .playing
+        scrubTrace.fingerDown(at: clock(), wasPlaying: scrubWasPlaying)
         if scrubWasPlaying { engine.pause() }
         armScrubWatchdog()
+        refresh()
     }
 
     private func armScrubWatchdog() {
         scrubWatchdog?.invalidate()
         let watchdog = Timer(timeInterval: scrubTimeout, repeats: false) { [weak self] _ in
             guard let self, self.isScrubbing else { return }
-            try? self.endScrub(toSeconds: self.engine.position)
+            try? self.finishScrub(toSeconds: self.engine.position, how: .safetyTimer)
         }
         RunLoop.main.add(watchdog, forMode: .common)
         scrubWatchdog = watchdog
     }
 
     /// The finger lifted at `seconds`: one seek to that place, then playback carries on if it was playing before.
-    package func endScrub(toSeconds seconds: Double) throws {
-        defer { isScrubbing = false; scrubWasPlaying = false; scrubWatchdog?.invalidate(); scrubWatchdog = nil }
+    package func endScrub(toSeconds seconds: Double) throws { try finishScrub(toSeconds: seconds, how: .lift) }
+
+    private func finishScrub(toSeconds seconds: Double, how: ScrubTrace.End) throws {
+        defer {
+            isScrubbing = false; scrubWasPlaying = false; scrubWatchdog?.invalidate(); scrubWatchdog = nil
+            watchPlayheadAfterResume()
+            refresh()
+        }
+        scrubTrace.end(how, at: clock())
         guard engine.state != .idle else { throw ActionError.nothingPlaying }
         guard engine.seek(toSeconds: seconds) else {
-            if scrubWasPlaying { engine.resume() }       // an impossible place leaves the song playing from where it was
+            if scrubWasPlaying { engine.resume(); scrubTrace.resumeRequested(at: clock()) }   // an impossible place leaves the song playing
             throw ActionError.invalidSeekPosition
         }
-        if scrubWasPlaying { engine.resume() }
+        if scrubWasPlaying { engine.resume(); scrubTrace.resumeRequested(at: clock()) }
     }
+
+    /// Notes when the playhead is first seen moving after a resume, polled finely so the trace can tell a late lift from a
+    /// slow restart of the sound.
+    private func watchPlayheadAfterResume() {
+        playheadWatch?.invalidate()
+        guard scrubTrace.awaitingPlayhead else { return }
+        let placeAtResume = engine.position
+        let deadline = clock().addingTimeInterval(Self.playheadWatchLimit)
+        let watch = Timer(timeInterval: Self.playheadPollInterval, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            if self.engine.position > placeAtResume + Self.playheadMovedBy { self.scrubTrace.playheadSeenMoving(at: self.clock()) }
+            if !self.scrubTrace.awaitingPlayhead || self.clock() > deadline { timer.invalidate(); self.refresh() }
+        }
+        RunLoop.main.add(watch, forMode: .common)
+        playheadWatch = watch
+    }
+
+    private static let playheadPollInterval: TimeInterval = 0.02
+    private static let playheadWatchLimit: TimeInterval = 5
+    private static let playheadMovedBy: TimeInterval = 0.03
 
     package func next() throws {
         guard engine.state != .idle else { throw ActionError.nothingPlaying }
