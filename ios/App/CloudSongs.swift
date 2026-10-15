@@ -43,11 +43,13 @@ final class CloudSongs: SongDownloading {
         return song
     }
 
-    func presence(of url: URL) -> SongPresence {
+    /// `playawayFolder` is the shared iCloud folder, nil when its location is not known.
+    func presence(of url: URL, playawayFolder: URL?) -> SongPresence {
         if let script = scriptedEntry(for: url) { return script.finished ? .inCloudOnDevice : .inCloudNotOnDevice }
         let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
         return songPresence(isUbiquitous: values?.isUbiquitousItem ?? false,
-                            downloadingStatus: values?.ubiquitousItemDownloadingStatus?.rawValue)
+                            downloadingStatus: values?.ubiquitousItemDownloadingStatus?.rawValue,
+                            isInPlaywayFolder: isInsideFolder(url, folder: playawayFolder))
     }
 
     // MARK: SongDownloading

@@ -1,13 +1,18 @@
 import Foundation
 
-/// Where a song's file is relative to iCloud, as far as this device can tell.
+/// Where a song's file is. "In iCloud" means inside the shared Playaway folder (owner decision 2026-10-13); whether
+/// the file has been downloaded to this device is a separate matter.
 package enum SongPresence: Equatable {
-    /// Not in iCloud.
+    /// Not in the Playaway folder, and the file is on this device.
     case localOnly
-    /// In iCloud, and the file is on this device.
+    /// Not in the Playaway folder, and the file is an iCloud Drive file that has not been downloaded to this device.
+    case localOnlyNotOnDevice
+    /// In the Playaway folder, and the file is on this device.
     case inCloudOnDevice
-    /// In iCloud, and the file has not been downloaded to this device.
+    /// In the Playaway folder, and the file has not been downloaded to this device.
     case inCloudNotOnDevice
+
+    package var isOnDevice: Bool { self == .localOnly || self == .inCloudOnDevice }
 }
 
 /// The system's names for a ubiquitous file's download status.
@@ -15,11 +20,26 @@ package let ubiquitousStatusCurrent = "NSURLUbiquitousItemDownloadingStatusCurre
 package let ubiquitousStatusDownloaded = "NSURLUbiquitousItemDownloadingStatusDownloaded"
 package let ubiquitousStatusNotDownloaded = "NSURLUbiquitousItemDownloadingStatusNotDownloaded"
 
-/// Current and Downloaded mean a copy is on the device; NotDownloaded means it is not. A status that is missing for
-/// a file in iCloud is treated as present, so an unknown never blocks playing a file that is there.
-package func songPresence(isUbiquitous: Bool, downloadingStatus: String?) -> SongPresence {
-    guard isUbiquitous else { return .localOnly }
-    return downloadingStatus == ubiquitousStatusNotDownloaded ? .inCloudNotOnDevice : .inCloudOnDevice
+/// Current and Downloaded mean a copy is on the device; NotDownloaded means it is not. A status that is missing for an
+/// iCloud Drive file is treated as present, so an unknown never blocks playing a file that is there. A song is "in
+/// iCloud" only when it is inside the Playaway folder; where that cannot be determined it counts as not in iCloud.
+package func songPresence(isUbiquitous: Bool, downloadingStatus: String?, isInPlaywayFolder: Bool) -> SongPresence {
+    let notOnDevice = isUbiquitous && downloadingStatus == ubiquitousStatusNotDownloaded
+    switch (isInPlaywayFolder, notOnDevice) {
+    case (true, false): return .inCloudOnDevice
+    case (true, true): return .inCloudNotOnDevice
+    case (false, false): return .localOnly
+    case (false, true): return .localOnlyNotOnDevice
+    }
+}
+
+/// Whether a file is inside the shared Playaway folder. The location is compared as resolved paths; a missing folder
+/// or file means not inside.
+package func isInsideFolder(_ file: URL, folder: URL?) -> Bool {
+    guard let folder else { return false }
+    let root = folder.resolvingSymlinksInPath().path
+    let path = file.resolvingSymlinksInPath().path
+    return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
 }
 
 /// What a song row shows: the cloud icon, whether the row is dimmed, and the pie fraction while downloading.
@@ -43,6 +63,7 @@ package struct SongRowCloudDisplay: Equatable {
         default:
             switch presence {
             case .localOnly: icon = .crossedOut; dimmed = false
+            case .localOnlyNotOnDevice: icon = .crossedOut; dimmed = true
             case .inCloudOnDevice: icon = .outline; dimmed = false
             case .inCloudNotOnDevice: icon = .outline; dimmed = true
             }

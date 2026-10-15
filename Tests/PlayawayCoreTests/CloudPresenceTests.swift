@@ -2,23 +2,40 @@ import XCTest
 @testable import PlayawayCore
 
 final class CloudPresenceTests: XCTestCase {
-    func testAFileOutsideICloudIsLocalOnly() {
-        XCTAssertEqual(songPresence(isUbiquitous: false, downloadingStatus: nil), .localOnly)
-        XCTAssertEqual(songPresence(isUbiquitous: false, downloadingStatus: ubiquitousStatusNotDownloaded), .localOnly)
+    func testASongInsideThePlaywayFolderIsInICloudWhetherOrNotItIsOnThisDevice() {
+        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusCurrent, isInPlaywayFolder: true), .inCloudOnDevice)
+        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusDownloaded, isInPlaywayFolder: true), .inCloudOnDevice)
+        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusNotDownloaded, isInPlaywayFolder: true), .inCloudNotOnDevice)
     }
 
-    func testCurrentAndDownloadedMeanOnThisDevice() {
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusCurrent), .inCloudOnDevice)
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusDownloaded), .inCloudOnDevice)
+    func testASongElsewhereInICloudDriveIsNotInICloudInTheOwnersSense() {
+        // The owner's rule: in iCloud means inside the Playaway folder, nothing else.
+        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusCurrent, isInPlaywayFolder: false), .localOnly)
+        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: nil, isInPlaywayFolder: false), .localOnly)
     }
 
-    func testNotDownloadedMeansNotOnThisDevice() {
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusNotDownloaded), .inCloudNotOnDevice)
+    func testASongElsewhereInICloudDriveThatIsNotDownloadedIsStillNotOnTheDevice() {
+        let presence = songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusNotDownloaded, isInPlaywayFolder: false)
+        XCTAssertEqual(presence, .localOnlyNotOnDevice)
+        XCTAssertFalse(presence.isOnDevice)
     }
 
-    func testAnUnknownStatusInICloudNeverBlocksPlaying() {
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: nil), .inCloudOnDevice)
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: "something new"), .inCloudOnDevice)
+    func testAFileOutsideICloudIsLocalOnlyWhateverItsStatus() {
+        XCTAssertEqual(songPresence(isUbiquitous: false, downloadingStatus: nil, isInPlaywayFolder: false), .localOnly)
+        XCTAssertEqual(songPresence(isUbiquitous: false, downloadingStatus: ubiquitousStatusNotDownloaded, isInPlaywayFolder: false), .localOnly)
+    }
+
+    func testAnUnknownStatusNeverBlocksPlayingAFileThatIsThere() {
+        XCTAssertTrue(songPresence(isUbiquitous: true, downloadingStatus: nil, isInPlaywayFolder: true).isOnDevice)
+        XCTAssertTrue(songPresence(isUbiquitous: true, downloadingStatus: "something new", isInPlaywayFolder: true).isOnDevice)
+    }
+
+    func testInsideFolderComparesResolvedPathsAndNeverMatchesASiblingWithTheSamePrefix() {
+        let folder = URL(fileURLWithPath: "/tmp/Playaway")
+        XCTAssertTrue(isInsideFolder(URL(fileURLWithPath: "/tmp/Playaway/Road/song.mp3"), folder: folder))
+        XCTAssertFalse(isInsideFolder(URL(fileURLWithPath: "/tmp/PlayawayOther/song.mp3"), folder: folder), "a sibling folder is not inside")
+        XCTAssertFalse(isInsideFolder(URL(fileURLWithPath: "/tmp/Downloads/song.mp3"), folder: folder))
+        XCTAssertFalse(isInsideFolder(URL(fileURLWithPath: "/tmp/Playaway/Road/song.mp3"), folder: nil), "location unknown counts as not in iCloud")
     }
 
     func testRowDisplayForEachPresenceWithNothingTracked() {
@@ -48,6 +65,11 @@ final class CloudPresenceTests: XCTestCase {
 
     func testACancelledDownloadIsDimmedAgain() {
         XCTAssertEqual(SongRowCloudDisplay(presence: .inCloudNotOnDevice, tracked: .notOnThisDevice).dimmed, true)
+    }
+
+    func testANotDownloadedSongOutsideThePlaywayFolderShowsTheCrossedOutCloudAndIsDimmed() {
+        XCTAssertEqual(SongRowCloudDisplay(presence: .localOnlyNotOnDevice, tracked: nil),
+                       SongRowCloudDisplay(icon: .crossedOut, dimmed: true, fraction: nil))
     }
 
     func testTheTapForEachIconMatchesTheSharedRule() {

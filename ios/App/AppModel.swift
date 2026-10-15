@@ -391,6 +391,7 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(documents.path, forKey: Self.cloudFolderKey)
         guard cloudLibrary?.folder.path != documents.path else { return }
         cloudLibrary = PlaylistLibrary(folder: documents, layout: .folderPerPlaylist)
+        cloudRevision += 1     // where the Playaway folder is decides which songs count as in iCloud
         entries = []
         refresh()
     }
@@ -415,7 +416,7 @@ final class AppModel: ObservableObject {
         }
         let song = cloud.id(for: url)
         pendingPlays[song] = (session, track)
-        downloads.request(song, source: .list, isOnDevice: cloud.presence(of: url) != .inCloudNotOnDevice)
+        downloads.request(song, source: .list, isOnDevice: cloud.presence(of: url, playawayFolder: cloudLibrary?.folder).isOnDevice)
         cloudRevision += 1
     }
 
@@ -427,15 +428,25 @@ final class AppModel: ObservableObject {
     }
 
     /// What a song row shows about iCloud, nil when no iCloud account is available.
-    func cloudDisplay(for track: Track) -> SongRowCloudDisplay? {
+    /// A song's file address, found once and remembered: resolving a bookmark touches the file system, and doing it for
+    /// every row on every update made scrolling jerky.
+    private var songURLs: [UUID: URL] = [:]
+    private func songURL(for track: Track) -> URL? {
+        if let cached = songURLs[track.id] { return cached }
         guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return nil }
+        songURLs[track.id] = url
+        return url
+    }
+
+    func cloudDisplay(for track: Track) -> SongRowCloudDisplay? {
+        guard let url = songURL(for: track) else { return nil }
         let song = cloud.id(for: url)
         let tracked = downloads.state(of: song)
-        return SongRowCloudDisplay(presence: cloud.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
+        return SongRowCloudDisplay(presence: cloud.presence(of: url, playawayFolder: cloudLibrary?.folder), tracked: tracked == .onThisDevice ? nil : tracked)
     }
 
     func cloudIconTapped(_ track: Track, session: PlaylistSession) {
-        guard let display = cloudDisplay(for: track), case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return }
+        guard let display = cloudDisplay(for: track), let url = songURL(for: track) else { return }
         let song = cloud.id(for: url)
         pendingPlays[song] = (session, track)
         switch cloudIconTapAction(state: display.icon, kind: .song) {
@@ -490,6 +501,7 @@ final class AppModel: ObservableObject {
 
     /// Every place that knows a playlist by its file follows it to its new file.
     private func rekey(from old: URL, to new: URL) {
+        songURLs.removeAll()
         if let session = sessions.removeValue(forKey: old) { session.rebase(to: new); sessions[new] = session }
         path = path.map { $0 == old ? new : $0 }
         if var point = resumePoint, point.playlistFileName == old.lastPathComponent {

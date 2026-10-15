@@ -31,8 +31,19 @@ struct SongTable: UIViewRepresentable {
         let bottom = model.playerBarInset
         table.contentInset.bottom = bottom
         table.verticalScrollIndicatorInsets.bottom = bottom
-        guard !c.isDragging else { return }
-        table.reloadData()
+        // Rebuild only what changed. The song list used to be rebuilt on every model update, including the playback
+        // position ticking four times a second, which made scrolling jerky and could swap the item being dragged.
+        let signature = Coordinator.Signature(ids: session.playlist.tracks.map(\.id), current: c.currentID, cloud: model.cloudRevision)
+        guard !c.isDragging else { c.needsReloadAfterDrag = true; return }
+        defer { c.lastSignature = signature }
+        guard let last = c.lastSignature else { table.reloadData(); c.noteReload(table); return }
+        if last == signature { return }
+        if last.ids == signature.ids {
+            table.reconfigureRows(at: table.indexPathsForVisibleRows ?? [])    // only what each row shows changed
+        } else {
+            table.reloadData()
+        }
+        c.noteReload(table)
     }
 
     final class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate, UITableViewDragDelegate {
@@ -40,6 +51,19 @@ struct SongTable: UIViewRepresentable {
         var session: PlaylistSession
         var currentID: UUID?
         var isDragging = false
+        var needsReloadAfterDrag = false
+        var lastSignature: Signature?
+        private(set) var reloads = 0
+
+        struct Signature: Equatable { let ids: [UUID]; let current: UUID?; let cloud: Int }
+
+        /// Counts rebuilds, and shows the count to UI tests, which check that nothing rebuilds the list needlessly.
+        func noteReload(_ table: UITableView) {
+            reloads += 1
+            #if DEBUG
+            table.accessibilityValue = "reloads=\(reloads)"
+            #endif
+        }
         weak var model: AppModel?
         init(session: PlaylistSession) { self.session = session }
 
@@ -125,7 +149,13 @@ struct SongTable: UIViewRepresentable {
         }
 
         func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) { isDragging = true }
-        func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) { isDragging = false }
+        func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) {
+            isDragging = false
+            guard needsReloadAfterDrag else { return }
+            needsReloadAfterDrag = false
+            lastSignature = nil
+            DispatchQueue.main.async { tableView.reloadData(); self.noteReload(tableView) }
+        }
     }
 }
 
@@ -184,3 +214,5 @@ struct CloudIconButton: View {
         return "\(Int(fraction * 100)) percent"
     }
 }
+
+

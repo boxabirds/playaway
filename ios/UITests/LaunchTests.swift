@@ -333,6 +333,46 @@ import XCTest
     }
 }
 
+@MainActor final class SongRowLayoutTests: XCTestCase {
+    /// Reproduces the report that adding the cloud icon "massively increased the space between the song rows".
+    func testCloudIconsDoNotMakeSongRowsTaller() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        XCTAssertTrue(table.cells["Demo One"].buttons["cloud-icon"].waitForExistence(timeout: 10), "the rows do show cloud icons")
+        let maximumComfortableRow: CGFloat = 56    // a standard row is 44; this leaves room for larger default padding
+        for name in ["Demo One", "Demo Two", "Demo Three", "Demo Four"] {
+            let height = table.cells[name].frame.height
+            XCTAssertLessThanOrEqual(height, maximumComfortableRow, "\(name) row is \(height) pt tall, so the icon is making rows taller")
+        }
+    }
+}
+
+@MainActor final class ListEfficiencyTests: XCTestCase {
+    private func reloads(_ table: XCUIElement) -> Int {
+        Int(((table.value as? String) ?? "reloads=0").replacingOccurrences(of: "reloads=", with: "")) ?? 0
+    }
+
+    /// Reproduces the reports of jerky scrolling and of the dragged item changing under the finger: the song list was
+    /// rebuilt every time the playback position ticked.
+    func testTheSongListIsNotRebuiltWhileMusicPlays() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayLongList"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        table.cells.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10))
+        sleep(1)                                    // the list settles after the song starts
+        let before = reloads(table)
+        sleep(4)                                    // sixteen position ticks at four a second
+        let after = reloads(table)
+        XCTAssertEqual(after - before, 0, "the list was rebuilt \(after - before) times in 4 seconds of plain playback")
+    }
+}
+
 @MainActor final class RememberTests: XCTestCase {
     func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
         let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()
