@@ -451,7 +451,13 @@ final class AppModel: ObservableObject {
     /// The sync dialog for a playlist that is on this phone. If iCloud cannot be reached the person is told why.
     func beginSync(_ entry: PlaylistEntry) {
         guard cloudLibrary != nil else {
-            failureMessage = "iCloud isn't available right now. Check that you are signed in to iCloud and that iCloud Drive is on for Playaway in Settings."
+            // Two different causes, so say which: no iCloud account or iCloud Drive off, or an account that Playaway
+            // still cannot reach its own folder through.
+            if FileManager.default.ubiquityIdentityToken == nil {
+                failureMessage = "iCloud isn't available: this iPhone is not signed in to iCloud, or iCloud Drive is off. Playlists stay on this iPhone."
+            } else {
+                failureMessage = "Playaway can't reach its iCloud folder yet, although iCloud is signed in. Playlists stay on this iPhone. Please tell the developer."
+            }
             return
         }
         syncTarget = entry
