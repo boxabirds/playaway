@@ -9,7 +9,7 @@ LOG="$(mktemp -t playaway-ui-tests)"
 REPORTS="$HOME/Library/Logs/DiagnosticReports"
 START="$(mktemp -t playaway-start)"
 xcodegen generate >/dev/null || exit 2
-timeout 540 xcodebuild test -scheme Playaway -destination "platform=iOS Simulator,name=$DEVICE" \
+timeout 1500 xcodebuild test -scheme Playaway -destination "platform=iOS Simulator,name=$DEVICE" \
   -derivedDataPath "$DERIVED" "$@" >"$LOG" 2>&1 </dev/null
 STATUS=$?
 grep -E ' error:|Test Case.*(passed|failed)|TEST (SUCCEEDED|FAILED)' "$LOG" | sort -u

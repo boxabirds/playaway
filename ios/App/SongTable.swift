@@ -17,6 +17,7 @@ struct SongTable: UIViewRepresentable {
         table.dragDelegate = context.coordinator
         table.dragInteractionEnabled = true
         table.register(UITableViewCell.self, forCellReuseIdentifier: Coordinator.cellID)
+        table.separatorStyle = .none
         table.accessibilityIdentifier = "song-table"
         return table
     }
@@ -136,10 +137,14 @@ struct CloudIconButton: View {
 
     var body: some View {
         Button(action: tapped) {
+            // Drawn small, tappable at 44 by 44: the extra area is hit-test only, so it does not make the row taller.
             icon
                 .frame(width: cloudIconDrawnSize.width, height: cloudIconDrawnSize.height)
-                .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height)
+                .padding(.horizontal, (minimumCloudIconTapSize.width - cloudIconDrawnSize.width) / 2)
+                .padding(.vertical, (minimumCloudIconTapSize.height - cloudIconDrawnSize.height) / 2)
                 .contentShape(Rectangle())
+                .padding(.horizontal, -(minimumCloudIconTapSize.width - cloudIconDrawnSize.width) / 2)
+                .padding(.vertical, -(minimumCloudIconTapSize.height - cloudIconDrawnSize.height) / 2)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
