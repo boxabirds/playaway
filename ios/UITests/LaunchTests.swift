@@ -714,6 +714,34 @@ import UIKit
             if !slider.exists { break }            // the sheet was dismissed; nothing more to drag
         }
     }
+
+    /// Reproduces "1-2 s of silence after letting go of the slider": once the finger lifts, a song that was playing must
+    /// be playing again at once, not after the safety timer.
+    func testMusicResumesAtOnceWhenTheFingerLeavesTheSlider() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["player-card"].waitForExistence(timeout: 10))
+        let slider = app.sliders["Playback position"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        var worst: TimeInterval = 0
+        for dy in [CGFloat(0), 40] {
+            let start = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 160, dy: dy)))
+            let lifted = Date()
+            let pause = app.buttons.matching(identifier: "Pause").firstMatch
+            while !pause.exists && Date().timeIntervalSince(lifted) < 5 { usleep(50_000) }
+            worst = max(worst, Date().timeIntervalSince(lifted))
+            print("RESUME-DELAY dy=\(dy) \(Date().timeIntervalSince(lifted))")
+            if !slider.exists { break }
+        }
+        XCTAssertLessThan(worst, 0.6, "playback restarts at once after the finger lifts (took \(worst) s)")
+    }
 }
 
 @MainActor final class PlaybackStateUITests: XCTestCase {
@@ -768,6 +796,31 @@ import UIKit
         let bigPlay = second.buttons.matching(identifier: "Play").allElementsBoundByIndex.max { $0.frame.width < $1.frame.width }!
         bigPlay.tap()
         XCTAssertTrue(second.buttons["Pause"].waitForExistence(timeout: 3), "Play carries on from the remembered song")
+    }
+
+    /// Reproduces "I pause the music, kill the app, relaunch, and nothing is restored": paused (not playing, so no
+    /// periodic save), sent to the Home screen, killed, relaunched twice in a row.
+    func testAPausedSongSurvivesTwoRelaunchesAfterTheAppIsKilledFromTheBackground() {
+        let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()
+        XCTAssertTrue(first.staticTexts["Demo"].waitForExistence(timeout: 8))
+        first.staticTexts["Demo"].tap()
+        first.tables["song-table"].cells["Demo Two"].tap()
+        let controller = first.descendants(matching: .any)["floating-controller"]
+        XCTAssertTrue(controller.waitForExistence(timeout: 5))
+        sleep(3)
+        first.buttons["Pause"].firstMatch.tap()
+        XCTAssertTrue(first.buttons["Play"].firstMatch.waitForExistence(timeout: 3))
+        XCUIDevice.shared.press(.home)
+        sleep(2)
+        first.terminate()
+        for launch in 2...3 {
+            let again = XCUIApplication(); again.launchArguments = ["-PlayawaySeedDemo", "-PlayawayKeepMemory"]; again.launch()
+            XCTAssertTrue(again.tables["song-table"].waitForExistence(timeout: 8), "launch \(launch): the playlist that was open is open again")
+            XCTAssertTrue(again.descendants(matching: .any)["floating-controller"].waitForExistence(timeout: 5),
+                          "launch \(launch): the paused song is shown")
+            XCTAssertTrue(again.buttons["Play"].firstMatch.exists, "launch \(launch): it is paused")
+            again.terminate()
+        }
     }
 }
 
