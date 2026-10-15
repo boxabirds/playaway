@@ -29,6 +29,12 @@ private enum Chrome {
 struct PlayerChrome: View {
     @EnvironmentObject var model: AppModel
     @State private var cardContentHeight: CGFloat = 0
+    /// The sheet's heights while it moves from one to another, and the one it is at. A sheet whose height simply changes
+    /// snaps; selecting between two heights inside an animation makes the system slide its top edge.
+    @State private var detentHeights: [CGFloat] = []
+    @State private var selectedDetent: PresentationDetent = .large
+    @State private var settledHeight: CGFloat?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -46,10 +52,13 @@ struct PlayerChrome: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .sheet(isPresented: $model.cardOpen) {
                 PlayerCard(contentHeight: $cardContentHeight, scrolls: cardHeight(in: geo) >= geo.size.height * Chrome.cardMaxScreenFraction)
-                    .presentationDetents(cardDetents(in: geo))
+                    .presentationDetents(Set(detentHeights.map { PresentationDetent.height($0) }.ifEmpty([.large])), selection: $selectedDetent)
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
+                    .onAppear { resize(to: cardHeight(in: geo), in: geo, animated: false) }
+                    .onChange(of: cardHeight(in: geo)) { _, new in resize(to: new, in: geo, animated: true) }
             }
+            .onChange(of: model.cardOpen) { _, open in if open { settledHeight = nil } }
             .onChange(of: active) { _, isActive in if !isActive { model.cardOpen = false } }
         }
         .ignoresSafeArea(.keyboard)
@@ -78,10 +87,29 @@ struct PlayerChrome: View {
         return min(content, geo.size.height)
     }
 
-    private func cardDetents(in geo: GeometryProxy) -> Set<PresentationDetent> {
-        let height = cardHeight(in: geo)
-        return height >= geo.size.height * Chrome.cardMaxScreenFraction ? [.large] : [.height(height)]
+    /// Moves the sheet to a new height. The old and new heights are both offered while the system slides between them,
+    /// and the old one is dropped when the slide has finished.
+    private func resize(to height: CGFloat, in geo: GeometryProxy, animated: Bool) {
+        let tall = height >= geo.size.height * Chrome.cardMaxScreenFraction
+        let target: PresentationDetent = tall ? .large : .height(height)
+        guard let old = settledHeight, animated, !reduceMotion, abs(old - height) > 1 else {
+            detentHeights = tall ? [] : [height]
+            selectedDetent = target
+            settledHeight = height
+            return
+        }
+        detentHeights = tall ? [old] : [old, height]
+        settledHeight = height
+        withAnimation(.snappy(duration: 0.35)) {
+            selectedDetent = target
+        } completion: {
+            detentHeights = tall ? [] : [height]
+        }
     }
+}
+
+extension Array {
+    fileprivate func ifEmpty(_ fallback: [Element]) -> [Element] { isEmpty ? fallback : self }
 }
 
 struct FloatingController: View {
@@ -124,6 +152,7 @@ struct PlayerCard: View {
     @Binding var contentHeight: CGFloat
     let scrolls: Bool
     @State private var scrubPosition: Double?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
     var body: some View {

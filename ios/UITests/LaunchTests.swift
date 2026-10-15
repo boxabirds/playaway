@@ -468,6 +468,63 @@ import UIKit
     }
 }
 
+@MainActor final class CardAnimationTests: XCTestCase {
+    /// The top edge of the sheet, found in a screenshot (so it is where the sheet is drawn right now, not where an
+    /// animation is heading): the first row, scanning down the right-hand margin, that is as light as the sheet's material
+    /// rather than the dimmed screen behind it.
+    private func sheetTop(_ app: XCUIApplication) -> Int? {
+        let shot = app.screenshot()
+        guard let cg = shot.image.cgImage else { return nil }
+        let scale = shot.image.scale
+        let x = Int(Double(cg.width) * 0.96)
+        guard let column = cg.cropping(to: CGRect(x: x, y: 0, width: 1, height: cg.height)) else { return nil }
+        var data = [UInt8](repeating: 0, count: cg.height * 4)
+        let context = CGContext(data: &data, width: 1, height: cg.height, bitsPerComponent: 8, bytesPerRow: 4,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(column, in: CGRect(x: 0, y: 0, width: 1, height: cg.height))
+        let skip = Int(150 * scale)                       // below the status bar and the navigation bar
+        for y in skip..<cg.height {
+            let luminance = (Int(data[y * 4]) + Int(data[y * 4 + 1]) + Int(data[y * 4 + 2])) / 3
+            if luminance >= 228 { return Int(Double(y) / scale) }
+        }
+        return nil
+    }
+
+    /// Reproduces "there's no animation now, it just snaps" when artwork appears or goes. Animations run ten times slower
+    /// here, and the app moves to the next songs by itself, so the test only watches: each resize of the sheet must be seen
+    /// at several places on its way, not as one jump.
+    func testTheTopOfTheCardSlidesWhenArtworkAppearsAndGoes() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeArtwork", "-PlayawaySlowAnimations", "-PlayawayAutoNext"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        table.cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 20))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()    // the app advances 10 s and 30 s later
+        var seen: [Int] = []
+        let deadline = Date().addingTimeInterval(50)
+        while Date() < deadline { if let top = sheetTop(app) { seen.append(top) } }
+
+        // Split the samples into the runs where the top edge was moving, and judge each run that went a real distance.
+        var runs: [[Int]] = []
+        var current: [Int] = [seen[0]]
+        for value in seen.dropFirst() {
+            if value != current.last! { current.append(value) }
+            else { if current.count > 1 { runs.append(current); current = [value] } else { current = [value] } }
+        }
+        if current.count > 1 { runs.append(current) }
+        let resizes = runs.filter { abs($0.first! - $0.last!) > 60 && $0.first! > 200 }     // not the sheet opening from the bottom
+        XCTAssertGreaterThanOrEqual(resizes.count, 2, "the sheet resized for the artwork and again when it went; saw \(runs)")
+        for run in resizes {
+            XCTAssertGreaterThanOrEqual(run.count, 4, "a resize must be seen at several places, not as one jump: \(run)")
+        }
+    }
+}
+
 @MainActor final class PlaylistScreenLookTests: XCTestCase {
     private func pixel(_ shot: XCUIScreenshot, atX x: CGFloat, y: CGFloat) -> [Int] {
         let image = shot.image

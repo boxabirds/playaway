@@ -195,6 +195,18 @@ final class AppModel: ObservableObject {
             return self.resumeFromMemory()
         }
         restoreMemory()
+        #if DEBUG
+        // Test aid: once the card opens, move to the next song after 10 s and again after 30 s, so a test can watch the sheet
+        // resize without its own tap holding the screen still.
+        if ProcessInfo.processInfo.arguments.contains("-PlayawayAutoNext") {
+            $cardOpen.removeDuplicates().sink { [weak self] open in
+                guard open else { return }
+                for delay in [10.0, 30.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { try? self?.transport.next() }
+                }
+            }.store(in: &cancellables)
+        }
+        #endif
         $path.dropFirst().sink { [weak self] _ in self?.saveMemory(force: true) }.store(in: &cancellables)
         transport.$position.sink { [weak self] _ in self?.saveMemory(force: false) }.store(in: &cancellables)
     }

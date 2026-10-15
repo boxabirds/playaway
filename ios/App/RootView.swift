@@ -26,6 +26,18 @@ struct RootView: View {
             Button("Delete", role: .destructive) { model.confirmDelete() }
             Button("Cancel", role: .cancel) { model.deleteTarget = nil }
         } message: { Text("Only the playlist is deleted. Your songs are not.") }
+        .onAppear {
+            #if DEBUG
+            // Test aid: run every animation ten times slower, so a test can see whether a change is animated or snaps.
+            if ProcessInfo.processInfo.arguments.contains("-PlayawaySlowAnimations") {
+                DispatchQueue.main.async {
+                    for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+                        for window in scene.windows { window.layer.speed = 0.1 }
+                    }
+                }
+            }
+            #endif
+        }
         .onOpenURL { url in
             _ = url.startAccessingSecurityScopedResource()
             model.openCoordinator.open(url)
