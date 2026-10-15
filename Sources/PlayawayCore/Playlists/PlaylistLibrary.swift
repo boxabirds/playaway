@@ -1,6 +1,8 @@
 import Foundation
 
 package enum PlaylistEntryStatus: Equatable {
+    /// The file is listed but not read yet.
+    case loading
     case ok(songCount: Int)
     case damaged
     case newerVersion(Int)
@@ -29,6 +31,15 @@ package final class PlaylistLibrary {
         self.folder = folder
         self.store = store
         self.fileManager = fileManager
+    }
+
+    /// The playlist files by name only, without opening any of them, so a screen can show them at once and fill in
+    /// counts and notes afterwards. Same order as `entries()`, so nothing moves when the rest arrives.
+    package func quickEntries() -> [PlaylistEntry] {
+        let urls = (try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        return urls.filter { $0.pathExtension == playlistFileExtension }
+            .map { PlaylistEntry(url: $0, name: $0.deletingPathExtension().lastPathComponent, status: .loading) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     /// Playlist files in the folder, sorted by name (case-insensitive). Damaged and newer-version files are listed

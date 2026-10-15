@@ -46,6 +46,9 @@ targets:
           - CFBundleTypeName: Playlist
             LSHandlerRank: Owner
             LSItemContentTypes: [com.localplayer.playlist]
+          - CFBundleTypeName: Audio
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.mp3, com.microsoft.waveform-audio, public.mpeg-4-audio]
     settings:
       base:
         GENERATE_INFOPLIST_FILE: NO

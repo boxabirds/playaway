@@ -14,7 +14,10 @@ struct RootView: View {
                 }
         }
         .overlay { PlayerChrome() }
-        .onOpenURL { model.openExternal($0) }
+        .onOpenURL { url in
+            _ = url.startAccessingSecurityScopedResource()
+            model.openCoordinator.open(url)
+        }
     }
 }
 
@@ -55,7 +58,7 @@ struct PlaylistsView: View {
         .alert("Can't create playlist", isPresented: Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(errorText ?? "") }
-        .onAppear { model.refresh() }
+        .onAppear { model.refresh(); model.firstScreenShown() }
     }
 
     @ViewBuilder private func row(_ entry: PlaylistEntry) -> some View {
@@ -63,6 +66,7 @@ struct PlaylistsView: View {
             Text(entry.name).font(.body)
             switch entry.status {
             case .ok(let count): Text("\(count) \(count == 1 ? "song" : "songs")").font(.caption).foregroundStyle(.secondary)
+            case .loading: EmptyView()
             case .damaged: Text("Can't be read").font(.caption).foregroundStyle(.secondary)
             case .newerVersion: Text("Made by a newer version of Playaway").font(.caption).foregroundStyle(.secondary)
             }

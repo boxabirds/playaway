@@ -54,3 +54,17 @@ final class PlaylistLibraryTests: XCTestCase {
         XCTAssertTrue(library.entries().isEmpty)
     }
 }
+
+final class QuickEntriesTests: XCTestCase {
+    func testQuickEntriesListNamesWithoutReadingFilesAndKeepTheOrderOfFullEntries() throws {
+        let dir = TempDir("quick")
+        let library = PlaylistLibrary(folder: dir.url)
+        try library.create(named: "banana")
+        try library.create(named: "Apple")
+        try Data("not a playlist".utf8).write(to: dir.url.appendingPathComponent("Broken.\(playlistFileExtension)"))
+        let quick = library.quickEntries()
+        XCTAssertEqual(quick.map(\.name), library.entries().map(\.name), "the same order, so nothing moves when counts arrive")
+        XCTAssertTrue(quick.allSatisfy { $0.status == .loading })
+        XCTAssertEqual(quick.count, 3, "an unreadable file is listed; reading it later decides its status")
+    }
+}

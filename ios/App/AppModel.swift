@@ -3,6 +3,7 @@ import Combine
 import AVFoundation
 import MediaPlayer
 import PlayawayCore
+import os
 
 /// One open playlist: its songs, its player, and saving after every change.
 @MainActor
@@ -65,6 +66,16 @@ final class PlaylistSession: ObservableObject {
     }
 }
 
+/// Lets the shared open path (the same one the Mac uses) hand playlists to the app and show its notices. Calls come
+/// from the system's open-URL event on the main thread.
+final class OpenAdapter: PlaylistOpening, NoticePresenting {
+    weak var model: AppModel?
+    func canOpen(_ url: URL) -> Bool { url.pathExtension == playlistFileExtension }
+    func open(_ url: URL) { MainActor.assumeIsolated { model?.openExternal(url) } }
+    func endActivePlayback() { MainActor.assumeIsolated { model?.endActiveSession() } }
+    func show(_ notice: Notice) { MainActor.assumeIsolated { model?.failureMessage = notice.title } }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     let library: PlaylistLibrary
@@ -79,6 +90,13 @@ final class AppModel: ObservableObject {
     /// Where the last launch left off, shown paused until the person presses play.
     @Published private(set) var resumePoint: ResumePoint?
     private let memoryStore = ListeningMemoryStore()
+    private let openAdapter = OpenAdapter()
+    private(set) lazy var openCoordinator = OpenCoordinator(classifier: FormatClassifier(), engine: engine,
+                                                            notices: openAdapter, playlists: openAdapter)
+    private let launchTimer: LaunchTimer?
+    private let launchStore = LaunchReportStore()
+    private var firstScreenReported = false
+    private var refreshGeneration = 0
     private var lastPositionSave: Date?
     private(set) lazy var scrubber = ScrubDebouncer { [weak self] seconds in try? self?.transport.seek(toSeconds: seconds) }
     @Published private(set) var activeSession: PlaylistSession?
@@ -91,6 +109,11 @@ final class AppModel: ObservableObject {
     init() {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         library = PlaylistLibrary(folder: documents)
+        let now = Date()
+        if let start = LaunchFacts.processStart(), let boot = LaunchFacts.deviceBoot() {
+            launchTimer = LaunchTimer(processStart: start, kind: launchKind(previousLaunch: launchStore.lastLaunch, deviceBoot: boot))
+        } else { launchTimer = nil }
+        launchStore.noteLaunch(at: now)
         transport = TransportViewModel(engine: engine, registry: registry)
         transport.activePlayerProvider = { [weak self] in self?.activeSession?.player }
         configureAudioSession()
@@ -106,6 +129,7 @@ final class AppModel: ObservableObject {
             seedDemoPlaylist(in: documents, keepExisting: arguments.contains("-PlayawayKeepMemory"))
         }
         #endif
+        openAdapter.model = self
         refresh()
         transport.startHandler = { [weak self] in self?.resumeFromMemory() ?? false }
         restoreMemory()
@@ -274,7 +298,34 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func refresh() { entries = library.entries() }
+    /// Shows the playlist names at once, then fills in counts and notes without blocking the screen or reordering rows.
+    func refresh() {
+        if entries.isEmpty { entries = library.quickEntries() }
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let library = self.library
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let full = library.entries()
+            await MainActor.run { if let self, self.refreshGeneration == generation { self.entries = full } }
+        }
+    }
+
+    /// Called once when the Playlists screen first appears: records how long the launch took.
+    func firstScreenShown() {
+        guard !firstScreenReported, let launchTimer else { return }
+        firstScreenReported = true
+        let report = launchTimer.firstScreenShown(at: Date())
+        launchStore.add(report)
+        Logger(subsystem: "software.away.play", category: "launch")
+            .info("launch \(report.kind.rawValue) \(report.seconds, format: .fixed(precision: 3)) s")
+    }
+
+    /// A song or playlist opened from outside replaces the playlist that was playing.
+    func endActiveSession() {
+        activeSession?.player.end()
+        activeSession = nil
+        resumePoint = nil
+    }
 
     func createPlaylist(named name: String) throws -> URL {
         let url = try library.create(named: name)
