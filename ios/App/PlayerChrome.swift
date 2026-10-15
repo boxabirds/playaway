@@ -6,7 +6,8 @@ enum PlayerBar {
     static let height: CGFloat = 64
     static let bottomMargin: CGFloat = 4
     static let gapAboveIt: CGFloat = 8
-    static let inset: CGFloat = height + bottomMargin + gapAboveIt
+    /// The room to leave for a controller of the given height.
+    static func inset(forHeight controller: CGFloat) -> CGFloat { controller + bottomMargin + gapAboveIt }
 }
 
 private enum Chrome {
@@ -15,6 +16,7 @@ private enum Chrome {
     static let settleThreshold: CGFloat = 0.5
     static let cardFirstFrameFraction: CGFloat = 0.4
     static let playButtonSide: CGFloat = 76
+    static let playButtonMaxSide: CGFloat = 112
     static let scrubberStep: Double = 1
 }
 
@@ -24,6 +26,7 @@ struct PlayerChrome: View {
     @EnvironmentObject var model: AppModel
     @State private var drag: CGFloat = 0
     @State private var cardContentHeight: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -46,12 +49,12 @@ struct PlayerChrome: View {
                         .gesture(dragGesture(cardHeight))
                         .onTapGesture { open() }
                         .allowsHitTesting(progress < 1)
-                        .accessibilityHidden(progress == 1)
+                        .accessibilityHidden(model.cardOpen)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .animation(.snappy(duration: 0.25), value: model.cardOpen)
-            .animation(.snappy(duration: 0.25), value: hasArtwork)
+            .animation(motion, value: model.cardOpen)
+            .animation(motion, value: hasArtwork)
         }
         .ignoresSafeArea(.keyboard)
         .alert("This playlist is no longer available", isPresented: $model.showUnsavedOffer) {
@@ -63,15 +66,17 @@ struct PlayerChrome: View {
         } message: { Text(model.failureMessage ?? "") }
     }
 
-    private func open() { withAnimation(.snappy(duration: 0.25)) { model.cardOpen = true } }
-    private func close() { withAnimation(.snappy(duration: 0.25)) { model.cardOpen = false } }
+    /// The card's slide, or no movement at all when the person has asked the system to reduce motion.
+    private var motion: Animation? { reduceMotion ? nil : .snappy(duration: 0.25) }
+    private func open() { withAnimation(motion) { model.cardOpen = true } }
+    private func close() { withAnimation(motion) { model.cardOpen = false } }
 
     private func dragGesture(_ height: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 6)
             .onChanged { drag = $0.translation.height }
             .onEnded { value in
                 let final = (model.cardOpen ? 1 : 0) - value.translation.height / max(height, 1)
-                withAnimation(.snappy(duration: 0.25)) {
+                withAnimation(motion) {
                     model.cardOpen = final > Chrome.settleThreshold
                     drag = 0
                 }
@@ -100,9 +105,11 @@ struct FloatingController: View {
             .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
         }
         .padding(.horizontal, 16)
-        .frame(height: PlayerBar.height)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .frame(minHeight: PlayerBar.height)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))    // keeps the list behind it unreadable
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 8).padding(.bottom, PlayerBar.bottomMargin)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.playerBarHeight = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("floating-controller")
     }
@@ -116,8 +123,21 @@ struct PlayerCard: View {
     @EnvironmentObject var model: AppModel
     @Binding var contentHeight: CGFloat
     @State private var scrubPosition: Double?
+    @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
     var body: some View {
+        ScrollView {
+            content
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background {
+            UnevenRoundedRectangle(topLeadingRadius: Chrome.cardCorner, topTrailingRadius: Chrome.cardCorner)
+                .fill(.regularMaterial).ignoresSafeArea(edges: .bottom)
+        }
+        .accessibilityIdentifier("player-card")
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
             Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5).frame(maxWidth: .infinity)
             if let name = model.activeSession?.name {
@@ -137,11 +157,6 @@ struct PlayerCard: View {
         .padding(.horizontal, 24).padding(.top, 10).padding(.bottom, 24)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
-        .background {
-            UnevenRoundedRectangle(topLeadingRadius: Chrome.cardCorner, topTrailingRadius: Chrome.cardCorner)
-                .fill(.regularMaterial).ignoresSafeArea(edges: .bottom)
-        }
-        .accessibilityIdentifier("player-card")
     }
 
     private var scrubber: some View {
@@ -153,6 +168,7 @@ struct PlayerCard: View {
                 if !editing, let last = scrubPosition { model.scrubber.finish(at: last); scrubPosition = nil }
             }
             .accessibilityLabel("Playback position")
+            .accessibilityValue(resting ? "" : "\(TransportViewModel.formatTime(shown)) of \(TransportViewModel.formatTime(model.transport.duration))")
             .disabled(resting)
             HStack {
                 Text(TransportViewModel.formatTime(shown))
@@ -164,31 +180,55 @@ struct PlayerCard: View {
     }
 
     private var controls: some View {
-        HStack {
-            Button { model.settings.toggleShuffle() } label: {
-                Image(systemName: "shuffle").foregroundStyle(model.settings.shuffleOn ? Color.accentColor : .secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack { shuffleButton; Spacer(); previousButton; Spacer(); playButton; Spacer(); nextButton; Spacer(); repeatButton }
+            VStack(spacing: 12) {
+                HStack { Spacer(); previousButton; Spacer(); playButton; Spacer(); nextButton; Spacer() }
+                HStack { shuffleButton; Spacer(); repeatButton }
             }
-            .accessibilityLabel("Shuffle").accessibilityValue(model.settings.shuffleOn ? "On" : "Off")
-            Spacer()
-            Button { try? model.transport.previous() } label: { Image(systemName: "backward.fill").font(.title) }
-                .accessibilityLabel("Previous")
-            Spacer()
-            Button { model.transport.playPause() } label: {
-                Image(systemName: model.transport.state == .playing ? "pause.circle.fill" : "play.circle.fill")
-                    .resizable().frame(width: Chrome.playButtonSide, height: Chrome.playButtonSide)
-            }
-            .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
-            Spacer()
-            Button { try? model.transport.next() } label: { Image(systemName: "forward.fill").font(.title) }
-                .accessibilityLabel("Next")
-            Spacer()
-            Button { model.settings.cycleRepeat() } label: {
-                Image(systemName: model.settings.repeatMode == .one ? "repeat.1" : "repeat")
-                    .foregroundStyle(model.settings.repeatMode == .off ? Color.secondary : Color.accentColor)
-            }
-            .accessibilityLabel("Repeat").accessibilityValue(repeatSpoken)
         }
         .font(.title3).buttonStyle(.plain)
+    }
+
+    private var shuffleButton: some View {
+        Button { model.settings.toggleShuffle() } label: {
+            Image(systemName: "shuffle").foregroundStyle(model.settings.shuffleOn ? Color.accentColor : .secondary)
+                .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height).contentShape(Rectangle())
+        }
+        .accessibilityLabel("Shuffle").accessibilityValue(model.settings.shuffleOn ? "On" : "Off")
+    }
+
+    private var previousButton: some View {
+        Button { try? model.transport.previous() } label: {
+            Image(systemName: "backward.fill").font(.title)
+                .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height).contentShape(Rectangle())
+        }
+        .accessibilityLabel("Previous")
+    }
+
+    private var playButton: some View {
+        Button { model.transport.playPause() } label: {
+            Image(systemName: model.transport.state == .playing ? "pause.circle.fill" : "play.circle.fill")
+                .resizable().frame(width: min(playButtonSide, Chrome.playButtonMaxSide), height: min(playButtonSide, Chrome.playButtonMaxSide))
+        }
+        .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
+    }
+
+    private var nextButton: some View {
+        Button { try? model.transport.next() } label: {
+            Image(systemName: "forward.fill").font(.title)
+                .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height).contentShape(Rectangle())
+        }
+        .accessibilityLabel("Next")
+    }
+
+    private var repeatButton: some View {
+        Button { model.settings.cycleRepeat() } label: {
+            Image(systemName: model.settings.repeatMode == .one ? "repeat.1" : "repeat")
+                .foregroundStyle(model.settings.repeatMode == .off ? Color.secondary : Color.accentColor)
+                .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height).contentShape(Rectangle())
+        }
+        .accessibilityLabel("Repeat").accessibilityValue(repeatSpoken)
     }
 
     private var repeatSpoken: String {

@@ -27,7 +27,7 @@ struct SongTable: UIViewRepresentable {
         c.model = model
         c.currentID = session.player.current?.id
         // Room for the floating controller, so the last song can be scrolled up clear of it.
-        let bottom = model.playerBarVisible ? PlayerBar.inset : 0
+        let bottom = model.playerBarInset
         table.contentInset.bottom = bottom
         table.verticalScrollIndicatorInsets.bottom = bottom
         guard !c.isDragging else { return }

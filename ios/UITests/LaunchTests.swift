@@ -251,6 +251,37 @@ import XCTest
     }
 }
 
+@MainActor final class AccessibilityTests: XCTestCase {
+    private func launch(largestText: Bool) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayLongList"]
+        if largestText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+        app.launch()
+        return app
+    }
+
+    func testAtTheLargestTextSizeTheControllerAndTheCardControlsAreReachable() {
+        let app = launch(largestText: true)
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        table.cells.element(boundBy: 0).tap()
+        let controller = app.descendants(matching: .any)["floating-controller"]
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Pause"].isHittable, "the play and pause control can be tapped at the largest text size")
+        try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/pa-axxxl-controller.png"))
+
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        let card = app.descendants(matching: .any)["player-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        var swipes = 0
+        while !app.buttons["Next"].isHittable && swipes < 6 { card.swipeUp(); swipes += 1 }
+        XCTAssertTrue(app.buttons["Next"].isHittable, "the card's controls can be reached by scrolling the card")
+        try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/pa-axxxl-card.png"))
+    }
+}
+
 @MainActor final class RememberTests: XCTestCase {
     func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
         let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()
@@ -271,7 +302,9 @@ import XCTest
         XCTAssertTrue(second.staticTexts["Demo Two"].exists, "the same song")
         let savedPlace = second.staticTexts.matching(NSPredicate(format: "label MATCHES '0:0[3-9]'"))
         XCTAssertGreaterThan(savedPlace.count, 0, "the place in the song is remembered")
-        second.buttons["Play"].firstMatch.tap()
+        // The card's Play is the big one; the small controller's Play sits behind the card.
+        let bigPlay = second.buttons.matching(identifier: "Play").allElementsBoundByIndex.max { $0.frame.width < $1.frame.width }!
+        bigPlay.tap()
         XCTAssertTrue(second.buttons["Pause"].waitForExistence(timeout: 3), "Play carries on from the remembered song")
     }
 }

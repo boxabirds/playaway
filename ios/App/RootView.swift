@@ -52,7 +52,7 @@ struct PlaylistsView: View {
                         .accessibilityAction(named: "Delete") { model.deleteTarget = entry }
                         .accessibilityAction(named: "Rename") { if case .ok = entry.status { model.beginRename(entry.url) } }
                 }
-                .contentMargins(.bottom, model.playerBarVisible ? PlayerBar.inset : 0, for: .scrollContent)
+                .contentMargins(.bottom, model.playerBarInset, for: .scrollContent)
             }
         }
         .navigationTitle("Playlists")

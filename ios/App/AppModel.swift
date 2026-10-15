@@ -284,6 +284,9 @@ final class AppModel: ObservableObject {
     // MARK: The playlist link on the player card
 
     @Published var showUnsavedOffer = false
+    /// The floating controller's real height, which grows with the text size, so lists leave the right room.
+    @Published var playerBarHeight: CGFloat = PlayerBar.height
+    var playerBarInset: CGFloat { playerBarVisible ? PlayerBar.inset(forHeight: playerBarHeight) : 0 }
     /// True while the floating controller is on screen, so screens leave room for it.
     var playerBarVisible: Bool { transport.state != .idle || resumePoint != nil }
     @Published var failureMessage: String?
