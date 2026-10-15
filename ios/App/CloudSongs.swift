@@ -49,7 +49,7 @@ final class CloudSongs: SongDownloading {
         let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
         return songPresence(isUbiquitous: values?.isUbiquitousItem ?? false,
                             downloadingStatus: values?.ubiquitousItemDownloadingStatus?.rawValue,
-                            isInPlaywayFolder: isInsideFolder(url, folder: playawayFolder))
+                            isInPlaywayFolder: locationAnswer(of: url, root: playawayFolder) == .insideContainer)
     }
 
     // MARK: SongDownloading

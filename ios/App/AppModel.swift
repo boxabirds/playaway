@@ -39,9 +39,13 @@ final class PlaylistSession: ObservableObject {
     }
 
     func add(_ urls: [URL]) {
+        let before = Set(playlist.tracks.map(\.id))
         let result = adding(urls, to: playlist, classifier: FormatClassifier())
         if !result.rejected.isEmpty { notice = "Some files could not be added: they are not supported audio." }
         replace(result.playlist)
+        // Songs added to a playlist in iCloud go through the same Files flow as turning sync on.
+        let added = result.playlist.tracks.filter { !before.contains($0.id) }
+        if !added.isEmpty { model?.songsEntered(added, in: self, source: .iPhoneAdd) }
     }
 
     func remove(at offsets: IndexSet) {
@@ -60,6 +64,9 @@ final class PlaylistSession: ObservableObject {
     func start() { model?.becameActive(self); player.start() }
     weak var model: AppModel?
 
+    /// Takes a playlist changed elsewhere (for example songs moved into iCloud) and saves it.
+    func apply(_ updated: Playlist) { replace(updated) }
+
     private func replace(_ updated: Playlist) {
         playlist = updated
         if case .writeFailed = library.save(updated, to: url) { notice = "The playlist could not be saved." }
@@ -74,6 +81,13 @@ final class OpenAdapter: PlaylistOpening, NoticePresenting {
     func open(_ url: URL) { MainActor.assumeIsolated { model?.openExternal(url) } }
     func endActivePlayback() { MainActor.assumeIsolated { model?.endActiveSession() } }
     func show(_ notice: Notice) { MainActor.assumeIsolated { model?.failureMessage = notice.title } }
+}
+
+/// Lets the shared Files flow ask its question and show its messages through the app's screens.
+final class FilesPresenterAdapter: FilesPromptPresenting {
+    weak var model: AppModel?
+    func askFilesChoice() async -> FilesChoice { await model?.presentFilesChoice() ?? FilesPrompt.dismissalChoice }
+    func show(message: String) async { await MainActor.run { model?.enqueueMessage(message) } }
 }
 
 @MainActor
@@ -163,6 +177,7 @@ final class AppModel: ObservableObject {
         }
         #endif
         openAdapter.model = self
+        filesPresenter.model = self
         if !fakeCloud { resolveICloud() }
         cloud.onEvent = { [weak self] event in
             guard let self else { return }
@@ -312,6 +327,54 @@ final class AppModel: ObservableObject {
     /// True while the floating controller is on screen, so screens leave room for it.
     var playerBarVisible: Bool { transport.state != .idle || resumePoint != nil }
     @Published var failureMessage: String?
+    private var queuedMessages: [String] = []
+
+    /// Shows a message now, or after the one on screen has been dismissed, so none is lost.
+    func enqueueMessage(_ message: String) {
+        if failureMessage == nil { failureMessage = message } else { queuedMessages.append(message) }
+    }
+
+    func dismissFailureMessage() { failureMessage = queuedMessages.isEmpty ? nil : queuedMessages.removeFirst() }
+
+    // MARK: Songs entering an iCloud playlist (the Files question)
+
+    @Published var showFilesPrompt = false
+    private var filesChoiceContinuation: CheckedContinuation<FilesChoice, Never>?
+    private let filesPresenter = FilesPresenterAdapter()
+
+    func presentFilesChoice() async -> FilesChoice {
+        await withCheckedContinuation { continuation in
+            filesChoiceContinuation = continuation
+            showFilesPrompt = true
+        }
+    }
+
+    func answerFilesPrompt(_ choice: FilesChoice) {
+        showFilesPrompt = false
+        filesChoiceContinuation?.resume(returning: choice)
+        filesChoiceContinuation = nil
+    }
+
+    /// Runs the one shared flow for songs that have just entered a playlist, or that turning sync on brings in. Only
+    /// a playlist in the Playaway folder is asked about; a playlist that is only on this phone is left alone.
+    func songsEntered(_ tracks: [Track], in session: PlaylistSession, source: IntakeSource) {
+        guard let cloudLibrary, library(for: session.url) === cloudLibrary else { return }
+        let flow = SongIntakeFlow(root: cloudLibrary.folder, resolve: { track in
+            guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return nil }
+            _ = url.startAccessingSecurityScopedResource()
+            return url
+        }, fileSystem: SystemTransferFileSystem(), presenter: filesPresenter)
+        let playlist = session.playlist
+        let name = session.name
+        Task { @MainActor [weak self] in
+            let outcome = await Task.detached { await flow.run(playlist: playlist, playlistName: name, tracks: tracks, source: source) }.value
+            guard let self, outcome.playlist != session.playlist else { return }
+            session.apply(outcome.playlist)
+            self.songURLs.removeAll()
+            self.cloudRevision += 1
+            self.pendingPlays.removeAll()
+        }
+    }
 
     func availability(of session: PlaylistSession) -> PlaylistAvailability {
         FileManager.default.fileExists(atPath: session.url.path) ? .available : .deleted
@@ -452,7 +515,12 @@ final class AppModel: ObservableObject {
         switch cloudIconTapAction(state: display.icon, kind: .song) {
         case .cancelDownload: downloads.cancel(song)
         case .retryDownload: downloads.retry(song)
-        case .openSyncDialog, .none, .cancelSync: break    // the sync dialog belongs to the iCloud sync stories
+        case .openSyncDialog:
+            // A song outside the Playaway folder: ask about it as for any song entering an iCloud playlist, or offer to move the
+            // playlist itself if it is still only on this phone.
+            if let cloudLibrary, library(for: session.url) === cloudLibrary { songsEntered([track], in: session, source: .iPhoneAdd) }
+            else if let entry = entries.first(where: { $0.url == session.url }) { beginSync(entry) }
+        case .none, .cancelSync: break
         }
         cloudRevision += 1
     }
@@ -489,6 +557,7 @@ final class AppModel: ObservableObject {
                 self.entries = self.allEntries()
                 self.saveMemory(force: true)
                 UIAccessibility.post(notification: .announcement, argument: "\(entry.name) moved to iCloud")
+                if let session = self.session(for: newURL) { self.songsEntered(session.playlist.tracks, in: session, source: .turnOnSync) }
             case .failure(let error):
                 if case LibraryError.alreadyExists = error {
                     self.failureMessage = "A playlist named “\(entry.name)” is already in the Playaway folder in iCloud. Nothing was moved."

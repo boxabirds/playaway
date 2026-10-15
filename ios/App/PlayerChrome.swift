@@ -61,7 +61,16 @@ struct PlayerChrome: View {
             Button("Save Playlist…") { model.saveUnsavedPlaylist() }
             Button("Cancel", role: .cancel) {}
         } message: { Text("Its file was deleted or moved. You can save its songs as a new playlist file.") }
-        .alert("Playlist", isPresented: Binding(get: { model.failureMessage != nil }, set: { if !$0 { model.failureMessage = nil } })) {
+        .alert(FilesPrompt.title, isPresented: $model.showFilesPrompt) {
+            ForEach(FilesPrompt.buttons, id: \.label) { button in
+                switch button.role {
+                case .destructive: Button(button.label, role: .destructive) { model.answerFilesPrompt(button.choice) }
+                case .defaultAction: Button(button.label) { model.answerFilesPrompt(button.choice) }.keyboardShortcut(.defaultAction)
+                case .plain: Button(button.label, role: .cancel) { model.answerFilesPrompt(button.choice) }
+                }
+            }
+        } message: { Text(FilesPrompt.message) }
+        .alert("Playlist", isPresented: Binding(get: { model.failureMessage != nil }, set: { if !$0 { model.dismissFailureMessage() } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(model.failureMessage ?? "") }
     }

@@ -302,17 +302,31 @@ import XCTest
         dialog.buttons["Cancel"].tap()
         XCTAssertEqual(icon(app, row: "Demo").label, "Only on this iPhone. Moves it to iCloud.")
 
-        // Move to iCloud: the icon becomes the outline cloud and the playlist still opens, with its songs.
+        // Move to iCloud: the playlist moves, and because its songs are not in the Playaway folder the Files question follows.
         icon(app, row: "Demo").tap()
         XCTAssertTrue(app.alerts["Sync with iCloud"].waitForExistence(timeout: 10))
         app.alerts["Sync with iCloud"].buttons["Move to iCloud"].tap()
+        let files = app.alerts["Sync with iCloud: Files"]
+        XCTAssertTrue(files.waitForExistence(timeout: 15))
+        XCTAssertTrue(files.staticTexts["This is an iCloud playlist, and Some of the files in your playlist are not in iCloud."].exists)
+        XCTAssertEqual(files.buttons.allElementsBoundByIndex.map(\.label).sorted(), ["Add Without Syncing", "Copy to iCloud", "Move to iCloud"])
+        files.buttons["Add Without Syncing"].tap()
         expectation(for: NSPredicate(format: "label == 'In iCloud'"), evaluatedWith: icon(app, row: "Demo"))
         waitForExpectations(timeout: 15)
         app.staticTexts["Demo"].tap()
         XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.tables["song-table"].cells.count, 5, "the songs are all still there")
+        let song = app.tables["song-table"].cells["Demo One"].buttons["cloud-icon"]
+        XCTAssertEqual(song.label, "Not in iCloud", "Add Without Syncing leaves the song where it was, with the crossed-out cloud")
+
+        // Tapping the song's crossed-out cloud asks the same question; Copy puts the song in the Playaway folder.
+        song.tap()
+        XCTAssertTrue(app.alerts["Sync with iCloud: Files"].waitForExistence(timeout: 10))
+        app.alerts["Sync with iCloud: Files"].buttons["Copy to iCloud"].tap()
+        expectation(for: NSPredicate(format: "label == 'In iCloud'"), evaluatedWith: song)
+        waitForExpectations(timeout: 15)
         app.tables["song-table"].cells["Demo One"].tap()
-        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "and it plays")
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "and it plays from its new place")
         app.navigationBars.buttons["Playlists"].tap()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.tables["song-table"])
         waitForExpectations(timeout: 15)
@@ -370,6 +384,28 @@ import XCTest
         sleep(4)                                    // sixteen position ticks at four a second
         let after = reloads(table)
         XCTAssertEqual(after - before, 0, "the list was rebuilt \(after - before) times in 4 seconds of plain playback")
+    }
+}
+
+@MainActor final class MoveSongsToICloudTests: XCTestCase {
+    func testMoveToICloudMovesEverySongIntoThePlaywayFolderAndAllRowsPlay() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.cells.containing(.staticText, identifier: "Demo").buttons["playlist-cloud-icon"].tap()
+        XCTAssertTrue(app.alerts["Sync with iCloud"].waitForExistence(timeout: 10))
+        app.alerts["Sync with iCloud"].buttons["Move to iCloud"].tap()
+        let files = app.alerts["Sync with iCloud: Files"]
+        XCTAssertTrue(files.waitForExistence(timeout: 15))
+        files.buttons["Move to iCloud"].tap()
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        for name in ["Demo One", "Demo Four", "Demo Five"] {
+            expectation(for: NSPredicate(format: "label == 'In iCloud'"), evaluatedWith: table.cells[name].buttons["cloud-icon"])
+        }
+        waitForExpectations(timeout: 20)
+        table.cells["Demo Five"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "every song plays from its new place")
     }
 }
 

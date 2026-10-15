@@ -30,14 +30,6 @@ final class CloudPresenceTests: XCTestCase {
         XCTAssertTrue(songPresence(isUbiquitous: true, downloadingStatus: "something new", isInPlaywayFolder: true).isOnDevice)
     }
 
-    func testInsideFolderComparesResolvedPathsAndNeverMatchesASiblingWithTheSamePrefix() {
-        let folder = URL(fileURLWithPath: "/tmp/Playaway")
-        XCTAssertTrue(isInsideFolder(URL(fileURLWithPath: "/tmp/Playaway/Road/song.mp3"), folder: folder))
-        XCTAssertFalse(isInsideFolder(URL(fileURLWithPath: "/tmp/PlayawayOther/song.mp3"), folder: folder), "a sibling folder is not inside")
-        XCTAssertFalse(isInsideFolder(URL(fileURLWithPath: "/tmp/Downloads/song.mp3"), folder: folder))
-        XCTAssertFalse(isInsideFolder(URL(fileURLWithPath: "/tmp/Playaway/Road/song.mp3"), folder: nil), "location unknown counts as not in iCloud")
-    }
-
     func testRowDisplayForEachPresenceWithNothingTracked() {
         XCTAssertEqual(SongRowCloudDisplay(presence: .localOnly, tracked: nil), SongRowCloudDisplay(icon: .crossedOut, dimmed: false, fraction: nil))
         XCTAssertEqual(SongRowCloudDisplay(presence: .inCloudOnDevice, tracked: nil), SongRowCloudDisplay(icon: .outline, dimmed: false, fraction: nil))

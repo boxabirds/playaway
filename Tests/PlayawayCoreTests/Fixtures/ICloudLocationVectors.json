@@ -1,0 +1,14 @@
+[
+  {"name": "the root itself is not strictly inside", "root": "/icloud/Playaway", "url": "/icloud/Playaway", "expected": "outsideContainer"},
+  {"name": "one level in", "root": "/icloud/Playaway", "url": "/icloud/Playaway/song.mp3", "expected": "insideContainer"},
+  {"name": "deep inside", "root": "/icloud/Playaway", "url": "/icloud/Playaway/Road/disc 1/song.mp3", "expected": "insideContainer"},
+  {"name": "a sibling whose name starts with Playaway", "root": "/icloud/Playaway", "url": "/icloud/Playaway2/song.mp3", "expected": "outsideContainer"},
+  {"name": "the name appears only inside a longer path", "root": "/icloud/Playaway", "url": "/Users/me/Playaway/song.mp3", "expected": "outsideContainer"},
+  {"name": "elsewhere in iCloud Drive", "root": "/icloud/Playaway", "url": "/icloud/Music/song.mp3", "expected": "outsideContainer"},
+  {"name": "outside entirely", "root": "/icloud/Playaway", "url": "/Users/me/Downloads/song.mp3", "expected": "outsideContainer"},
+  {"name": "dot dot out of the folder", "root": "/icloud/Playaway", "url": "/icloud/Playaway/../Music/song.mp3", "expected": "outsideContainer"},
+  {"name": "dot dot that stays inside", "root": "/icloud/Playaway", "url": "/icloud/Playaway/Road/../song.mp3", "expected": "insideContainer"},
+  {"name": "trailing slash on the root", "root": "/icloud/Playaway/", "url": "/icloud/Playaway/Road/song.mp3", "expected": "insideContainer"},
+  {"name": "iCloud unavailable, no root", "root": null, "url": "/icloud/Playaway/song.mp3", "expected": "undeterminable"},
+  {"name": "not a file address", "root": "/icloud/Playaway", "url": "https://example.com/Playaway/song.mp3", "expected": "undeterminable"}
+]

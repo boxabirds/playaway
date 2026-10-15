@@ -33,15 +33,6 @@ package func songPresence(isUbiquitous: Bool, downloadingStatus: String?, isInPl
     }
 }
 
-/// Whether a file is inside the shared Playaway folder. The location is compared as resolved paths; a missing folder
-/// or file means not inside.
-package func isInsideFolder(_ file: URL, folder: URL?) -> Bool {
-    guard let folder else { return false }
-    let root = folder.resolvingSymlinksInPath().path
-    let path = file.resolvingSymlinksInPath().path
-    return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
-}
-
 /// What a song row shows: the cloud icon, whether the row is dimmed, and the pie fraction while downloading.
 package struct SongRowCloudDisplay: Equatable {
     package var icon: CloudIconState
