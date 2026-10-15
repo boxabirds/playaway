@@ -106,58 +106,61 @@ struct PlaylistView: View {
     @State private var importing = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            header.padding(.horizontal, 20).padding(.vertical, 12)
-            SongTable(session: session)
-        }
-        .navigationTitle(session.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(removing: .title)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { importing = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add Songs")
+        SongTable(session: session)
+            // The title, the song count and the controls live in the navigation bar: back at the left, the name over the
+            // song count in the middle, play or pause and Add Songs at the right.
+            .navigationTitle(session.name)
+            .navigationSubtitle(songCountText)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleMenu {
+                Button { model.beginRename(session.url) } label: { Label("Rename Playlist", systemImage: "pencil") }
             }
-        }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
-            guard case .success(let urls) = result else { return }
-            let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
-            session.add(urls)
-            scoped.forEach { $0.stopAccessingSecurityScopedResource() }
-        }
-        .alert("Playlist", isPresented: Binding(get: { session.notice != nil }, set: { if !$0 { session.dismissNotice() } })) {
-            Button("OK", role: .cancel) {}
-        } message: { Text(session.notice ?? "") }
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    StartPlaylistButton(session: session)
+                    Button { importing = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add Songs")
+                }
+            }
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+                guard case .success(let urls) = result else { return }
+                let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
+                session.add(urls)
+                scoped.forEach { $0.stopAccessingSecurityScopedResource() }
+            }
+            .alert("Playlist", isPresented: Binding(get: { session.notice != nil }, set: { if !$0 { session.dismissNotice() } })) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(session.notice ?? "") }
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Button { model.beginRename(session.url) } label: { Text(session.name).font(.headline) }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Renames the playlist")
-                    .accessibilityIdentifier("playlist-name")
-                let count = session.playlist.tracks.count
-                Text("\(count) \(count == 1 ? "song" : "songs")").font(.caption).foregroundStyle(.secondary)
+    private var songCountText: String {
+        let count = session.playlist.tracks.count
+        return "\(count) \(count == 1 ? "song" : "songs")"
+    }
+}
+
+/// Starts the playlist, or plays and pauses the song under way, by the shared rule. It is its own view so that the
+/// playback position ticking does not redraw the navigation bar around it.
+struct StartPlaylistButton: View {
+    @EnvironmentObject var model: AppModel
+    @ObservedObject var session: PlaylistSession
+
+    var body: some View {
+        let sessionIsPlaying = session.player.isSessionActive && model.transport.state == .playing
+        Button {
+            let state: PlaylistSessionState = session.player.isSessionActive && model.transport.state != .idle
+                ? .songUnderWay(isPlaying: model.transport.state == .playing) : .noSongUnderWay
+            var rng = SystemRandomNumberGenerator()
+            switch startDecision(session: state, shuffleOn: model.settings.shuffleOn,
+                                 songCount: session.playlist.tracks.count, random: &rng) {
+            case .toggleCurrentSong: model.transport.playPause()
+            case .startShuffled, .startInOrder: session.start()
+            case .nothingToStart: break
             }
-            Spacer()
-            Button {
-                let state: PlaylistSessionState = session.player.isSessionActive && model.transport.state != .idle
-                    ? .songUnderWay(isPlaying: model.transport.state == .playing) : .noSongUnderWay
-                var rng = SystemRandomNumberGenerator()
-                switch startDecision(session: state, shuffleOn: model.settings.shuffleOn,
-                                     songCount: session.playlist.tracks.count, random: &rng) {
-                case .toggleCurrentSong: model.transport.playPause()
-                case .startShuffled, .startInOrder: session.start()
-                case .nothingToStart: break
-                }
-            } label: {
-                Image(systemName: startButtonIcon(session: session.player.isSessionActive && model.transport.state == .playing
-                                                  ? .songUnderWay(isPlaying: true) : .noSongUnderWay) == .pause ? "pause.fill" : "play.fill")
-                    .font(.title2)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Start playlist")
+        } label: {
+            Image(systemName: startButtonIcon(session: sessionIsPlaying ? .songUnderWay(isPlaying: true) : .noSongUnderWay) == .pause
+                  ? "pause.fill" : "play.fill")
         }
+        .accessibilityLabel("Start playlist")
     }
 }
 

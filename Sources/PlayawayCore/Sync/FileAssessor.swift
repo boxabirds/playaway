@@ -14,13 +14,15 @@ package struct AssessmentResult: Equatable {
     package var needsPrompt: Bool { classes.contains(.needsTransfer) }
 }
 
-/// Sorts a playlist's songs into: already in iCloud, in need of a transfer, or missing. Read-only.
+/// Sorts a playlist's songs into: already in iCloud (anywhere in iCloud Drive), in need of a transfer, or missing. Read-only.
 package struct FileAssessor {
-    private let root: URL?
+    private let isUbiquitous: (URL) -> Bool?
     private let fileExists: (URL) -> Bool
 
-    package init(root: URL?, fileExists: @escaping (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) {
-        self.root = root
+    /// `isUbiquitous` is the system's answer for a file: true for an iCloud Drive file, nil when it cannot be asked.
+    package init(isUbiquitous: @escaping (URL) -> Bool?,
+                 fileExists: @escaping (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) {
+        self.isUbiquitous = isUbiquitous
         self.fileExists = fileExists
     }
 
@@ -29,7 +31,7 @@ package struct FileAssessor {
     package func assess(_ files: [URL?]) -> AssessmentResult {
         AssessmentResult(classes: files.map { file in
             guard let file, fileExists(file) else { return .missingFile }
-            return locationAnswer(of: file, root: root) == .insideContainer ? .alreadyInICloud : .needsTransfer
+            return iCloudAnswer(isUbiquitous: isUbiquitous(file)) == .inICloud ? .alreadyInICloud : .needsTransfer
         })
     }
 }

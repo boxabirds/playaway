@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 @MainActor final class LaunchTests: XCTestCase {
     private func shot(_ app: XCUIApplication, _ name: String) {
@@ -156,13 +157,13 @@ import XCTest
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
         app.staticTexts["Demo"].tap()
         XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
-        app.buttons["playlist-name"].tap()
+        app.navigationBars.buttons["Demo"].tap()     // the title is a menu with Rename Playlist
+        XCTAssertTrue(app.buttons["Rename Playlist"].waitForExistence(timeout: 10))
+        app.buttons["Rename Playlist"].tap()
         XCTAssertTrue(app.textFields["rename-field"].waitForExistence(timeout: 15))
         replaceText(in: app.textFields["rename-field"], with: "Tunes")
         app.navigationBars["Rename Playlist"].buttons["Rename"].tap()
-        let header = app.buttons["playlist-name"]
-        expectation(for: NSPredicate(format: "label == 'Tunes'"), evaluatedWith: header)
-        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.navigationBars.buttons["Tunes"].waitForExistence(timeout: 15), "the header shows the new name")
         XCTAssertTrue(app.tables["song-table"].cells["Demo One"].exists, "the songs are still there")
         XCTAssertEqual(app.tables["song-table"].cells.count, 5)
     }
@@ -406,6 +407,160 @@ import XCTest
         waitForExpectations(timeout: 20)
         table.cells["Demo Five"].tap()
         XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "every song plays from its new place")
+    }
+}
+
+@MainActor final class PlayerPanelBugTests: XCTestCase {
+    private func playFirstSong(_ app: XCUIApplication) -> XCUIElement {
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        table.cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        return controller
+    }
+
+    /// Reproduces "drag to slide the play panel has stopped working entirely": a slow, finger-like drag from several
+    /// places on the card, and on the collapsed controller.
+    func testDraggingTheControllerUpOpensTheCardAndDraggingTheCardDownClosesItFromAnywhereOnIt() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        let controller = playFirstSong(app)
+        let card = app.descendants(matching: .any).matching(identifier: "player-card").firstMatch
+        let bottom = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98))
+        for (name, offset) in [("the top of the card", 0.08), ("the title area", 0.30), ("the time labels", 0.58), ("below the controls", 0.95)] {
+            controller.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.0, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)), withVelocity: .slow, thenHoldForDuration: 0)
+            XCTAssertTrue(card.waitForExistence(timeout: 5), "dragging the controller up opens the card (\(name))")
+            sleep(1)
+            card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: offset))
+                .press(forDuration: 0.0, thenDragTo: bottom, withVelocity: .slow, thenHoldForDuration: 0)
+            expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: card)
+            waitForExpectations(timeout: 5)
+            XCTAssertTrue(controller.waitForExistence(timeout: 5), "the controller is back after dragging from \(name)")
+        }
+    }
+
+    /// Reproduces the controls being scrolled from under the artwork when the song changes between one with artwork and
+    /// one without. The top of the card should slide to make room; the controls must not move.
+    func testTheControlsStayPutWhenArtworkAppearsAndWhenItGoes() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeArtwork"]; app.launch()
+        let controller = playFirstSong(app)
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        let card = app.descendants(matching: .any)["player-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        sleep(1)
+        func bigPlay() -> XCUIElement { app.buttons.matching(identifier: "Pause").allElementsBoundByIndex.max { $0.frame.width < $1.frame.width }! }
+        // The card's identifier lands on its first element, the playlist link at the top, so its top edge is the card's.
+        func cardTop() -> CGFloat { app.descendants(matching: .any).matching(identifier: "player-card").firstMatch.frame.minY }
+        let controlsNoArt = bigPlay().frame.minY
+        let topNoArt = cardTop()
+        app.buttons["Next"].tap()                    // Demo Two, whose artwork arrives a moment later
+        sleep(3)
+        XCTAssertEqual(bigPlay().frame.minY, controlsNoArt, accuracy: 2, "the controls must not move when artwork appears")
+        XCTAssertLessThan(cardTop(), topNoArt - 100, "the top of the card moves up to make room for the artwork")
+        app.buttons["Next"].tap()                    // Demo Three, no artwork again
+        sleep(3)
+        XCTAssertEqual(bigPlay().frame.minY, controlsNoArt, accuracy: 2, "the controls must not move when artwork goes away")
+        XCTAssertEqual(cardTop(), topNoArt, accuracy: 4, "and the top of the card slides back down")
+        XCTAssertTrue(bigPlay().isHittable)
+    }
+}
+
+@MainActor final class PlaylistScreenLookTests: XCTestCase {
+    private func pixel(_ shot: XCUIScreenshot, atX x: CGFloat, y: CGFloat) -> [Int] {
+        let image = shot.image
+        let scale = image.scale
+        guard let cg = image.cgImage?.cropping(to: CGRect(x: x * scale, y: y * scale, width: 1, height: 1)) else { return [] }
+        var data = [UInt8](repeating: 0, count: 4)
+        let context = CGContext(data: &data, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return data.prefix(3).map(Int.init)
+    }
+
+    /// The playlist header lives in the navigation bar: back at the left, the name over the song count in the middle, the
+    /// play or pause button and Add Songs at the right, with no separate header row under it.
+    func testThePlaylistHeaderIsOneBarWithBackNameAndCountCentredAndControlsAtTheRight() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        sleep(1)
+        let screen = app.windows.firstMatch.frame
+        let title = app.navigationBars.buttons["Demo"]      // the title is a menu, so it is a button
+        let count = app.navigationBars.staticTexts["5 songs"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "the name is in the navigation bar")
+        XCTAssertTrue(count.exists, "and so is the song count")
+        XCTAssertEqual(title.frame.midX, screen.midX, accuracy: 30, "the name is centred")
+        XCTAssertEqual(count.frame.midX, screen.midX, accuracy: 30, "the song count is centred")
+        XCTAssertGreaterThan(count.frame.minY, title.frame.minY, "the count sits under the name")
+        let back = app.navigationBars.buttons["Playlists"]
+        let start = app.buttons["Start playlist"]
+        let add = app.buttons["Add Songs"]
+        XCTAssertLessThan(back.frame.maxX, title.frame.minX, "back is at the left")
+        XCTAssertGreaterThan(start.frame.minX, title.frame.maxX, "play and pause are at the right")
+        XCTAssertGreaterThan(add.frame.minX, start.frame.minX, "Add Songs is the right-most")
+        XCTAssertGreaterThan(add.frame.maxX, screen.maxX - 40)
+        for element in [back, title, count, start, add] { XCTAssertLessThan(element.frame.midY, 150, "all in the top bar") }
+        XCTAssertLessThan(table.cells.element(boundBy: 0).frame.minY, 200, "the first song follows the bar directly, with no header row between")
+        XCTAssertGreaterThanOrEqual(start.frame.width, 30, "the start button is a real button in the bar")
+    }
+
+    /// Reproduces "the plus icon top right blurs out and appears again" while a song plays.
+    func testTheAddSongsButtonDoesNotFlickerWhileMusicPlays() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        table.cells["Demo One"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10))
+        let plus = app.buttons["Add Songs"]
+        XCTAssertTrue(plus.exists)
+        let region = plus.frame.insetBy(dx: -6, dy: -6)
+        func bytes() -> [UInt8] {
+            let shot = app.screenshot()
+            let scale = shot.image.scale
+            guard let cg = shot.image.cgImage?.cropping(to: CGRect(x: region.minX * scale, y: region.minY * scale,
+                                                                   width: region.width * scale, height: region.height * scale)) else { return [] }
+            var data = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+            let context = CGContext(data: &data, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+            return data
+        }
+        sleep(1)
+        let reference = bytes()
+        var worst = 0
+        for _ in 0..<12 {
+            usleep(250_000)
+            let frame = bytes()
+            XCTAssertEqual(frame.count, reference.count)
+            let difference = zip(frame, reference).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            worst = max(worst, difference)
+        }
+        XCTAssertLessThanOrEqual(worst, 4, "the plus button changed appearance by \(worst)/255 while a song played")
+    }
+}
+
+@MainActor final class ICloudMeaningTests: XCTestCase {
+    /// Reproduces "build 11 the iCloud icon is incorrect: I have items that are in iCloud (but not necessarily in
+    /// Playaway's container)". An iCloud Drive file shows the outline cloud wherever it is, and is not asked about.
+    func testASongThatIsAlreadyElsewhereInICloudDriveShowsInICloudAndNothingIsAskedAboutIt() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        XCTAssertEqual(table.cells["Demo Five"].buttons["cloud-icon"].label, "In iCloud",
+                       "an iCloud Drive file counts as in iCloud even outside the Playaway folder")
+        XCTAssertEqual(table.cells["Demo One"].buttons["cloud-icon"].label, "Not in iCloud", "a file only on this iPhone does not")
+        table.cells["Demo Five"].buttons["cloud-icon"].tap()
+        sleep(2)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "tapping an outline cloud does nothing")
     }
 }
 

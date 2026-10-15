@@ -2,32 +2,28 @@ import XCTest
 @testable import PlayawayCore
 
 final class CloudPresenceTests: XCTestCase {
-    func testASongInsideThePlaywayFolderIsInICloudWhetherOrNotItIsOnThisDevice() {
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusCurrent, isInPlaywayFolder: true), .inCloudOnDevice)
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusDownloaded, isInPlaywayFolder: true), .inCloudOnDevice)
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusNotDownloaded, isInPlaywayFolder: true), .inCloudNotOnDevice)
-    }
-
-    func testASongElsewhereInICloudDriveIsNotInICloudInTheOwnersSense() {
-        // The owner's rule: in iCloud means inside the Playaway folder, nothing else.
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusCurrent, isInPlaywayFolder: false), .localOnly)
-        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: nil, isInPlaywayFolder: false), .localOnly)
-    }
-
-    func testASongElsewhereInICloudDriveThatIsNotDownloadedIsStillNotOnTheDevice() {
-        let presence = songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusNotDownloaded, isInPlaywayFolder: false)
-        XCTAssertEqual(presence, .localOnlyNotOnDevice)
-        XCTAssertFalse(presence.isOnDevice)
+    func testAnICloudDriveFileIsInICloudWhereverItIs() {
+        // Owner decision 2026-10-15: in iCloud means an iCloud Drive file, not necessarily inside the Playaway folder.
+        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusCurrent), .inCloudOnDevice)
+        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusDownloaded), .inCloudOnDevice)
+        XCTAssertEqual(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusNotDownloaded), .inCloudNotOnDevice)
     }
 
     func testAFileOutsideICloudIsLocalOnlyWhateverItsStatus() {
-        XCTAssertEqual(songPresence(isUbiquitous: false, downloadingStatus: nil, isInPlaywayFolder: false), .localOnly)
-        XCTAssertEqual(songPresence(isUbiquitous: false, downloadingStatus: ubiquitousStatusNotDownloaded, isInPlaywayFolder: false), .localOnly)
+        XCTAssertEqual(songPresence(isUbiquitous: false, downloadingStatus: nil), .localOnly)
+        XCTAssertEqual(songPresence(isUbiquitous: false, downloadingStatus: ubiquitousStatusNotDownloaded), .localOnly)
     }
 
     func testAnUnknownStatusNeverBlocksPlayingAFileThatIsThere() {
-        XCTAssertTrue(songPresence(isUbiquitous: true, downloadingStatus: nil, isInPlaywayFolder: true).isOnDevice)
-        XCTAssertTrue(songPresence(isUbiquitous: true, downloadingStatus: "something new", isInPlaywayFolder: true).isOnDevice)
+        XCTAssertTrue(songPresence(isUbiquitous: true, downloadingStatus: nil).isOnDevice)
+        XCTAssertTrue(songPresence(isUbiquitous: true, downloadingStatus: "something new").isOnDevice)
+        XCTAssertFalse(songPresence(isUbiquitous: true, downloadingStatus: ubiquitousStatusNotDownloaded).isOnDevice)
+    }
+
+    func testTheICloudAnswerIsInNotInOrUndeterminable() {
+        XCTAssertEqual(iCloudAnswer(isUbiquitous: true), .inICloud)
+        XCTAssertEqual(iCloudAnswer(isUbiquitous: false), .notInICloud)
+        XCTAssertEqual(iCloudAnswer(isUbiquitous: nil), .undeterminable)
     }
 
     func testRowDisplayForEachPresenceWithNothingTracked() {
@@ -56,12 +52,7 @@ final class CloudPresenceTests: XCTestCase {
     }
 
     func testACancelledDownloadIsDimmedAgain() {
-        XCTAssertEqual(SongRowCloudDisplay(presence: .inCloudNotOnDevice, tracked: .notOnThisDevice).dimmed, true)
-    }
-
-    func testANotDownloadedSongOutsideThePlaywayFolderShowsTheCrossedOutCloudAndIsDimmed() {
-        XCTAssertEqual(SongRowCloudDisplay(presence: .localOnlyNotOnDevice, tracked: nil),
-                       SongRowCloudDisplay(icon: .crossedOut, dimmed: true, fraction: nil))
+        XCTAssertTrue(SongRowCloudDisplay(presence: .inCloudNotOnDevice, tracked: .notOnThisDevice).dimmed)
     }
 
     func testTheTapForEachIconMatchesTheSharedRule() {

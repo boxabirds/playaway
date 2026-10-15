@@ -38,10 +38,10 @@ struct PlayerChrome: View {
                 if active {
                     if progress > 0 { Color.black.opacity(0.25 * progress).ignoresSafeArea().onTapGesture { close() } }
                     if progress > 0 {
-                        PlayerCard(contentHeight: $cardContentHeight)
-                            .frame(height: cardHeight, alignment: .bottom)
+                        PlayerCard(contentHeight: $cardContentHeight, height: cardHeight,
+                                   scrolls: cardContentHeight > geo.size.height,
+                                   dragGesture: AnyGesture(dragGesture(cardHeight)))
                             .offset(y: (cardHeight + geo.safeAreaInsets.bottom) * (1 - progress))
-                            .gesture(dragGesture(cardHeight))
                             .transition(.move(edge: .bottom))
                     }
                     FloatingController()
@@ -80,7 +80,7 @@ struct PlayerChrome: View {
     private func open() { withAnimation(motion) { model.cardOpen = true } }
     private func close() { withAnimation(motion) { model.cardOpen = false } }
 
-    private func dragGesture(_ height: CGFloat) -> some Gesture {
+    private func dragGesture(_ height: CGFloat) -> some Gesture<DragGesture.Value> {
         DragGesture(minimumDistance: 6)
             .onChanged { drag = $0.translation.height }
             .onEnded { value in
@@ -131,29 +131,43 @@ struct FloatingController: View {
 struct PlayerCard: View {
     @EnvironmentObject var model: AppModel
     @Binding var contentHeight: CGFloat
+    let height: CGFloat
+    let scrolls: Bool
+    let dragGesture: AnyGesture<DragGesture.Value>
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrubPosition: Double?
     @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
     var body: some View {
-        ScrollView {
-            content
+        // The card is as tall as its content and the controls stay where they are: when artwork arrives or goes, the top
+        // of the card slides to make room. The content is anchored to the bottom and clipped to the card's height, so
+        // the slide reveals it instead of scrolling it. It scrolls only when it is taller than the screen.
+        Group {
+            if scrolls {
+                ScrollView { content(handleOnlyDrag: true) }.scrollBounceBehavior(.basedOnSize)
+            } else {
+                content(handleOnlyDrag: false).gesture(dragGesture)
+            }
         }
-        .scrollBounceBehavior(.basedOnSize)
+        .frame(height: height, alignment: .bottom)
+        .clipped()
         .background {
             UnevenRoundedRectangle(topLeadingRadius: Chrome.cardCorner, topTrailingRadius: Chrome.cardCorner)
                 .fill(.regularMaterial).ignoresSafeArea(edges: .bottom)
         }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: height)
         .accessibilityIdentifier("player-card")
     }
 
-    private var content: some View {
+    private func content(handleOnlyDrag: Bool) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5).frame(maxWidth: .infinity)
+            handle(handleOnlyDrag)
             if let name = model.activeSession?.name {
                 Button { model.playlistLinkTapped() } label: {
                     Text(name).font(.footnote).foregroundStyle(.tint)
                 }
                 .accessibilityHint("Opens the playlist")
+                .accessibilityIdentifier("card-link")
             }
             if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
                 Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
@@ -166,6 +180,13 @@ struct PlayerCard: View {
         .padding(.horizontal, 24).padding(.top, 10).padding(.bottom, 24)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+    }
+
+    /// The grab handle. Where the card scrolls, dragging is limited to it so scrolling and sliding do not fight.
+    @ViewBuilder private func handle(_ dragOnly: Bool) -> some View {
+        let capsule = Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5)
+            .frame(maxWidth: .infinity).padding(.vertical, 8).contentShape(Rectangle())
+        if dragOnly { capsule.highPriorityGesture(dragGesture) } else { capsule }
     }
 
     private var scrubber: some View {

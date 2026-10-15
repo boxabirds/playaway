@@ -43,13 +43,24 @@ final class CloudSongs: SongDownloading {
         return song
     }
 
-    /// `playawayFolder` is the shared iCloud folder, nil when its location is not known.
-    func presence(of url: URL, playawayFolder: URL?) -> SongPresence {
+    /// Test aid: in a fake cloud, files under this folder count as iCloud Drive files.
+    var fakeRoot: URL?
+
+    /// The system's answer for whether a file is an iCloud Drive file, nil when it could not be asked.
+    nonisolated static func isUbiquitous(_ url: URL, fakeRoot: URL?) -> Bool? {
+        // In the fake cloud, a song whose name starts with "Demo Five" is an iCloud Drive file outside the Playaway folder.
+        if let fakeRoot { return isStrictlyInside(url, folder: fakeRoot) || url.lastPathComponent.hasPrefix("Demo Five") }
+        return try? url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem
+    }
+
+    func presence(of url: URL) -> SongPresence {
         if let script = scriptedEntry(for: url) { return script.finished ? .inCloudOnDevice : .inCloudNotOnDevice }
+        if let fakeRoot {
+            return songPresence(isUbiquitous: Self.isUbiquitous(url, fakeRoot: fakeRoot) ?? false, downloadingStatus: nil)
+        }
         let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
         return songPresence(isUbiquitous: values?.isUbiquitousItem ?? false,
-                            downloadingStatus: values?.ubiquitousItemDownloadingStatus?.rawValue,
-                            isInPlaywayFolder: locationAnswer(of: url, root: playawayFolder) == .insideContainer)
+                            downloadingStatus: values?.ubiquitousItemDownloadingStatus?.rawValue)
     }
 
     // MARK: SongDownloading

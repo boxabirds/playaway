@@ -111,10 +111,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var resumePoint: ResumePoint?
     private let memoryStore = ListeningMemoryStore()
     private let openAdapter = OpenAdapter()
+    /// Test aid: in a fake cloud, files under this folder count as iCloud Drive files.
+    private var fakeCloudRoot: URL?
     private(set) lazy var cloud: CloudSongs = {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-PlayawayFakeCloud") {
-            return CloudSongs(scripted: ["Demo Two": .succeeds(after: 2), "Demo Three": .fails(after: 5)])
+            let fake = CloudSongs(scripted: ["Demo Two": .succeeds(after: 2), "Demo Three": .fails(after: 5)])
+            fake.fakeRoot = fakeCloudRoot
+            return fake
         }
         #endif
         return CloudSongs()
@@ -152,6 +156,7 @@ final class AppModel: ObservableObject {
                !ProcessInfo.processInfo.arguments.contains("-PlayawayKeepMemory") { try? FileManager.default.removeItem(at: fake) }
             try? FileManager.default.createDirectory(at: fake, withIntermediateDirectories: true)
             cloudLibrary = PlaylistLibrary(folder: fake, layout: .folderPerPlaylist)
+            fakeCloudRoot = fake
         } else if let cached = UserDefaults.standard.string(forKey: Self.cloudFolderKey),
                   FileManager.default.fileExists(atPath: cached) {
             cloudLibrary = PlaylistLibrary(folder: URL(fileURLWithPath: cached), layout: .folderPerPlaylist)
@@ -288,7 +293,16 @@ final class AppModel: ObservableObject {
             metadataURL = url
             metadata = url.map { TrackMetadata.fallback(for: $0) }
             if let url { Task { [weak self] in
-                let loaded = await loadTrackMetadata(for: url)
+                var loaded = await loadTrackMetadata(for: url)
+                #if DEBUG
+                // Test aid: one song has artwork that arrives a moment after the song starts, as real artwork does.
+                if ProcessInfo.processInfo.arguments.contains("-PlayawayFakeArtwork"), url.lastPathComponent.hasPrefix("Demo Two") {
+                    try? await Task.sleep(for: .seconds(0.4))
+                    loaded.artworkData = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600)).pngData { context in
+                        UIColor.systemOrange.setFill(); context.fill(CGRect(x: 0, y: 0, width: 600, height: 600))
+                    }
+                }
+                #endif
                 await MainActor.run { if self?.metadataURL == url { self?.metadata = loaded; self?.nowPlaying.update() } }
             } }
         }
@@ -359,7 +373,8 @@ final class AppModel: ObservableObject {
     /// a playlist in the Playaway folder is asked about; a playlist that is only on this phone is left alone.
     func songsEntered(_ tracks: [Track], in session: PlaylistSession, source: IntakeSource) {
         guard let cloudLibrary, library(for: session.url) === cloudLibrary else { return }
-        let flow = SongIntakeFlow(root: cloudLibrary.folder, resolve: { track in
+        let fakeRoot = cloud.fakeRoot
+        let flow = SongIntakeFlow(root: cloudLibrary.folder, isUbiquitous: { CloudSongs.isUbiquitous($0, fakeRoot: fakeRoot) }, resolve: { track in
             guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return nil }
             _ = url.startAccessingSecurityScopedResource()
             return url
@@ -479,7 +494,7 @@ final class AppModel: ObservableObject {
         }
         let song = cloud.id(for: url)
         pendingPlays[song] = (session, track)
-        downloads.request(song, source: .list, isOnDevice: cloud.presence(of: url, playawayFolder: cloudLibrary?.folder).isOnDevice)
+        downloads.request(song, source: .list, isOnDevice: cloud.presence(of: url).isOnDevice)
         cloudRevision += 1
     }
 
@@ -505,7 +520,7 @@ final class AppModel: ObservableObject {
         guard let url = songURL(for: track) else { return nil }
         let song = cloud.id(for: url)
         let tracked = downloads.state(of: song)
-        return SongRowCloudDisplay(presence: cloud.presence(of: url, playawayFolder: cloudLibrary?.folder), tracked: tracked == .onThisDevice ? nil : tracked)
+        return SongRowCloudDisplay(presence: cloud.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
     }
 
     func cloudIconTapped(_ track: Track, session: PlaylistSession) {

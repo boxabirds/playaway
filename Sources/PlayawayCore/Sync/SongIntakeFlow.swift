@@ -29,14 +29,17 @@ package func repointing(_ playlist: Playlist, to newLocations: [UUID: URL]) -> P
 /// branch of their own.
 package struct SongIntakeFlow {
     private let root: URL?
+    private let isUbiquitous: (URL) -> Bool?
     private let resolve: (Track) -> URL?
     private let fileSystem: TransferFileSystem
     private let presenter: FilesPromptPresenting
     private let fileExists: (URL) -> Bool
 
-    package init(root: URL?, resolve: @escaping (Track) -> URL?, fileSystem: TransferFileSystem = SystemTransferFileSystem(),
+    /// `root` is the shared Playaway folder that songs are moved or copied into, nil when iCloud is unavailable.
+    package init(root: URL?, isUbiquitous: @escaping (URL) -> Bool?, resolve: @escaping (Track) -> URL?, fileSystem: TransferFileSystem = SystemTransferFileSystem(),
                  presenter: FilesPromptPresenting, fileExists: @escaping (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) {
         self.root = root
+        self.isUbiquitous = isUbiquitous
         self.resolve = resolve
         self.fileSystem = fileSystem
         self.presenter = presenter
@@ -48,7 +51,7 @@ package struct SongIntakeFlow {
     package func run(playlist: Playlist, playlistName: String, tracks: [Track], source: IntakeSource) async -> IntakeOutcome {
         var outcome = IntakeOutcome(playlist: playlist)
         let files = tracks.map(resolve)
-        let assessment = FileAssessor(root: root, fileExists: fileExists).assess(files)
+        let assessment = FileAssessor(isUbiquitous: isUbiquitous, fileExists: fileExists).assess(files)
         guard assessment.needsPrompt, let destination = transferDestination(root: root, playlistName: playlistName) else { return outcome }
         let items = zip(tracks, files).enumerated().compactMap { index, pair -> TransferItem? in
             guard assessment.classes[index] == .needsTransfer, let url = pair.1 else { return nil }

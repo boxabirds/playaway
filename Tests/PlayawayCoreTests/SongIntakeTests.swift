@@ -11,46 +11,53 @@ final class ICloudLocationTests: XCTestCase {
         for vector in vectors {
             let root = vector.root.map { URL(fileURLWithPath: $0) }
             let url = vector.url.hasPrefix("/") ? URL(fileURLWithPath: vector.url) : URL(string: vector.url)!
-            let answer = locationAnswer(of: url, root: root)
-            let expected: LocationAnswer = ["insideContainer": .insideContainer, "outsideContainer": .outsideContainer][vector.expected] ?? .undeterminable
-            XCTAssertEqual(answer, expected, vector.name)
+            XCTAssertEqual(isStrictlyInside(url, folder: root), vector.expected == "insideContainer", vector.name)
         }
     }
 
     func testSymlinkedPrivatePathsCompareEqual() {
         let root = URL(fileURLWithPath: "/private/var/tmp-icloud-test/Playaway")
-        XCTAssertEqual(locationAnswer(of: URL(fileURLWithPath: "/var/tmp-icloud-test/Playaway/song.mp3"), root: root), .insideContainer)
+        XCTAssertTrue(isStrictlyInside(URL(fileURLWithPath: "/var/tmp-icloud-test/Playaway/song.mp3"), folder: root))
     }
 }
 
 final class FileAssessorTests: XCTestCase {
     private let root = URL(fileURLWithPath: "/icloud/Playaway")
-    private func assessor(existing: Set<String>, root: URL?) -> FileAssessor {
-        FileAssessor(root: root, fileExists: { existing.contains($0.path) })
+    /// Stands in for the system: files under /icloud are iCloud Drive files, wherever in iCloud Drive they are.
+    private func assessor(existing: Set<String>, answer: @escaping (URL) -> Bool? = { $0.path.hasPrefix("/icloud/") }) -> FileAssessor {
+        FileAssessor(isUbiquitous: answer, fileExists: { existing.contains($0.path) })
     }
 
     func testSongsAreSortedIntoInMissingAndNeedingATransfer() {
         let inside = URL(fileURLWithPath: "/icloud/Playaway/Road/a.mp3")
         let outside = URL(fileURLWithPath: "/Users/me/b.mp3")
         let gone = URL(fileURLWithPath: "/Users/me/gone.mp3")
-        let result = assessor(existing: [inside.path, outside.path], root: root).assess([inside, outside, gone, nil])
+        let result = assessor(existing: [inside.path, outside.path]).assess([inside, outside, gone, nil])
         XCTAssertEqual(result.classes, [.alreadyInICloud, .needsTransfer, .missingFile, .missingFile])
         XCTAssertTrue(result.needsPrompt)
     }
 
     func testNoPromptWhenEverySongIsAlreadyInICloud() {
         let inside = URL(fileURLWithPath: "/icloud/Playaway/Road/a.mp3")
-        XCTAssertFalse(assessor(existing: [inside.path], root: root).assess([inside]).needsPrompt)
+        XCTAssertFalse(assessor(existing: [inside.path]).assess([inside]).needsPrompt)
     }
 
     func testNoPromptForAnEmptyPlaylistOrOnlyMissingFiles() {
-        XCTAssertFalse(assessor(existing: [], root: root).assess([]).needsPrompt)
-        XCTAssertFalse(assessor(existing: [], root: root).assess([URL(fileURLWithPath: "/x/a.mp3"), nil]).needsPrompt)
+        XCTAssertFalse(assessor(existing: []).assess([]).needsPrompt)
+        XCTAssertFalse(assessor(existing: []).assess([URL(fileURLWithPath: "/x/a.mp3"), nil]).needsPrompt)
     }
 
-    func testAnUndeterminableLocationCountsAsNeedingATransfer() {
+    func testASongElsewhereInICloudDriveIsAlreadyInICloudAndIsNotAskedAbout() {
+        // Owner decision 2026-10-15: an iCloud Drive file counts as in iCloud even outside the Playaway folder.
+        let elsewhereInICloud = URL(fileURLWithPath: "/icloud/Music/song.mp3")
+        let result = assessor(existing: [elsewhereInICloud.path]).assess([elsewhereInICloud])
+        XCTAssertEqual(result.classes, [.alreadyInICloud])
+        XCTAssertFalse(result.needsPrompt)
+    }
+
+    func testAnUndeterminableAnswerCountsAsNeedingATransfer() {
         let file = URL(fileURLWithPath: "/Users/me/b.mp3")
-        XCTAssertEqual(assessor(existing: [file.path], root: nil).assess([file]).classes, [.needsTransfer])
+        XCTAssertEqual(assessor(existing: [file.path], answer: { _ in nil }).assess([file]).classes, [.needsTransfer])
     }
 }
 
@@ -87,7 +94,7 @@ final class TransferDestinationTests: XCTestCase {
     func testUnsafeNamesStayASingleComponentInsideThePlaywayFolder() {
         for name in ["", "   ", "../../etc", "a/b", "a:b", ".hidden", "...", "x\\y", String(repeating: "z", count: 300)] {
             let destination = transferDestination(root: root, playlistName: name)!
-            XCTAssertEqual(locationAnswer(of: destination.appendingPathComponent("song.mp3"), root: root), .insideContainer, "name: \(name)")
+            XCTAssertTrue(isStrictlyInside(destination.appendingPathComponent("song.mp3"), folder: root), "name: \(name)")
             XCTAssertEqual(destination.deletingLastPathComponent().path, root.path, "name: \(name)")
             XCTAssertLessThanOrEqual(destination.lastPathComponent.count, 100)
             XCTAssertFalse(destination.lastPathComponent.hasPrefix("."))
@@ -247,7 +254,7 @@ final class SongIntakeFlowTests: XCTestCase {
     private func flow(_ presenter: RecordingPresenter, urls: [URL]) -> SongIntakeFlow {
         let byTrack = Dictionary(uniqueKeysWithValues: zip((0..<urls.count).map { $0 }, urls))
         _ = byTrack
-        return SongIntakeFlow(root: root, resolve: { track in
+        return SongIntakeFlow(root: root, isUbiquitous: { [root] url in isStrictlyInside(url, folder: root) }, resolve: { track in
             if case .resolved(let url) = TrackResolver().resolve(track.reference).0 { return url } else { return nil }
         }, presenter: presenter)
     }
@@ -283,7 +290,7 @@ final class SongIntakeFlowTests: XCTestCase {
         XCTAssertEqual(outcome.playlist.tracks.last, playlist.tracks.last, "the song already inside is untouched")
         for track in outcome.playlist.tracks {
             guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return XCTFail("a row no longer resolves") }
-            XCTAssertEqual(locationAnswer(of: url, root: root), .insideContainer)
+            XCTAssertTrue(isStrictlyInside(url, folder: root))
         }
         XCTAssertTrue(urls.prefix(3).allSatisfy { !FileManager.default.fileExists(atPath: $0.path) }, "originals are gone after a move")
     }
@@ -294,7 +301,7 @@ final class SongIntakeFlowTests: XCTestCase {
         XCTAssertEqual(outcome.result.copied, 2)
         XCTAssertTrue(urls.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
         guard case .resolved(let url) = TrackResolver().resolve(outcome.playlist.tracks[0].reference).0 else { return XCTFail("did not resolve") }
-        XCTAssertEqual(locationAnswer(of: url, root: root), .insideContainer)
+        XCTAssertTrue(isStrictlyInside(url, folder: root))
     }
 
     func testEverySourceGivesTheSameOutcomeForTheSameSongsAndChoice() async throws {
@@ -311,9 +318,21 @@ final class SongIntakeFlowTests: XCTestCase {
     func testNothingHappensWhileICloudIsUnavailable() async throws {
         let (playlist, urls) = try makePlaylist(elsewhere: 2)
         let presenter = RecordingPresenter(.moveToICloud)
-        let unavailable = SongIntakeFlow(root: nil, resolve: { _ in urls[0] }, presenter: presenter)
+        let unavailable = SongIntakeFlow(root: nil, isUbiquitous: { _ in false }, resolve: { _ in urls[0] }, presenter: presenter)
         let outcome = await unavailable.run(playlist: playlist, playlistName: "Road", tracks: playlist.tracks, source: .turnOnSync)
         XCTAssertEqual(presenter.asked, 0)
+        XCTAssertEqual(outcome.playlist, playlist)
+        XCTAssertTrue(urls.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+    }
+
+    func testSongsAlreadyElsewhereInICloudDriveAreNeitherAskedAboutNorMoved() async throws {
+        let (playlist, urls) = try makePlaylist(elsewhere: 2)
+        let presenter = RecordingPresenter(.moveToICloud)
+        let allInICloudDrive = SongIntakeFlow(root: root, isUbiquitous: { _ in true }, resolve: { track in
+            if case .resolved(let url) = TrackResolver().resolve(track.reference).0 { return url } else { return nil }
+        }, presenter: presenter)
+        let outcome = await allInICloudDrive.run(playlist: playlist, playlistName: "Road", tracks: playlist.tracks, source: .turnOnSync)
+        XCTAssertEqual(presenter.asked, 0, "songs the person can already reach from their other devices are left alone")
         XCTAssertEqual(outcome.playlist, playlist)
         XCTAssertTrue(urls.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
     }
