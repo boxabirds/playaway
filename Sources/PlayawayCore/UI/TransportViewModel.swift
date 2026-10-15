@@ -107,6 +107,31 @@ package final class TransportViewModel: ObservableObject {
         guard engine.seek(toSeconds: seconds) else { throw ActionError.invalidSeekPosition }
     }
 
+    // MARK: Scrubbing
+
+    private var scrubWasPlaying = false
+    private var isScrubbing = false
+
+    /// The person put a finger on the position slider. Playback pauses for the drag, as in the system apps, so nothing
+    /// is heard from the places the slider passes through and nothing is replayed.
+    package func beginScrub() {
+        guard engine.state != .idle, !isScrubbing else { return }
+        isScrubbing = true
+        scrubWasPlaying = engine.state == .playing
+        if scrubWasPlaying { engine.pause() }
+    }
+
+    /// The finger lifted at `seconds`: one seek to that place, then playback carries on if it was playing before.
+    package func endScrub(toSeconds seconds: Double) throws {
+        defer { isScrubbing = false; scrubWasPlaying = false }
+        guard engine.state != .idle else { throw ActionError.nothingPlaying }
+        guard engine.seek(toSeconds: seconds) else {
+            if scrubWasPlaying { engine.resume() }       // an impossible place leaves the song playing from where it was
+            throw ActionError.invalidSeekPosition
+        }
+        if scrubWasPlaying { engine.resume() }
+    }
+
     package func next() throws {
         guard engine.state != .idle else { throw ActionError.nothingPlaying }
         activePlayerProvider()?.next()

@@ -564,6 +564,57 @@ import UIKit
     }
 }
 
+@MainActor final class RememberInICloudTests: XCTestCase {
+    /// The remembered playlist, song and place must survive a relaunch when the playlist lives in the iCloud folder.
+    func testRelaunchReturnsToAPlaylistInICloudAndItsSongAndPlace() {
+        let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; first.launch()
+        XCTAssertTrue(first.staticTexts["Demo"].waitForExistence(timeout: 15))
+        first.cells.containing(.staticText, identifier: "Demo").buttons["playlist-cloud-icon"].tap()
+        XCTAssertTrue(first.alerts["Sync with iCloud"].waitForExistence(timeout: 10))
+        first.alerts["Sync with iCloud"].buttons["Move to iCloud"].tap()
+        XCTAssertTrue(first.alerts["Sync with iCloud: Files"].waitForExistence(timeout: 15))
+        first.alerts["Sync with iCloud: Files"].buttons["Add Without Syncing"].tap()
+        first.staticTexts["Demo"].tap()
+        XCTAssertTrue(first.tables["song-table"].waitForExistence(timeout: 15))
+        first.tables["song-table"].cells["Demo Four"].tap()
+        XCTAssertTrue(first.buttons["Pause"].waitForExistence(timeout: 10))
+        sleep(7)
+        first.terminate()
+
+        let second = XCUIApplication(); second.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud", "-PlayawayKeepMemory"]; second.launch()
+        XCTAssertTrue(second.tables["song-table"].waitForExistence(timeout: 15), "the playlist that was open is open again")
+        let controller = second.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10), "the song that was playing is shown")
+        XCTAssertTrue(second.buttons["Play"].exists, "paused")
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(second.descendants(matching: .any)["player-card"].waitForExistence(timeout: 5))
+        XCTAssertTrue(second.staticTexts["Demo Four"].exists, "the same song")
+        XCTAssertGreaterThan(second.staticTexts.matching(NSPredicate(format: "label MATCHES '0:0[3-9]'")).count, 0, "and the place in it")
+    }
+}
+
+@MainActor final class ScrubUITests: XCTestCase {
+    func testDraggingTheSliderMovesThePlaceAndPlaybackCarriesOnAfterRelease() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["player-card"].waitForExistence(timeout: 10))
+        let slider = app.sliders["Playback position"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)))
+        let pauseButton = app.buttons.matching(identifier: "Pause").firstMatch
+        XCTAssertTrue(pauseButton.waitForExistence(timeout: 5), "playback carries on after the finger lifts")
+        let moved = app.staticTexts.matching(NSPredicate(format: "label MATCHES '0:(2|3|4)[0-9]'")).count
+        XCTAssertGreaterThan(moved, 0, "the place moved to around the middle of the song")
+    }
+}
+
 @MainActor final class RememberTests: XCTestCase {
     func testRelaunchReturnsToThePlaylistAndSongAndPlace() {
         let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo"]; first.launch()

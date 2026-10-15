@@ -12,49 +12,45 @@ enum PlayerBar {
 
 private enum Chrome {
     static let artworkSide: CGFloat = 44
-    static let cardCorner: CGFloat = 24
-    static let settleThreshold: CGFloat = 0.5
-    static let cardFirstFrameFraction: CGFloat = 0.4
     static let playButtonSide: CGFloat = 76
     static let playButtonMaxSide: CGFloat = 112
     static let scrubberStep: Double = 1
+    /// Room for the system's drag indicator above the card's content.
+    static let dragIndicatorRoom: CGFloat = 28
+    /// The most of the screen the card may use before it scrolls.
+    static let cardMaxScreenFraction: CGFloat = 0.9
+    /// How far up a drag on the controller must go before it counts as opening the card.
+    static let openDragDistance: CGFloat = 24
 }
 
-/// Floating controller at the bottom plus the card that slides up over the screen. The card follows the finger and
-/// always settles fully open or fully closed.
+/// The floating controller at the bottom, and the player card, which is a standard system sheet: the system draws the
+/// drag indicator, follows the finger, decides when to settle open or closed and rubber-bands. Nothing here tracks a
+/// drag. Tapping the controller or dragging it up opens the card.
 struct PlayerChrome: View {
     @EnvironmentObject var model: AppModel
-    @State private var drag: CGFloat = 0
     @State private var cardContentHeight: CGFloat = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
             let active = model.transport.state != .idle || model.resumePoint != nil
-            let hasArtwork = model.metadata?.artworkData != nil
-            let cardHeight = cardContentHeight > 0 ? min(cardContentHeight, geo.size.height) : geo.size.height * Chrome.cardFirstFrameFraction
-            let progress = max(0, min(1, (model.cardOpen ? 1 : 0) - drag / max(cardHeight, 1)))
             ZStack(alignment: .bottom) {
                 if active {
-                    if progress > 0 { Color.black.opacity(0.25 * progress).ignoresSafeArea().onTapGesture { close() } }
-                    if progress > 0 {
-                        PlayerCard(contentHeight: $cardContentHeight, height: cardHeight,
-                                   scrolls: cardContentHeight > geo.size.height,
-                                   dragGesture: AnyGesture(dragGesture(cardHeight)))
-                            .offset(y: (cardHeight + geo.safeAreaInsets.bottom) * (1 - progress))
-                            .transition(.move(edge: .bottom))
-                    }
                     FloatingController()
-                        .opacity(1 - progress)
-                        .gesture(dragGesture(cardHeight))
-                        .onTapGesture { open() }
-                        .allowsHitTesting(progress < 1)
+                        .onTapGesture { model.cardOpen = true }
+                        .gesture(DragGesture(minimumDistance: Chrome.openDragDistance).onEnded { value in
+                            if value.translation.height < -Chrome.openDragDistance { model.cardOpen = true }
+                        })
                         .accessibilityHidden(model.cardOpen)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .animation(motion, value: model.cardOpen)
-            .animation(motion, value: hasArtwork)
+            .sheet(isPresented: $model.cardOpen) {
+                PlayerCard(contentHeight: $cardContentHeight, scrolls: cardHeight(in: geo) >= geo.size.height * Chrome.cardMaxScreenFraction)
+                    .presentationDetents(cardDetents(in: geo))
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.regularMaterial)
+            }
+            .onChange(of: active) { _, isActive in if !isActive { model.cardOpen = false } }
         }
         .ignoresSafeArea(.keyboard)
         .alert("This playlist is no longer available", isPresented: $model.showUnsavedOffer) {
@@ -75,21 +71,16 @@ struct PlayerChrome: View {
         } message: { Text(model.failureMessage ?? "") }
     }
 
-    /// The card's slide, or no movement at all when the person has asked the system to reduce motion.
-    private var motion: Animation? { reduceMotion ? nil : .snappy(duration: 0.25) }
-    private func open() { withAnimation(motion) { model.cardOpen = true } }
-    private func close() { withAnimation(motion) { model.cardOpen = false } }
+    /// The card is as tall as its content, so the sheet is too; it grows and shrinks with the content (artwork arriving)
+    /// as the system resizes the sheet from its bottom edge.
+    private func cardHeight(in geo: GeometryProxy) -> CGFloat {
+        let content = cardContentHeight > 0 ? cardContentHeight + Chrome.dragIndicatorRoom : geo.size.height * 0.4
+        return min(content, geo.size.height)
+    }
 
-    private func dragGesture(_ height: CGFloat) -> some Gesture<DragGesture.Value> {
-        DragGesture(minimumDistance: 6)
-            .onChanged { drag = $0.translation.height }
-            .onEnded { value in
-                let final = (model.cardOpen ? 1 : 0) - value.translation.height / max(height, 1)
-                withAnimation(motion) {
-                    model.cardOpen = final > Chrome.settleThreshold
-                    drag = 0
-                }
-            }
+    private func cardDetents(in geo: GeometryProxy) -> Set<PresentationDetent> {
+        let height = cardHeight(in: geo)
+        return height >= geo.size.height * Chrome.cardMaxScreenFraction ? [.large] : [.height(height)]
     }
 }
 
@@ -131,37 +122,25 @@ struct FloatingController: View {
 struct PlayerCard: View {
     @EnvironmentObject var model: AppModel
     @Binding var contentHeight: CGFloat
-    let height: CGFloat
     let scrolls: Bool
-    let dragGesture: AnyGesture<DragGesture.Value>
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrubPosition: Double?
     @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
     var body: some View {
-        // The card is as tall as its content and the controls stay where they are: when artwork arrives or goes, the top
-        // of the card slides to make room. The content is anchored to the bottom and clipped to the card's height, so
-        // the slide reveals it instead of scrolling it. It scrolls only when it is taller than the screen.
+        // The content is anchored to the bottom of the sheet, so when artwork arrives or goes the top of the sheet moves
+        // and the controls stay where they are. It scrolls only when it is taller than the screen allows.
         Group {
             if scrolls {
-                ScrollView { content(handleOnlyDrag: true) }.scrollBounceBehavior(.basedOnSize)
+                ScrollView { content }.scrollBounceBehavior(.basedOnSize)
             } else {
-                content(handleOnlyDrag: false).gesture(dragGesture)
+                content.frame(maxHeight: .infinity, alignment: .bottom)
             }
         }
-        .frame(height: height, alignment: .bottom)
-        .clipped()
-        .background {
-            UnevenRoundedRectangle(topLeadingRadius: Chrome.cardCorner, topTrailingRadius: Chrome.cardCorner)
-                .fill(.regularMaterial).ignoresSafeArea(edges: .bottom)
-        }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: height)
         .accessibilityIdentifier("player-card")
     }
 
-    private func content(handleOnlyDrag: Bool) -> some View {
+    private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
-            handle(handleOnlyDrag)
             if let name = model.activeSession?.name {
                 Button { model.playlistLinkTapped() } label: {
                     Text(name).font(.footnote).foregroundStyle(.tint)
@@ -177,25 +156,21 @@ struct PlayerCard: View {
             scrubber
             controls
         }
-        .padding(.horizontal, 24).padding(.top, 10).padding(.bottom, 24)
+        .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
-    }
-
-    /// The grab handle. Where the card scrolls, dragging is limited to it so scrolling and sliding do not fight.
-    @ViewBuilder private func handle(_ dragOnly: Bool) -> some View {
-        let capsule = Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5)
-            .frame(maxWidth: .infinity).padding(.vertical, 8).contentShape(Rectangle())
-        if dragOnly { capsule.highPriorityGesture(dragGesture) } else { capsule }
     }
 
     private var scrubber: some View {
         let shown = scrubPosition ?? model.resumePoint?.positionSeconds ?? model.transport.position
         let resting = model.resumePoint != nil
         return VStack(spacing: 2) {
-            Slider(value: Binding(get: { shown }, set: { scrubPosition = $0; model.scrubber.scrub(to: $0) }),
+            // The song pauses while a finger is on the slider and seeks once when it lifts, so nothing is heard from the
+            // places the slider passes through and no stretch is played twice.
+            Slider(value: Binding(get: { shown }, set: { scrubPosition = $0 }),
                    in: 0...max(model.transport.duration, 1), step: Chrome.scrubberStep) { editing in
-                if !editing, let last = scrubPosition { model.scrubber.finish(at: last); scrubPosition = nil }
+                if editing { model.transport.beginScrub() }
+                else { try? model.transport.endScrub(toSeconds: scrubPosition ?? model.transport.position); scrubPosition = nil }
             }
             .accessibilityLabel("Playback position")
             .accessibilityValue(resting ? "" : "\(TransportViewModel.formatTime(shown)) of \(TransportViewModel.formatTime(model.transport.duration))")

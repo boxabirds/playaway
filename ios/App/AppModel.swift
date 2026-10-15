@@ -133,7 +133,6 @@ final class AppModel: ObservableObject {
     private var firstScreenReported = false
     private var refreshGeneration = 0
     private var lastPositionSave: Date?
-    private(set) lazy var scrubber = ScrubDebouncer { [weak self] seconds in try? self?.transport.seek(toSeconds: seconds) }
     @Published private(set) var activeSession: PlaylistSession?
     @Published private(set) var metadata: TrackMetadata?
     private var metadataURL: URL?
@@ -203,7 +202,7 @@ final class AppModel: ObservableObject {
     // MARK: Remembering what was playing
 
     private func restoreMemory() {
-        let existing = Set(entries.map { $0.url.lastPathComponent })
+        let existing = Set(entries.map { memoryKey($0.url) })
         let memory = memoryStore.load().restoring(existingPlaylists: existing) { [self] name, id in
             let url = playlistURL(forFileName: name)
             if case .loaded(let playlist) = library(for: url).load(url) { return playlist.track(withID: id) != nil }
@@ -242,10 +241,10 @@ final class AppModel: ObservableObject {
         lastPositionSave = Date()
         var nowPlaying = resumePoint
         if engine.state != .idle, let session = activeSession, let track = session.player.current {
-            nowPlaying = ResumePoint(playlistFileName: session.url.lastPathComponent, trackID: track.id,
+            nowPlaying = ResumePoint(playlistFileName: memoryKey(session.url), trackID: track.id,
                                      positionSeconds: engine.position)
         }
-        memoryStore.save(ListeningMemory(openPlaylists: path.map { $0.lastPathComponent }, nowPlaying: nowPlaying))
+        memoryStore.save(ListeningMemory(openPlaylists: path.map { memoryKey($0) }, nowPlaying: nowPlaying))
     }
 
     #if DEBUG
@@ -270,7 +269,7 @@ final class AppModel: ObservableObject {
         }
         // Start every seeded launch from the same playlist, whatever earlier tests changed, unless a test is checking
         // what a second launch remembers.
-        if keepExisting, FileManager.default.fileExists(atPath: folder.appendingPathComponent("Demo.\(playlistFileExtension)").path) { return }
+        if keepExisting, FileManager.default.fileExists(atPath: folder.appendingPathComponent("Demo.\(playlistFileExtension)").path) || (cloudLibrary?.entries().contains { $0.name == "Demo" } ?? false) { return }
         if let leftovers = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
             for file in leftovers where file.pathExtension == playlistFileExtension { try? FileManager.default.removeItem(at: file) }
         }
@@ -448,9 +447,23 @@ final class AppModel: ObservableObject {
         return library
     }
 
-    /// A remembered playlist is found by its file name among the playlists in both places.
+    private static let cloudMemoryPrefix = "iCloud/"
+
+    /// How a playlist is remembered: its file name on the phone, or its path inside the shared iCloud folder. A name on
+    /// its own would be ambiguous when the same name exists in both places.
+    private func memoryKey(_ url: URL) -> String {
+        if let cloudLibrary, url.path.hasPrefix(cloudLibrary.folder.path + "/") {
+            return Self.cloudMemoryPrefix + String(url.path.dropFirst(cloudLibrary.folder.path.count + 1))
+        }
+        return url.lastPathComponent
+    }
+
+    /// A remembered playlist is found by that key.
     private func playlistURL(forFileName name: String) -> URL {
-        entries.first { $0.url.lastPathComponent == name }?.url ?? library.folder.appendingPathComponent(name)
+        if name.hasPrefix(Self.cloudMemoryPrefix), let cloudLibrary {
+            return cloudLibrary.folder.appendingPathComponent(String(name.dropFirst(Self.cloudMemoryPrefix.count)))
+        }
+        return library.folder.appendingPathComponent(name)
     }
 
     /// Asks the system where the shared iCloud folder is. The first answer can take a moment, so it is asked off the
@@ -588,8 +601,8 @@ final class AppModel: ObservableObject {
         songURLs.removeAll()
         if let session = sessions.removeValue(forKey: old) { session.rebase(to: new); sessions[new] = session }
         path = path.map { $0 == old ? new : $0 }
-        if var point = resumePoint, point.playlistFileName == old.lastPathComponent {
-            point.playlistFileName = new.lastPathComponent
+        if var point = resumePoint, point.playlistFileName == memoryKey(old) {
+            point.playlistFileName = memoryKey(new)
             resumePoint = point
         }
     }
@@ -663,7 +676,7 @@ final class AppModel: ObservableObject {
             cardOpen = false
             endActiveSession()
         }
-        if resumePoint?.playlistFileName == entry.url.lastPathComponent { resumePoint = nil }
+        if resumePoint?.playlistFileName == memoryKey(entry.url) { resumePoint = nil }
         entries = allEntries()
         saveMemory(force: true)
         UIAccessibility.post(notification: .announcement, argument: "Playlist deleted")
