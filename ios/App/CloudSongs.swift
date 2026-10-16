@@ -58,6 +58,8 @@ final class CloudSongs: SongDownloading {
         if let fakeRoot {
             return songPresence(isUbiquitous: Self.isUbiquitous(url, fakeRoot: fakeRoot) ?? false, downloadingStatus: nil)
         }
+        // An offloaded file is not at its path; the system's placeholder beside it says it is in iCloud and not here.
+        if !FileManager.default.fileExists(atPath: url.path), iCloudPlaceholderExists(for: url) { return .inCloudNotOnDevice }
         let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
         return songPresence(isUbiquitous: values?.isUbiquitousItem ?? false,
                             downloadingStatus: values?.ubiquitousItemDownloadingStatus?.rawValue)
