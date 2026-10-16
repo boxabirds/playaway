@@ -101,6 +101,16 @@ package final class AVPlaybackEngine: PlaybackEngine {
         subject.send(.stateChanged)
     }
 
+    package func resume(fadingIn duration: TimeInterval) {
+        guard state == .paused, let player else { return }
+        let target = effectiveGain
+        player.gain = 0
+        guard player.start() else { player.gain = target; return }
+        player.fadeGain(to: target, over: duration)
+        state = .playing
+        subject.send(.stateChanged)
+    }
+
     package func stop() {
         guard state != .idle else { return }
         generation += 1

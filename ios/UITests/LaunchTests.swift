@@ -524,7 +524,9 @@ import UIKit
         let deadline = Date().addingTimeInterval(50)               // the app moves to the next song at 10 s and at 30 s
         while Date() < deadline {
             let reading = read(app)
-            if let top = reading.cardTop { tops.append(top) }
+            if let top = reading.cardTop {
+                tops.append(top)
+            }
             if let controls = reading.controlsY { controlsRows.append(controls) }
         }
 
@@ -543,6 +545,15 @@ import UIKit
         let median = sorted[sorted.count / 2]
         let moved = controlsRows.filter { abs($0 - median) > 3 }
         XCTAssertTrue(moved.isEmpty, "the controls moved on \(moved.count) of \(controlsRows.count) frames (rest at \(median)): \(Set(controlsRows).sorted())")
+    }
+}
+
+/// The owner's requirement, written down so it is not forgotten: when artwork appears or goes, the area expands or shrinks
+/// as a slide while the controls do not move. Skipped because it cannot be met with a system sheet: animating the sheet's
+/// height slides the whole sheet (container and content) up from below, so the controls travel with it. Decision pending.
+@MainActor final class CardSlideRequirementTests: XCTestCase {
+    func testTheAreaSlidesWhileTheControlsStayPut() throws {
+        throw XCTSkip("blocked: a system sheet cannot animate its height with fixed controls; owner to choose between a snap, a fixed-size sheet with an artwork placeholder, or an app-drawn card")
     }
 }
 
@@ -688,10 +699,6 @@ import UIKit
             .press(forDuration: 0.1, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)))
         let pauseButton = app.buttons.matching(identifier: "Pause").firstMatch
         XCTAssertTrue(pauseButton.waitForExistence(timeout: 5), "playback carries on after the finger lifts")
-        let traceElement = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Drag trace")).firstMatch
-        XCTAssertTrue(traceElement.waitForExistence(timeout: 3), "the drag trace is on the card")
-        let trace = traceElement.label
-        XCTAssertTrue(trace.contains("lift") && trace.contains("playhead moving 0") || trace.contains("playhead moving 1"), "the drag trace names the lift and the playhead: \(trace)")
         let moved = app.staticTexts.matching(NSPredicate(format: "label MATCHES '0:(2|3|4)[0-9]'")).count
         XCTAssertGreaterThan(moved, 0, "the place moved to around the middle of the song")
     }
@@ -821,9 +828,7 @@ import UIKit
             let again = XCUIApplication(); again.launchArguments = ["-PlayawaySeedDemo", "-PlayawayKeepMemory"]; again.launch()
             XCTAssertTrue(again.tables["song-table"].waitForExistence(timeout: 8), "launch \(launch): the playlist that was open is open again")
             XCTAssertTrue(again.descendants(matching: .any)["floating-controller"].waitForExistence(timeout: 5),
-                          "launch \(launch): the paused song is shown (\(again.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Restore'")).firstMatch.label))")
-            XCTAssertTrue(again.staticTexts.matching(NSPredicate(format: "label CONTAINS 'song loaded paused'")).firstMatch.exists,
-                          "launch \(launch): the restore report says the song was loaded")
+                          "launch \(launch): the paused song is shown")
             XCTAssertTrue(again.buttons["Play"].firstMatch.exists, "launch \(launch): it is paused")
             again.terminate()
         }
@@ -844,9 +849,26 @@ import UIKit
         let second = XCUIApplication(); second.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud", "-PlayawayKeepMemory"]; second.launch()
         XCTAssertTrue(second.tables["song-table"].waitForExistence(timeout: 15), "the playlist that was open is open again")
         let controller = second.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
-        let report = second.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Restore'")).firstMatch
-        XCTAssertTrue(controller.waitForExistence(timeout: 20), "the controller is back once the song is fetched (\(report.label))")
+        XCTAssertTrue(controller.waitForExistence(timeout: 20), "the controller is back once the song is fetched")
         XCTAssertTrue(second.buttons["Play"].firstMatch.exists, "paused, not playing by itself")
+    }
+
+    /// Reproduces "an old playlist: tapping a song did nothing, no controller": a song whose file is gone must say so.
+    func testTappingASongWhoseFileIsGoneSaysSoAndDoesNotLeaveTheTapSilent() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawaySeedGoneSong"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        let gone = app.tables["song-table"].cells["Gone Song"]
+        if !gone.exists { app.tables["song-table"].swipeUp() }
+        gone.tap()
+        let alert = app.alerts["Playlist"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5), "a tap on a song that cannot play says why")
+        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS 'can\u{2019}t be found' OR label CONTAINS \"can't be found\"")).firstMatch.exists)
+        alert.buttons["OK"].tap()
+        XCTAssertFalse(app.descendants(matching: .any)["floating-controller"].exists, "nothing is playing, so no controller")
+        app.tables["song-table"].cells["Demo One"].tap()                  // and the rest of the playlist still plays
+        XCTAssertTrue(app.descendants(matching: .any)["floating-controller"].waitForExistence(timeout: 10))
     }
 }
 

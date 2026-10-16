@@ -45,7 +45,13 @@ package protocol PlaybackEngine: AnyObject {
     func prepare(_ url: URL, at seconds: Double) -> PrepareResult
     func pause()
     func resume()
+    /// Resumes from silence over `duration`, for starting in the middle of a sound without a click.
+    func resume(fadingIn duration: TimeInterval)
     func stop()
     func seek(toSeconds seconds: Double) -> Bool
     func setMuted(_ muted: Bool)
+}
+
+extension PlaybackEngine {
+    package func resume(fadingIn duration: TimeInterval) { resume() }
 }

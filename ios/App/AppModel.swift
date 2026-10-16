@@ -299,8 +299,16 @@ final class AppModel: ObservableObject {
         guard let playlistURL = try? library.create(named: "Demo") else { return }
         // A list longer than the screen, so tests can scroll to the last song.
         let repeats = ProcessInfo.processInfo.arguments.contains("-PlayawayLongList") ? 6 : 1
-        let result = adding(Array(repeating: urls, count: repeats).flatMap { $0 }, to: Playlist(), classifier: FormatClassifier())
+        var songs = Array(repeating: urls, count: repeats).flatMap { $0 }
+        // Test aid: a song whose file is gone, as when an old playlist's songs were moved or deleted since it was made.
+        let goneSong = folder.appendingPathComponent("Gone Song.wav")
+        if ProcessInfo.processInfo.arguments.contains("-PlayawaySeedGoneSong") {
+            try? tone(5, hz: 300).write(to: goneSong)
+            songs.append(goneSong)
+        }
+        let result = adding(songs, to: Playlist(), classifier: FormatClassifier())
         _ = library.save(result.playlist, to: playlistURL)
+        try? FileManager.default.removeItem(at: goneSong)
     }
     #endif
 
@@ -525,7 +533,7 @@ final class AppModel: ObservableObject {
     /// has arrived; otherwise it plays at once.
     func requestPlay(_ track: Track, in session: PlaylistSession) {
         guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else {
-            becameActive(session); session.player.play(track: track); return
+            playExplainingFailure(track, in: session); return
         }
         let song = cloud.id(for: url)
         pendingPlays[song] = (session, track)
@@ -540,9 +548,23 @@ final class AppModel: ObservableObject {
             cloudRevision += 1
             return
         }
-        becameActive(pending.session)
-        pending.session.player.play(track: pending.track)
+        playExplainingFailure(pending.track, in: pending.session)
         cloudRevision += 1
+    }
+
+    /// Plays a song, and when it does not start says why, rather than leaving a tap that does nothing (an old playlist
+    /// whose songs have moved or been deleted looked exactly like that: no sound, no controller, no word).
+    private func playExplainingFailure(_ track: Track, in session: PlaylistSession) {
+        becameActive(session)
+        session.player.play(track: track)
+        guard session.player.current?.id != track.id || engine.state == .idle else { return }
+        let name = track.reference.fileName
+        switch TrackResolver().resolve(track.reference).0 {
+        case .resolved:
+            failureMessage = "“\(name)” could not be played. The file may be damaged or in a format Playaway can't play."
+        default:
+            failureMessage = "“\(name)” can't be found. Its file may have been moved, renamed or deleted."
+        }
     }
 
     /// What a song row shows about iCloud, nil when no iCloud account is available.

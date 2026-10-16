@@ -11,6 +11,12 @@ package protocol AudioPlayerHandle: AnyObject {
     func start() -> Bool
     func pause()
     func stop()
+    /// Ramps the gain to `target` over `duration`, so that starting in the middle of a waveform cannot click.
+    func fadeGain(to target: Float, over duration: TimeInterval)
+}
+
+extension AudioPlayerHandle {
+    package func fadeGain(to target: Float, over duration: TimeInterval) { gain = target }
 }
 
 /// Seam that lets tests replace the audio output with a recording sink.
@@ -48,6 +54,8 @@ package final class AVAudioPlayerHandle: NSObject, AudioPlayerHandle, AVAudioPla
         get { player.volume }
         set { player.volume = newValue }
     }
+
+    package func fadeGain(to target: Float, over duration: TimeInterval) { player.setVolume(target, fadeDuration: duration) }
 
     package func start() -> Bool { player.play() }
     package func pause() { player.pause() }
