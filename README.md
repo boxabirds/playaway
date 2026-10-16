@@ -1,5 +1,7 @@
 # Playaway
 
+[play.away.software](https://play.away.software)
+
 A fast, simple, native player for your own **mp3, wav, m4a and flac** files, on iPhone and Mac. No library, no
 import, no account: your files stay where they are. Playlists are ordinary documents you can see in Files or Finder,
 and they can live in iCloud Drive so the same playlist plays on every device.
