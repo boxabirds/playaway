@@ -1,4 +1,6 @@
-# LocalPlayer for iPhone: technical design
+# Playaway for iPhone: technical design
+
+> Written in October 2026 when the project was called LocalPlayer. The product, the iPhone app and the repository are now Playaway; the shared module shipped as `PlayawayCore`, the iPhone app lives in `ios/`. The Mac target, its bundle id and its AppleScript name keep the code name `LocalPlayer`.
 
 Status: proposal. Nothing here was built, compiled or run. Written 2026-10-05 against the `main` checkout. It implements the UX in `spec/general/UI-IMPROVEMENTS.md` ("iPhone version (proposal)") and the three phone mockups in `spec/general/ui-mockups.html`. It does not change any macOS spec; where it diverges, the divergence is listed in section 13.
 
@@ -110,10 +112,10 @@ Extract the portable core into a new library target and keep the Mac app as a th
 ```
 Package.swift
 Sources/
-  LocalPlayerCore/      library, macOS + iOS    (Foundation, Combine, AVFoundation, UniformTypeIdentifiers)
+  PlayawayCore/      library, macOS + iOS    (Foundation, Combine, AVFoundation, UniformTypeIdentifiers)
   LocalPlayer/          executableTarget, macOS (AppKit, Sparkle, scripting)
 Tests/
-  LocalPlayerCoreTests/ portable tests, run on macOS and iOS Simulator
+  PlayawayCoreTests/ portable tests, run on macOS and iOS Simulator
   LocalPlayerTests/     Mac-only tests (AppKit, Sparkle, scripts, release)
 iOS/
   LocalPlayerIOS.xcodeproj   app target, SwiftUI, App Intents, UIDocument glue
@@ -121,9 +123,9 @@ iOS/
   LocalPlayerIOSUITests/     XCUITest
 ```
 
-Package changes: add `.iOS(.v26)` to `platforms`; add `.library(name: "LocalPlayerCore", ...)` product; the Mac target depends on `LocalPlayerCore` and Sparkle. Which iOS deployment target to pick is an open question (section 18); 26 matches the Mac's "current OS only" stance but excludes most of the installed base.
+Package changes: add `.iOS(.v26)` to `platforms`; add `.library(name: "PlayawayCore", ...)` product; the Mac target depends on `PlayawayCore` and Sparkle. Which iOS deployment target to pick is an open question (section 18); 26 matches the Mac's "current OS only" stance but excludes most of the installed base.
 
-What moves into `LocalPlayerCore`: the "As is" and "Changes" rows above for Playback, Playlists logic, Open logic, `UIManifest`, `ManifestChecker`, `TransportViewModel`, the action list from `ActionManifest`, `ScriptFailure`, `AppServices` without AppKit.
+What moves into `PlayawayCore`: the "As is" and "Changes" rows above for Playback, Playlists logic, Open logic, `UIManifest`, `ManifestChecker`, `TransportViewModel`, the action list from `ActionManifest`, `ScriptFailure`, `AppServices` without AppKit.
 
 ### The cost that is easy to underestimate
 
@@ -142,7 +144,7 @@ Alternatives rejected:
 
 Verified: the repo has no `.xcodeproj` and builds with `swift build` plus `scripts/build-app.sh`, per `docs/tech-architecture.md` and `scripts/`. Verified: SwiftPM alone does not produce a signed iOS `.app` with Info.plist, entitlements, asset catalog and App Store signing. This is general knowledge, not tested here.
 
-Decision: a small hand-maintained Xcode project under `iOS/` that references the repo root as a local package (for `LocalPlayerCore`) and holds the iOS app, its App Intents and its UI tests. The Mac app stays SwiftPM-built and is not moved into Xcode.
+Decision: a small hand-maintained Xcode project under `iOS/` that references the repo root as a local package (for `PlayawayCore`) and holds the iOS app, its App Intents and its UI tests. The Mac app stays SwiftPM-built and is not moved into Xcode.
 
 Rejected:
 
@@ -175,7 +177,7 @@ The 2 pt line, 28 pt seek touch height, and 76/56/48 pt sizes come from the prop
 
 ### Shared model to extract from `PlaylistDocument`
 
-`PlaylistDocument` mixes NSDocument plumbing with editing logic. Extract the logic into a `PlaylistSession` class in `LocalPlayerCore` that owns `playlist`, `statuses`, `changes`, `addFiles`, `removeTracks`, `moveTrack`, `apply(_:toTrack:)`, `trackResolved`, `resolveStatuses`, and the lazy `player` and `relinker`. It conforms to `PlaylistDocumentEditing` and `TrackResolutionReporting`. The Mac `NSDocument` and the iOS `UIDocument` each hold one and forward `read`/`write`. This is the one real refactor of Mac code, so the Mac tests (`PlaylistDocumentTests`, `MissingFilesTests`, `PlaylistPlayerTests`) are the safety net and must pass before any iOS work builds on it. Undo registration (`undoManager`) stays in the document subclasses because the `NSDocument` and `UIDocument` managers differ; this is a decision, not verified.
+`PlaylistDocument` mixes NSDocument plumbing with editing logic. Extract the logic into a `PlaylistSession` class in `PlayawayCore` that owns `playlist`, `statuses`, `changes`, `addFiles`, `removeTracks`, `moveTrack`, `apply(_:toTrack:)`, `trackResolved`, `resolveStatuses`, and the lazy `player` and `relinker`. It conforms to `PlaylistDocumentEditing` and `TrackResolutionReporting`. The Mac `NSDocument` and the iOS `UIDocument` each hold one and forward `read`/`write`. This is the one real refactor of Mac code, so the Mac tests (`PlaylistDocumentTests`, `MissingFilesTests`, `PlaylistPlayerTests`) are the safety net and must pass before any iOS work builds on it. Undo registration (`undoManager`) stays in the document subclasses because the `NSDocument` and `UIDocument` managers differ; this is a decision, not verified.
 
 ## 5. Document model
 
@@ -300,7 +302,7 @@ New `NowPlayingBridge` in the iOS target, subscribing to `TransportViewModel` an
 
 ### Single-file playback and Stop
 
-`OpenCoordinator.open(url)` plays a single file outside any playlist. The proposal has no single-file screen. Opening an audio file from Files ("Open in LocalPlayer") can reuse it and show the mini player only. Decision: support it in phase 3, not phase 1.
+`OpenCoordinator.open(url)` plays a single file outside any playlist. The proposal has no single-file screen. Opening an audio file from Files ("Open in Playaway") can reuse it and show the mini player only. Decision: support it in phase 3, not phase 1.
 
 No Stop: the proposal says swipe-dismiss the mini player. Mapping: dismissing calls the existing `engine.stop()`, which sends `.stopped` and ends the playlist session through `PlaylistPlayer` (verified in the `handle(_ event:)` switch). The mini player is not hidden on pause. Lock screen has no Stop either.
 
@@ -374,7 +376,7 @@ Error mapping: reuse `ScriptFailure` numbers and messages as the `localizedDescr
 
 Two checks, both required in CI:
 
-1. Manifest-level (pure Swift, runs on macOS in `LocalPlayerCoreTests`): for every action whose `platforms` includes iOS, `intentBinding` is non-nil; for every action not on iOS, a reason string exists; every intent in the `IntentCatalog` (a hand-maintained array of intent type names, one per action) corresponds to an action. This is the existing `checkParity` shape with a different source of names.
+1. Manifest-level (pure Swift, runs on macOS in `PlayawayCoreTests`): for every action whose `platforms` includes iOS, `intentBinding` is non-nil; for every action not on iOS, a reason string exists; every intent in the `IntentCatalog` (a hand-maintained array of intent type names, one per action) corresponds to an action. This is the existing `checkParity` shape with a different source of names.
 2. Binary-level (iOS target test): verify the catalog against the real types by referencing each intent type in the test (a compile error when an intent is missing) and instantiating it with default parameters. A stronger check would parse the App Intents metadata the build emits (`Metadata.appintents`), but I do not know its format or location in the product, so it is not designed. Unverified.
 
 The gate counts only app-specific UI. The system-document menu exclusions in `ExcludedSystemItems` have no iOS analogue; iOS has no menu bar, so check 2 for "menu item with no equivalent" becomes "every control in the UI manifest (section 11) with a job must map to an action". That connects the two gates: `ui-manifest-ios.json` elements reference an action id, and the test fails when an element has no action or an action has no element on any platform where it should appear.
@@ -406,7 +408,7 @@ States have to be reachable by launch argument or fixtures (a playlist with a mi
 
 ### What carries over
 
-Candidates for `LocalPlayerCoreTests`, chosen by imports (XCTest and `@testable import LocalPlayer` only, no AppKit): `AdvanceDeciderTests`, `PlayModeTests`, `PlaylistDataTests`, `PlaybackEngineTests` (uses Combine), `PlaylistPlayerTests`, `OpenTests`, `MissingFilesTests`, `HIGChecklistTests`, `LaunchHarnessTests`, `LaunchCoordinatorTests` (imports are clean but it exercises a type in an AppKit file, so likely Mac only), `E2ETests`, parts of `UIManifestTests` and `ScriptingTests` (the manifest and parity logic).
+Candidates for `PlayawayCoreTests`, chosen by imports (XCTest and `@testable import LocalPlayer` only, no AppKit): `AdvanceDeciderTests`, `PlayModeTests`, `PlaylistDataTests`, `PlaybackEngineTests` (uses Combine), `PlaylistPlayerTests`, `OpenTests`, `MissingFilesTests`, `HIGChecklistTests`, `LaunchHarnessTests`, `LaunchCoordinatorTests` (imports are clean but it exercises a type in an AppKit file, so likely Mac only), `E2ETests`, parts of `UIManifestTests` and `ScriptingTests` (the manifest and parity logic).
 
 Not verified: I did not read the test bodies, so which of these actually run on iOS is unknown. Specific traps seen in the code I did read:
 
@@ -491,7 +493,7 @@ No durations are estimated. Each phase ends only when its exit criteria pass.
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | 0. Spikes | On a real device: (a) picker URL to `bookmarkData(options: [])` to relaunch to resolve; (b) a preloaded next-track hand-off (`play(atTime:)`) across a track boundary with the screen locked, confirming playback carries on and measuring the gap; (c) `AudioPlaybackIntent` reaching the live engine; (d) iCloud evicted file behaviour; (e) Xcode project resolving the root package with Sparkle | Each of the five has a written result with the exact API behaviour, or the design item that depends on it is revised. No production code merged from this phase. |
-| 1. Core extraction | `LocalPlayerCore` target; `public`/`package` access; `PlaylistSession` extraction; `PlaylistStore` codec split; `ActionManifest` split; `ScriptFailure` split; Mac app and tests re-pointed | All existing Mac tests pass unchanged in behaviour (suite count and names the same); `swift build` for the Mac app works; Mac scripts and release flow untouched; shared tests also pass on iOS Simulator. |
+| 1. Core extraction | `PlayawayCore` target; `public`/`package` access; `PlaylistSession` extraction; `PlaylistStore` codec split; `ActionManifest` split; `ScriptFailure` split; Mac app and tests re-pointed | All existing Mac tests pass unchanged in behaviour (suite count and names the same); `swift build` for the Mac app works; Mac scripts and release flow untouched; shared tests also pass on iOS Simulator. |
 | 2. iPhone app, playback and lists | iOS project; SwiftUI screens 1 to 4; `UIDocument`; fileImporter add; session layer; background audio; Now Playing and remote commands; no Stop, no volume | Manual device checklist passes (interruptions, unplug, lock screen, background, track gap); `ui-manifest-ios.json` check passes in XCUITest; accessibility checks pass at the largest Dynamic Type; a Mac-written `.lplaylist` opens and shows tracks missing without crashing; an iPhone-written file opens on the Mac with tracks missing and no crash. |
 | 3. Missing, Locate, iCloud | Reference policy; folder Locate; availability state; pre-fetch; Files "Open in" for single file | Story 005 cases that apply (TC set for missing, locate, autoskip) pass on iOS with the folder variant; a not-downloaded track never plays silently and never shows as missing; device checklist for iCloud. |
 | 4. Intents | `ActionHost`, intents, parity gate, both-route tests | Gate passes in CI; every iOS-applicable action has a test through UI and through intent; absent actions have a recorded reason. |

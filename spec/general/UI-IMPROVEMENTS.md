@@ -6,7 +6,7 @@ Mockups for everything below are in [`ui-mockups.html`](ui-mockups.html) (open i
 
 ## Summary
 
-Reviewed: the playlist window of LocalPlayer on macOS (`TransportControlsView`, `PlayModeControls`, `PlaylistWindowController`), against specs 007, 008 and 011 and the element list in `Resources/ui-manifest.json`.
+Reviewed: the playlist window of Playaway's Mac app (code name LocalPlayer) on macOS (`TransportControlsView`, `PlayModeControls`, `PlaylistWindowController`), against specs 007, 008 and 011 and the element list in `Resources/ui-manifest.json`.
 
 The window follows the spec's three groups, and every element is standard, labelled and accessible. What it lacks is hierarchy. Everything is the same size and the same blue, so the eye has nowhere to land:
 

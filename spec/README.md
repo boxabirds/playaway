@@ -1,6 +1,6 @@
-# boxabirds/localplayer
+# boxabirds/playaway (exported as boxabirds/localplayer, before the rename)
 
-**Slug:** boxabirds/localplayer
+**Slug:** boxabirds/playaway (was boxabirds/localplayer)
 **Exported:** 2026-10-04T12:38:03.252Z
 
 ## Summary

@@ -1,4 +1,4 @@
-# LocalPlayer — Technical Architecture (draft)
+# Playaway (formerly LocalPlayer) — Technical Architecture (draft)
 
 Status: partial. This is not a complete spec. It focuses on the Sparkle update integration, which is taken from an existing implementation. Everything else is a placeholder to be filled in next.
 

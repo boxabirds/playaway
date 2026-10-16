@@ -11,7 +11,7 @@ Status: proposal. Nothing here was built, compiled or run. Written 2026-10-06 ag
 
 ## 1. Product statement and the default
 
-LocalPlayer can keep chosen playlists and the audio they use in iCloud Drive, so they play on the person's other devices. It is opt-in, offered by invitation, and turned on per device.
+Playaway can keep chosen playlists and the audio they use in iCloud Drive, so they play on the person's other devices. It is opt-in, offered by invitation, and turned on per device.
 
 **When sync is off, which is the default, nothing changes from today.** Specifically, and testable:
 
@@ -60,7 +60,7 @@ This feature contradicts the first two on purpose, and only after consent. Secti
 
 ```
 iCloud Drive/
-  LocalPlayer/                      (the container's Documents folder, public)
+  Playaway/                         (the container's Documents folder, public)
     Playlists/
       Dinner.lplaylist
     Audio/
@@ -109,7 +109,7 @@ Rejected triggers:
 Copy (draft, to be reviewed by the owner):
 
 > **Keep your playlists on your other devices?**
-> LocalPlayer can keep playlists you choose, and the audio files in them, in iCloud Drive, so they also play on your iPhone and other Macs. Nothing changes unless you turn this on, and you choose which playlists.
+> Playaway can keep playlists you choose, and the audio files in them, in iCloud Drive, so they also play on your iPhone and other Macs. Nothing changes unless you turn this on, and you choose which playlists.
 > [Choose Playlists…]  [Not Now]
 
 "Not Now": closes the sheet and the invitation never appears again on this device. The menu item stays. The consent flow is not started. Nothing is stored except the one fact "invited". There is no "Don't ask again" checkbox because "Not Now" already means that. This is a decision, not a verified preference: a one-shot invitation may under-convert, and the owner can choose to allow one reminder (question 3 in section 13).
@@ -150,7 +150,7 @@ Flow:
    - **no iCloud free-space figure.** I know of no public API that reports iCloud quota (unverified; S4 checks). The sheet says how much will be added and points the person to System Settings for their plan. It does not claim the amount fits.
 3. **Confirm.** The sheet's text, with the real figures in place of the placeholders:
 
-   > LocalPlayer will copy **<N> audio files (<size>)** and **<P> playlists** into iCloud Drive > LocalPlayer.
+   > Playaway will copy **<N> audio files (<size>)** and **<P> playlists** into iCloud Drive > Playaway.
    > Your original files and playlists stay where they are and are not changed. The copies use iCloud storage and disk space on this Mac.
    > After this, audio you add to a synced playlist is copied into iCloud too.
    > You can turn this off later. Turning it off does not delete anything.
@@ -177,7 +177,7 @@ This matters because **a quota-exceeded condition will not fail the copy.** The 
 
 Turn Off deletes nothing in iCloud, nothing local, and rewrites no playlist (a rewrite would itself sync to the other devices). It sets this device's flag off. Consequences, stated in the confirmation:
 
-> Turning off stops copying and keeping playlists up to date on this Mac. Your files stay in iCloud Drive > LocalPlayer, and playlists that point to them keep working while those files are on this Mac. To remove them, delete the folder in iCloud Drive.
+> Turning off stops copying and keeping playlists up to date on this Mac. Your files stay in iCloud Drive > Playaway, and playlists that point to them keep working while those files are on this Mac. To remove them, delete the folder in iCloud Drive.
 
 While off, a playlist that was synced and opens again still resolves its container-relative tracks as long as the container is reachable (the entitlement still exists). Auto-copy and the standing consent end. New files added to such a playlist are referenced in place like any local playlist (nothing copied), and so will not play on other devices. That is the same as pre-sync behaviour for a playlist.
 
