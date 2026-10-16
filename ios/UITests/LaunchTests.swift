@@ -780,6 +780,101 @@ import UIKit
     }
 }
 
+/// The lyrics experiment: pulled up, the card shows the lyrics above the controls, the current line follows the song,
+/// a tap on a line seeks, and the controls do not move between the two sizes. The sheet is ready-made by a test hook,
+/// so no speech model is needed.
+@MainActor final class LyricsUITests: XCTestCase {
+    private func openCard(_ app: XCUIApplication) -> XCUIElement {
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        let card = app.descendants(matching: .any).matching(identifier: "player-card").firstMatch   // the id lands on more than one element
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        return card
+    }
+
+    /// Pulls the sheet up by its handle to the top of the screen, as a finger would; a flick on the content is not
+    /// enough for the system sheet to change its size.
+    private func pullUp(_ app: XCUIApplication, _ card: XCUIElement) {
+        let handle = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: card.frame.midX, dy: card.frame.minY + 12))
+        handle.press(forDuration: 0.2, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)), withVelocity: .slow, thenHoldForDuration: 0.3)
+        sleep(1)
+    }
+
+    func testPullingTheCardUpShowsTheLyricsAndTheCurrentLineFollowsTheSong() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeLyrics"]; app.launch()
+        let card = openCard(app)
+        let playBefore = app.buttons.matching(identifier: "Pause").firstMatch
+        XCTAssertTrue(playBefore.waitForExistence(timeout: 5))
+        let controlsBefore = playBefore.frame
+        XCTAssertFalse(app.staticTexts["lyrics-note"].exists, "the compact card has no lyrics")
+        pullUp(app, card)
+        XCTAssertTrue(app.staticTexts["lyrics-note"].waitForExistence(timeout: 5), "the tall card shows the lyrics and says they are a machine guess")
+        XCTAssertTrue(app.staticTexts["lyrics-line-0"].exists)
+        let controlsAfter = app.buttons.matching(identifier: "Pause").firstMatch.frame
+        XCTAssertEqual(controlsAfter.midY, controlsBefore.midY, accuracy: 2, "the controls stay where they were")
+        XCTAssertEqual(controlsAfter.midX, controlsBefore.midX, accuracy: 2)
+
+        // The seeded sheet has a line every few seconds; the lit line must move on while the song plays.
+        func litLine() -> String? {
+            app.staticTexts.allElementsBoundByIndex.first { $0.identifier.hasPrefix("lyrics-line-") && $0.isSelected }?.identifier
+        }
+        let first = litLine()
+        let deadline = Date().addingTimeInterval(12)
+        var moved = false
+        while Date() < deadline { if let now = litLine(), now != first, first != nil || now != nil { moved = true; break }; usleep(300_000) }
+        XCTAssertTrue(moved, "the current line moved on from \(first ?? "none")")
+
+        // Tapping a line two below the lit one (so it is on screen) seeks the song there. The seeded sheet puts three
+        // words on a line, 1.5 s apart, from 2 s: line n starts at 2 + 4.5 n seconds.
+        // Paused first: while the song plays the list scrolls every few seconds and a tap can land on the wrong line.
+        let pauses = app.buttons.matching(identifier: "Pause").allElementsBoundByIndex    // the hidden controller has one too
+        (pauses.first { $0.isHittable } ?? pauses.last)?.tap()
+        XCTAssertTrue(app.buttons.matching(identifier: "Play").firstMatch.waitForExistence(timeout: 3), "the song pauses from the tall card")
+        sleep(1)
+        let lit = Int(litLine()?.dropFirst("lyrics-line-".count) ?? "0") ?? 0
+        let target = lit + 2
+        let later = app.staticTexts["lyrics-line-\(target)"]
+        XCTAssertTrue(later.waitForExistence(timeout: 3))
+        later.tap()
+        let expectedSeconds = Int(2 + 4.5 * Double(target))
+        let pattern = "0:(" + (expectedSeconds...expectedSeconds + 2).map { String(format: "%02d", $0) }.joined(separator: "|") + ")"
+        let jumped = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", pattern)).firstMatch
+        XCTAssertTrue(jumped.waitForExistence(timeout: 3), "the place moved to the tapped line (expected \(pattern))")
+    }
+
+    func testWithTheExperimentOffThePanelOnlySaysSo() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        let card = openCard(app)
+        pullUp(app, card)
+        let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'experiment'")).firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "the panel says the experiment exists and where to turn it on")
+        XCTAssertFalse(app.buttons["lyrics-make"].exists)
+        XCTAssertFalse(app.staticTexts["lyrics-line-0"].exists, "no lines with the experiment off")
+    }
+
+    func testTurningTheExperimentOnOffersToMakeLyricsForASong() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.buttons["experiments-button"].waitForExistence(timeout: 15))
+        app.buttons["experiments-button"].tap()
+        let toggle = app.switches["lyrics-enabled"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        if (toggle.value as? String) != "1" {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()   // the switch sits at the row's right edge
+        }
+        sleep(1)
+        XCTAssertEqual(toggle.value as? String, "1", "the switch is on")
+        app.buttons["Done"].tap()
+        let card = openCard(app)
+        pullUp(app, card)
+        XCTAssertTrue(app.buttons["lyrics-make"].waitForExistence(timeout: 5), "a song with no sheet offers to make one")
+    }
+}
+
 @MainActor final class PlaybackStateUITests: XCTestCase {
     /// Reproduces "the play position when moving between songs is not at the beginning".
     func testAnotherSongStartsAtTheBeginningAndTheSliderShowsExactlyThat() {

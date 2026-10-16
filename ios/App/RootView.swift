@@ -78,11 +78,17 @@ struct PlaylistsView: View {
         }
         .navigationTitle("Playlists")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { model.experimentsShown = true } label: { Image(systemName: "flask") }
+                    .accessibilityLabel("Experiments")
+                    .accessibilityIdentifier("experiments-button")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { newName = ""; creating = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("New Playlist")
             }
         }
+        .sheet(isPresented: $model.experimentsShown) { ExperimentsView() }
         .alert("New Playlist", isPresented: $creating) {
             TextField("Name", text: $newName)
             Button("Create") {

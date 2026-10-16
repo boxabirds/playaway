@@ -137,6 +137,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var activeSession: PlaylistSession?
     @Published private(set) var metadata: TrackMetadata?
     private var metadataURL: URL?
+    /// The lyrics experiment: its sheet for the song under way, and its switches.
+    let lyrics = LyricsCoordinator()
+    @Published var experimentsShown = false
     private let nowPlaying = NowPlayingCenter()
     private var sessions: [URL: PlaylistSession] = [:]
     private var cancellables = Set<AnyCancellable>()
@@ -175,12 +178,19 @@ final class AppModel: ObservableObject {
         // Views read transport and settings through the model, so their changes must reach the model's observers.
         transport.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        lyrics.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         engine.events.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.engineChanged() }.store(in: &cancellables)
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-PlayawaySeedDemo") {
-            if !arguments.contains("-PlayawayKeepMemory") { memoryStore.save(.empty) }
+            if !arguments.contains("-PlayawayKeepMemory") { memoryStore.save(.empty); lyrics.resetForTests() }
             seedDemoPlaylist(in: documents, keepExisting: arguments.contains("-PlayawayKeepMemory"))
+        }
+        // Test aid: the lyrics experiment on, with a ready-made sheet for "Demo One", so the panel needs no model.
+        if arguments.contains("-PlayawayFakeLyrics"),
+           let demoOne = (try? FileManager.default.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil))?
+            .first(where: { $0.lastPathComponent.hasPrefix("Demo One") }) {
+            lyrics.seedFakeSheet(for: demoOne)
         }
         #endif
         openAdapter.model = self
@@ -281,7 +291,9 @@ final class AppModel: ObservableObject {
             d.append("RIFF".data(using: .ascii)!); u32(36 + samples * 2); d.append("WAVEfmt ".data(using: .ascii)!)
             u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
             d.append("data".data(using: .ascii)!); u32(samples * 2)
-            for i in 0..<samples { var v = Int16(sin(2 * .pi * hz * Double(i) / Double(rate)) * 8000).littleEndian; d.append(Data(bytes: &v, count: 2)) }
+            // Silent: the tests never listen, and a simulator plays through the Mac's speakers while someone is working.
+            let amplitude = 0.0
+            for i in 0..<samples { var v = Int16(sin(2 * .pi * hz * Double(i) / Double(rate)) * amplitude).littleEndian; d.append(Data(bytes: &v, count: 2)) }
             return d
         }
         var urls: [URL] = []
@@ -321,6 +333,7 @@ final class AppModel: ObservableObject {
         if url != metadataURL {
             metadataURL = url
             metadata = url.map { TrackMetadata.fallback(for: $0) }
+            lyrics.songChanged(url)
             if let url { Task { [weak self] in
                 var loaded = await loadTrackMetadata(for: url)
                 #if DEBUG

@@ -18,6 +18,8 @@ targets:
     dependencies:
       - package: PlayawaySources
         product: PlayawayCore
+      - package: PlayawaySources
+        product: PlayawayLyrics
     entitlements:
       path: App/Playaway.entitlements
       properties:
@@ -30,7 +32,8 @@ targets:
         CFBundleDisplayName: Playaway
         ITSAppUsesNonExemptEncryption: false
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "19"
+        CFBundleVersion: "20"
+        NSSpeechRecognitionUsageDescription: Playaway transcribes the lyrics of your songs on this iPhone, for the lyrics experiment.
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true
