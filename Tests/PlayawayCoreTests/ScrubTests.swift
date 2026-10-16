@@ -143,36 +143,16 @@ final class ScrubTraceTests: XCTestCase {
     }
 }
 
-final class FakeLoopingPreview: LoopingPreviewing {
-    private(set) var isPlaying = false
-    private(set) var starts: [(url: URL, seconds: Double, length: Double)] = []
-    private(set) var stops = 0
-    var canStart = true
-    /// Where the loop is when it is stopped; the start of the snippet when not set.
-    var placeWhenStopped: Double?
-
-    func start(url: URL, at seconds: Double, length: Double) -> Bool {
-        guard canStart else { return false }
-        starts.append((url, seconds, length)); isPlaying = true
-        return true
-    }
-
-    @discardableResult func stop() -> Double? {
-        guard isPlaying else { return nil }
-        isPlaying = false; stops += 1
-        return placeWhenStopped ?? starts.last?.seconds
-    }
-}
-
 /// Audio scrubbing: while the finger moves everything is quiet; when it holds still a short seamless snippet from the place
 /// under the finger loops; the slider shows the finger, never the loop; at the lift the song takes over from where the loop was.
 final class LoopingPreviewTests: XCTestCase {
     private func rig(canStart: Bool = true) -> (TransportViewModel, FakeLoopingPreview, AVPlaybackEngine) {
-        let engine = makeEngine()
+        let backend = RecordingAudioBackend()
+        let engine = makeEngine(backend: backend)
         _ = engine.play(PlaylistFixture().urls[0])
-        let preview = FakeLoopingPreview()
+        let preview = backend.preview
         preview.canStart = canStart
-        let transport = TransportViewModel(engine: engine, registry: ActiveSessionRegistry(), runsTimer: false, preview: preview)
+        let transport = TransportViewModel(engine: engine, registry: ActiveSessionRegistry(), runsTimer: false)
         transport.scrubHoldDelay = 0.1
         return (transport, preview, engine)
     }

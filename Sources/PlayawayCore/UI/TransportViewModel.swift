@@ -33,11 +33,9 @@ package final class TransportViewModel: ObservableObject {
 
     /// `runsTimer` makes observers hear about the playing position four times a second. A screen that draws the position
     /// itself on a clock does not need it.
-    package init(engine: PlaybackEngine, registry: ActiveSessionRegistry, runsTimer: Bool = true,
-                 preview: LoopingPreviewing? = nil) {
+    package init(engine: PlaybackEngine, registry: ActiveSessionRegistry, runsTimer: Bool = true) {
         self.engine = engine
         self.registry = registry
-        self.preview = preview ?? AVLoopingPreview()
         engine.events.sink { [weak self] _ in self?.refresh() }.store(in: &cancellables)
         if runsTimer { startTimer() }
     }
@@ -99,7 +97,7 @@ package final class TransportViewModel: ObservableObject {
 
     package func seek(toSeconds seconds: Double) throws {
         guard engine.state != .idle else { throw ActionError.nothingPlaying }
-        if isScrubbing { preview.stop() }                                   // moving again quiets the snippet
+        if isScrubbing { engine.stopPreviewLoop() }                         // moving again quiets the snippet
         if isScrubbing, engine.state == .playing { engine.pause() }       // and the song, if it was playing itself
         guard engine.seek(toSeconds: seconds) else { throw ActionError.invalidSeekPosition }
         if isScrubbing {
@@ -116,7 +114,6 @@ package final class TransportViewModel: ObservableObject {
     private var scrubWatchdog: Timer?
     private var playheadWatch: Timer?
     private var holdTimer: Timer?
-    private let preview: LoopingPreviewing
     /// How long the sound fades in when it takes over from the looping snippet at the lift.
     package static let handoffFade: TimeInterval = 0.02
     /// Where the finger is while a drag is in progress. The slider and its labels show this, not the engine, so the thumb
@@ -158,7 +155,7 @@ package final class TransportViewModel: ObservableObject {
         let timer = Timer(timeInterval: scrubHoldDelay, repeats: false) { [weak self] _ in
             guard let self, self.isScrubbing, self.engine.state == .paused else { return }
             let place = self.scrubTarget ?? self.engine.position
-            if let url = self.engine.currentURL, self.preview.start(url: url, at: place, length: self.scrubLoopLength) {
+            if self.engine.startPreviewLoop(at: place, length: self.scrubLoopLength) {
                 self.armScrubWatchdog(after: self.previewWatchdogTimeout)      // the snippet is audible; the song stays paused
             } else {
                 self.engine.resume()                                          // no snippet possible: the song itself plays
@@ -185,14 +182,14 @@ package final class TransportViewModel: ObservableObject {
     private func finishScrub(toSeconds seconds: Double, how: ScrubTrace.End) throws {
         defer {
             isScrubbing = false; scrubWasPlaying = false; scrubWatchdog?.invalidate(); scrubWatchdog = nil
-            holdTimer?.invalidate(); holdTimer = nil; preview.stop(); scrubTarget = nil
+            holdTimer?.invalidate(); holdTimer = nil; engine.stopPreviewLoop(); scrubTarget = nil
             watchPlayheadAfterResume()
             refresh()
         }
         scrubTrace.end(how, at: clock())
         guard engine.state != .idle else { throw ActionError.nothingPlaying }
-        if preview.isPlaying {                       // the snippet is looping: the song takes over from where the loop is
-            if let place = preview.stop() { _ = engine.seek(toSeconds: min(place, engine.duration)) }
+        if engine.isPreviewing {                     // the snippet is looping: the song takes over from where the loop is
+            if let place = engine.stopPreviewLoop() { _ = engine.seek(toSeconds: min(place, engine.duration)) }
             engine.resume(fadingIn: Self.handoffFade)
             scrubTrace.resumeRequested(at: clock())
             return

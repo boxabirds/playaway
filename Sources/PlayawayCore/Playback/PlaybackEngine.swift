@@ -50,6 +50,14 @@ package protocol PlaybackEngine: AnyObject {
     func stop()
     func seek(toSeconds seconds: Double) -> Bool
     func setMuted(_ muted: Bool)
+
+    /// True while the scrub loop is the sound being heard; the song is paused under it.
+    var isPreviewing: Bool { get }
+    /// Loops `length` seconds of the current song from `seconds`, silencing the song itself. False when no loop can be
+    /// made (nothing loaded, or the file cannot be read); the song is then left paused where it was.
+    func startPreviewLoop(at seconds: Double, length: TimeInterval) -> Bool
+    /// Silences the loop. Returns the place in the song the loop had reached, or nil when no loop was playing.
+    @discardableResult func stopPreviewLoop() -> Double?
 }
 
 extension PlaybackEngine {

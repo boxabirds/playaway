@@ -95,6 +95,24 @@ struct FileSnapshot: Equatable {
 
 // MARK: - Recording audio sink
 
+/// Every fake sound producer (the fake song players and the fake scrub loop) reports to one of these. Two sounds at the
+/// same time is a failure of whichever test it happens in, wherever in the code it happens.
+final class SoundLedger {
+    private(set) var sounding: [String] = []
+    private(set) var overlaps: [String] = []
+
+    func began(_ sound: String) {
+        sounding.append(sound)
+        if sounding.count > 1 {
+            let overlap = sounding.joined(separator: " + ")
+            overlaps.append(overlap)
+            XCTFail("two sounds at once: \(overlap)")
+        }
+    }
+
+    func ended(_ sound: String) { sounding.removeAll { $0 == sound } }
+}
+
 final class RecordingPlayerHandle: AudioPlayerHandle {
     let url: URL
     var duration: TimeInterval
@@ -103,6 +121,7 @@ final class RecordingPlayerHandle: AudioPlayerHandle {
     var onFinish: (() -> Void)?
     private(set) var running = false
     private weak var backend: RecordingAudioBackend?
+    private var soundName: String { "song:\(url.lastPathComponent)" }
 
     init(url: URL, duration: TimeInterval, backend: RecordingAudioBackend) {
         self.url = url
@@ -114,24 +133,56 @@ final class RecordingPlayerHandle: AudioPlayerHandle {
         if backend?.failStart == true { return false }
         running = true
         backend?.log.append("start:\(url.lastPathComponent)@\(currentTime)")
+        backend?.ledger.began(soundName)
         return true
     }
 
     func pause() {
         running = false
         backend?.log.append("pause:\(url.lastPathComponent)@\(currentTime)")
+        backend?.ledger.ended(soundName)
     }
 
     func stop() {
         running = false
         currentTime = 0
         backend?.log.append("stop:\(url.lastPathComponent)")
+        backend?.ledger.ended(soundName)
     }
 
     /// Simulates the file playing to its end.
     func finish() {
         running = false
+        backend?.ledger.ended(soundName)
         onFinish?()
+    }
+}
+
+/// The scrub loop as a test double. It shares the backend's ledger, so a loop sounding under a song is caught.
+final class FakeLoopingPreview: LoopingPreviewing {
+    private(set) var isPlaying = false
+    private(set) var starts: [(url: URL, seconds: Double, length: Double)] = []
+    private(set) var stops = 0
+    var canStart = true
+    /// Where the loop is when it is stopped; the start of the snippet when not set.
+    var placeWhenStopped: Double?
+    private let ledger: SoundLedger?
+    private static let soundName = "loop"
+
+    init(ledger: SoundLedger? = nil) { self.ledger = ledger }
+
+    func start(url: URL, at seconds: Double, length: Double) -> Bool {
+        guard canStart else { return false }
+        starts.append((url, seconds, length)); isPlaying = true
+        ledger?.began(Self.soundName)
+        return true
+    }
+
+    @discardableResult func stop() -> Double? {
+        guard isPlaying else { return nil }
+        isPlaying = false; stops += 1
+        ledger?.ended(Self.soundName)
+        return placeWhenStopped ?? starts.last?.seconds
     }
 }
 
@@ -141,6 +192,9 @@ final class RecordingAudioBackend: AudioBackend {
     var unreadableNames: Set<String> = []
     var failStart = false
     var defaultDuration: TimeInterval = 4
+    let ledger = SoundLedger()
+    /// The scrub loop of the same fake audio output, so the ledger sees both.
+    private(set) lazy var preview = FakeLoopingPreview(ledger: ledger)
 
     func makePlayer(for url: URL) throws -> AudioPlayerHandle {
         if unreadableNames.contains(url.lastPathComponent) {
@@ -178,7 +232,8 @@ final class InMemoryVolumeStore: VolumeSettingsStoring {
 
 func makeEngine(backend: RecordingAudioBackend = RecordingAudioBackend(), hasDevice: Bool = true,
                 store: VolumeSettingsStoring = InMemoryVolumeStore()) -> AVPlaybackEngine {
-    AVPlaybackEngine(backend: backend, devices: StubOutputDevices(hasOutputDevice: hasDevice), settings: store)
+    AVPlaybackEngine(backend: backend, devices: StubOutputDevices(hasOutputDevice: hasDevice), settings: store,
+                     preview: backend.preview)
 }
 
 final class RecordingNotices: NoticePresenting {

@@ -753,6 +753,31 @@ import UIKit
         }
         XCTAssertLessThan(worst, 0.6, "playback restarts at once after the finger lifts (took \(worst) s)")
     }
+
+    /// Reproduces "the scrub loop played on its own while another song played": the finger holds still on the slider, so
+    /// the loop sounds, and the app moves to the next song meanwhile (the test hook does what Next, the lock screen or a
+    /// headphone button would). The loop must fall silent and the lift must leave the new song where it is, near its start.
+    func testTheNextSongDuringAHeldScrubTakesOverAndTheLiftLeavesItWhereItIs() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayAutoNext"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["player-card"].waitForExistence(timeout: 10))
+        let slider = app.sliders["Playback position"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        let holdPastTheAutoNext: TimeInterval = 12                 // the hook moves to the next song 10 s after the card opened
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: holdPastTheAutoNext)
+        XCTAssertTrue(app.staticTexts["Demo Two"].waitForExistence(timeout: 5), "the next song took over during the hold")
+        XCTAssertTrue(app.buttons.matching(identifier: "Pause").firstMatch.waitForExistence(timeout: 5), "and it is playing after the lift")
+        let nearTheStart = app.staticTexts.matching(NSPredicate(format: "label MATCHES '0:0[0-9]'")).count
+        let atTheOldLoopPlace = app.staticTexts.matching(NSPredicate(format: "label MATCHES '0:1[2-8]'")).count
+        XCTAssertGreaterThan(nearTheStart, 0, "the new song is near its start")
+        XCTAssertEqual(atTheOldLoopPlace, 0, "the lift did not drag the new song to the old song's loop place")
+    }
 }
 
 @MainActor final class PlaybackStateUITests: XCTestCase {
