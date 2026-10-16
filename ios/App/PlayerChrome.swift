@@ -123,27 +123,31 @@ struct PlayerCard: View {
     @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                handle
-                playlistLink
-                if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
-                    Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
-                        .frame(maxWidth: .infinity).accessibilityHidden(true)
-                }
-                title
-                scrubber
-                controls
-                LyricsPanel()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: lyricsPanelHeight)
+        ScrollView { column }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDisabled(!resize.scrolls)           // a card that fits does not scroll; a drag on it is the sheet's
+            .accessibilityIdentifier("player-card")
+    }
+
+    private var column: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            handle
+            playlistLink
+            if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
+                Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: .infinity).accessibilityHidden(true)
             }
-            .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportContentHeight($0) }
-            .offset(y: resize.shift)                   // during a resize only: keeps the controls still on screen
+            title
+            scrubber
+            controls
+            LyricsPanel()
+                .frame(maxWidth: .infinity)
+                .frame(height: lyricsPanelHeight)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .accessibilityIdentifier("player-card")
+        .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportContentHeight($0) }
+        .offset(y: resize.shift)                       // during a resize only: keeps the controls still on screen
     }
 
     private var lyricsPanelHeight: CGFloat {

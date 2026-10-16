@@ -70,7 +70,9 @@ struct CardSheet<Content: View>: UIViewControllerRepresentable {
         init(isPresented: Binding<Bool>) { self.isPresented = isPresented }
 
         func currentHeight(cap: CGFloat) -> CGFloat {
-            animatedHeight ?? min(contentHeight > 0 ? contentHeight : Chrome.firstCardHeight, cap)
+            let scrolls = contentHeight > cap + 0.5
+            if resize.scrolls != scrolls { DispatchQueue.main.async { [resize] in resize.scrolls = scrolls } }
+            return animatedHeight ?? min(contentHeight > 0 ? contentHeight : Chrome.firstCardHeight, cap)
         }
 
         /// The card measured its content. The first measurement sizes the sheet as it appears. Later ones (artwork
@@ -137,9 +139,12 @@ struct CardSheet<Content: View>: UIViewControllerRepresentable {
     }
 }
 
-/// How far the card's content is shifted during a resize; zero at rest.
+/// What the sheet tells the card: how far its content is shifted during a resize (zero at rest), and whether the
+/// content is taller than the sheet can be, so that it must scroll. When it fits, scrolling is off, so a drag anywhere
+/// on the card goes to the sheet and closes it.
 final class CardResize: ObservableObject {
     @Published var shift: CGFloat = 0
+    @Published var scrolls = false
 }
 
 private struct ReportCardContentHeightKey: EnvironmentKey {
