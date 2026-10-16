@@ -1,7 +1,7 @@
 import Foundation
 
 package enum PlayRequestSource: Equatable {
-    case list, next, previous, autoAdvance, startPlaylist, script
+    case list, next, previous, autoAdvance, startPlaylist, script, restore
 }
 
 package enum DownloadEvent: Equatable {

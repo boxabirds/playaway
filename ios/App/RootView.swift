@@ -13,6 +13,13 @@ struct RootView: View {
                     else { ContentUnavailableView("Playlist unavailable", systemImage: "exclamationmark.triangle") }
                 }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            // Temporary, for build 17: what the launch-time restore did, so a restore that fails on a phone says why.
+            Text("Restore: " + model.restoreReport)
+                .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12)
+                .accessibilityIdentifier("restore-report")
+        }
         .overlay { PlayerChrome() }
         .sheet(isPresented: $model.renameShown) { RenameSheet() }
         .alert("Sync with iCloud", isPresented: Binding(get: { model.syncTarget != nil }, set: { if !$0 { model.syncTarget = nil } })) {

@@ -123,6 +123,9 @@ final class AppModel: ObservableObject {
     }()
     private(set) lazy var downloads = DownloadOnPlayCoordinator(downloader: cloud, player: self)
     private var pendingPlays: [SongID: (session: PlaylistSession, track: Track)] = [:]
+    /// Songs being fetched from iCloud only to be restored after a relaunch: when one arrives it is loaded paused at its
+    /// remembered place, not played.
+    private var pendingRestores: [SongID: Double] = [:]
     @Published private(set) var cloudRevision = 0
     private(set) lazy var openCoordinator = OpenCoordinator(classifier: FormatClassifier(), engine: engine,
                                                             notices: openAdapter, playlists: openAdapter)
@@ -214,24 +217,43 @@ final class AppModel: ObservableObject {
 
     // MARK: Remembering what was playing
 
+    /// Temporary, for build 17: what the launch-time restore found and where it stopped, shown on the playlists screen.
+    @Published private(set) var restoreReport = "restore: not run yet"
+
     private func restoreMemory() {
+        let saved = memoryStore.load()
+        var report = "saved: \(saved.openPlaylists.count) open playlist(s), song \(saved.nowPlaying == nil ? "none" : "yes")"
         let existing = Set(entries.map { memoryKey($0.url) })
-        let memory = memoryStore.load().restoring(existingPlaylists: existing) { [self] name, id in
+        report += " · listed now: \(existing.count) (cloud library \(cloudLibrary == nil ? "absent" : "present"))"
+        let memory = saved.restoring(existingPlaylists: existing) { [self] name, id in
             let url = playlistURL(forFileName: name)
             if case .loaded(let playlist) = library(for: url).load(url) { return playlist.track(withID: id) != nil }
             return false
         }
         path = memory.openPlaylists.map { playlistURL(forFileName: $0) }
+        report += " · kept after checking: \(memory.openPlaylists.count) playlist(s), song \(memory.nowPlaying == nil ? "none" : "yes")"
+        defer { restoreReport = report }
         guard let point = memory.nowPlaying else { return }
         let url = playlistURL(forFileName: point.playlistFileName)
         // The remembered song is loaded into the engine paused at its place, so everything that shows it (the title, the
         // length, the place) is the engine's own, exactly as for any paused song. A song that is not on this device is not
         // waited for: it is not restored.
-        guard let session = session(for: url), let track = session.playlist.track(withID: point.trackID),
-              case .resolved(let file) = TrackResolver().resolve(track.reference).0,
-              cloud.presence(of: file).isOnDevice else { return }
+        guard let session = session(for: url) else { report += " · STOPPED: playlist file did not open"; return }
+        guard let track = session.playlist.track(withID: point.trackID) else { report += " · STOPPED: song not in playlist"; return }
+        guard case .resolved(let file) = TrackResolver().resolve(track.reference).0 else { report += " · STOPPED: song file not found from its bookmark"; return }
         session.model = self
-        if session.player.load(track: track, atSeconds: point.positionSeconds) { becameActive(session) }
+        guard cloud.presence(of: file).isOnDevice else {
+            // Evicted from the phone since: fetch it, and load it paused at its place when it arrives.
+            let song = cloud.id(for: file)
+            pendingPlays[song] = (session, track)
+            pendingRestores[song] = point.positionSeconds
+            downloads.request(song, source: .restore, isOnDevice: false)
+            cloudRevision += 1
+            report += " · song is in iCloud, not on this iPhone: fetching it, will load paused when it arrives"
+            return
+        }
+        if session.player.load(track: track, atSeconds: point.positionSeconds) { becameActive(session); report += " · song loaded paused" }
+        else { report += " · STOPPED: the audio engine refused the file (no access or unreadable)" }
     }
 
     /// Writes what the next launch needs. Position ticks are throttled; every other change passes `force`.
@@ -513,6 +535,11 @@ final class AppModel: ObservableObject {
 
     func startPlayback(of song: SongID) {
         guard let pending = pendingPlays[song] else { return }
+        if let place = pendingRestores.removeValue(forKey: song) {
+            if pending.session.player.load(track: pending.track, atSeconds: place) { becameActive(pending.session) }
+            cloudRevision += 1
+            return
+        }
         becameActive(pending.session)
         pending.session.player.play(track: pending.track)
         cloudRevision += 1

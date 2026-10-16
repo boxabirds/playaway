@@ -821,10 +821,32 @@ import UIKit
             let again = XCUIApplication(); again.launchArguments = ["-PlayawaySeedDemo", "-PlayawayKeepMemory"]; again.launch()
             XCTAssertTrue(again.tables["song-table"].waitForExistence(timeout: 8), "launch \(launch): the playlist that was open is open again")
             XCTAssertTrue(again.descendants(matching: .any)["floating-controller"].waitForExistence(timeout: 5),
-                          "launch \(launch): the paused song is shown")
+                          "launch \(launch): the paused song is shown (\(again.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Restore'")).firstMatch.label))")
+            XCTAssertTrue(again.staticTexts.matching(NSPredicate(format: "label CONTAINS 'song loaded paused'")).firstMatch.exists,
+                          "launch \(launch): the restore report says the song was loaded")
             XCTAssertTrue(again.buttons["Play"].firstMatch.exists, "launch \(launch): it is paused")
             again.terminate()
         }
+    }
+
+    /// Reproduces "no play controller, nothing restored": the remembered song is in iCloud and was evicted from the phone
+    /// since. Relaunch must fetch it and bring the controller back, as build 14 did, not drop the memory.
+    func testARememberedSongThatIsNotOnThePhoneIsFetchedAndComesBack() {
+        let first = XCUIApplication(); first.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; first.launch()
+        XCTAssertTrue(first.staticTexts["Demo"].waitForExistence(timeout: 15))
+        first.staticTexts["Demo"].tap()
+        XCTAssertTrue(first.tables["song-table"].waitForExistence(timeout: 15))
+        first.tables["song-table"].cells["Demo Two"].tap()            // in iCloud: downloads for 2 s, then plays
+        XCTAssertTrue(first.buttons["Pause"].firstMatch.waitForExistence(timeout: 15))
+        sleep(7)
+        first.terminate()
+
+        let second = XCUIApplication(); second.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud", "-PlayawayKeepMemory"]; second.launch()
+        XCTAssertTrue(second.tables["song-table"].waitForExistence(timeout: 15), "the playlist that was open is open again")
+        let controller = second.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        let report = second.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Restore'")).firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 20), "the controller is back once the song is fetched (\(report.label))")
+        XCTAssertTrue(second.buttons["Play"].firstMatch.exists, "paused, not playing by itself")
     }
 }
 
