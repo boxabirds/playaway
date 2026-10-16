@@ -186,13 +186,18 @@ final class FakeLyricTranscriber: LyricTranscribing, @unchecked Sendable {
     private(set) var transcribed: [URL] = []
     private(set) var languages: [String?] = []
     init(engine: LyricEngine = .speechAnalyzer, words: [TimedWord]) { self.engine = engine; self.words = words }
-    func transcribe(_ url: URL, language: String?) async throws -> [TimedWord] { transcribed.append(url); languages.append(language); return words }
+    func transcribe(_ url: URL, language: String?, progress: @escaping @Sendable (Double) -> Void) async throws -> [TimedWord] {
+        transcribed.append(url); languages.append(language)
+        progress(0.5); progress(1)
+        return words
+    }
 }
 
 final class FakeVocalSeparator: VocalSeparating, @unchecked Sendable {
     private(set) var separated: [URL] = []
-    func separateVocals(from url: URL, into directory: URL) async throws -> URL {
+    func separateVocals(from url: URL, into directory: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         separated.append(url)
+        progress(1)
         let out = directory.appendingPathComponent(url.deletingPathExtension().lastPathComponent + "-vocals.wav")
         try Data("vocals".utf8).write(to: out)
         return out
@@ -206,6 +211,16 @@ final class FakeVocalActivity: VocalActivityDetecting, @unchecked Sendable {
     func vocalRanges(in url: URL) async throws -> [ClosedRange<Double>] { asked.append(url); return ranges }
 }
 
+/// Collects what the pipeline reports, in order, stage by stage.
+private final class Progress: @unchecked Sendable {
+    private(set) var stages: [LyricsPipeline.Stage] = []
+    private(set) var shares: [LyricsPipeline.Stage: [Double]] = [:]
+    func note(_ stage: LyricsPipeline.Stage, _ share: Double) {
+        if stages.last != stage { stages.append(stage) }
+        shares[stage, default: []].append(share)
+    }
+}
+
 final class LyricsPipelineTests: XCTestCase {
     private let song = Fixtures.url("long30.mp3")
 
@@ -217,9 +232,11 @@ final class LyricsPipelineTests: XCTestCase {
         let activity = FakeVocalActivity(ranges: [0...5])
         let pipeline = LyricsPipeline(transcriber: transcriber, separator: separator, activity: activity, store: store,
                                       workDirectory: dir.url.appendingPathComponent("work"))
-        var stages: [LyricsPipeline.Stage] = []
-        let sheet = try await pipeline.makeSheet(for: song, songKey: "key", language: "en") { stages.append($0) }
-        XCTAssertEqual(stages, [.separating, .transcribing, .finishing])
+        let seen = Progress()
+        let sheet = try await pipeline.makeSheet(for: song, songKey: "key", language: "en") { stage, share in seen.note(stage, share) }
+        XCTAssertEqual(seen.stages, [.separating, .transcribing, .finishing])
+        XCTAssertEqual(seen.shares[.transcribing], [0, 0.5, 1], "the engine's own progress comes through")
+        XCTAssertEqual(seen.shares[.finishing]?.last, 1)
         XCTAssertEqual(separator.separated, [song])
         XCTAssertEqual(transcriber.transcribed.first?.lastPathComponent, "long30-vocals.wav", "the transcriber hears the vocals, not the mix")
         XCTAssertEqual(activity.asked.first?.lastPathComponent, "long30-vocals.wav")

@@ -35,23 +35,25 @@ package final class MDXNetSeparator: VocalSeparating, @unchecked Sendable {
         return model
     }
 
-    package func separateVocals(from url: URL, into directory: URL) async throws -> URL {
+    package func separateVocals(from url: URL, into directory: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let model = try loadedModel()
         let mix = try AudioSamples.read(url)
-        let vocals = try separate(mix, with: model)
+        let vocals = try separate(mix, with: model, progress: progress)
         let out = directory.appendingPathComponent(url.deletingPathExtension().lastPathComponent + "-vocals.wav")
         try AudioSamples.writeWav(vocals, to: out)
+        progress(1)
         return out
     }
 
     /// The whole song, chunk by chunk with a linear crossfade over the overlap.
-    func separate(_ mix: AudioSamples.Stereo, with model: MLModel) throws -> AudioSamples.Stereo {
+    func separate(_ mix: AudioSamples.Stereo, with model: MLModel, progress: @escaping @Sendable (Double) -> Void = { _ in }) throws -> AudioSamples.Stereo {
         let chunk = Self.chunkSamples
         let overlap = chunk / Self.overlapFraction
         let length = mix.left.count
         var outL = [Float](repeating: 0, count: length), outR = outL, weight = outL
         var start = 0
         while start < length {
+            progress(Double(start) / Double(length))
             let valid = min(chunk, length - start)
             var l = Array(mix.left[start..<start + valid]), r = Array(mix.right[start..<start + valid])
             if valid < chunk { l += [Float](repeating: 0, count: chunk - valid); r += [Float](repeating: 0, count: chunk - valid) }

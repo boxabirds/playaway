@@ -471,6 +471,21 @@ import UIKit
 @MainActor final class CardAnimationTests: XCTestCase {
     /// One screenshot, read as drawn right now (accessibility frames always report where something is heading, so they
     /// cannot show an animation): the top edge of the card, and the middle of the round play and pause button.
+    /// The card's top edge in a screenshot: the first light row down the right margin, below the status bar.
+    static func cardTop(in shot: XCUIScreenshot) -> Int? {
+        guard let cg = shot.image.cgImage else { return nil }
+        let scale = shot.image.scale
+        guard let strip = cg.cropping(to: CGRect(x: Int(Double(cg.width) * 0.96), y: 0, width: 1, height: cg.height)) else { return nil }
+        var data = [UInt8](repeating: 0, count: cg.height * 4)
+        let context = CGContext(data: &data, width: 1, height: cg.height, bitsPerComponent: 8, bytesPerRow: 4,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(strip, in: CGRect(x: 0, y: 0, width: 1, height: cg.height))
+        for y in Int(150 * scale)..<cg.height where (Int(data[y * 4]) + Int(data[y * 4 + 1]) + Int(data[y * 4 + 2])) / 3 >= 228 {
+            return Int(Double(y) / scale)
+        }
+        return nil
+    }
+
     private func read(_ app: XCUIApplication) -> (cardTop: Int?, controlsY: Int?) {
         let shot = app.screenshot()
         guard let cg = shot.image.cgImage else { return (nil, nil) }
@@ -548,12 +563,39 @@ import UIKit
     }
 }
 
-/// The owner's requirement, written down so it is not forgotten: when artwork appears or goes, the area expands or shrinks
-/// as a slide while the controls do not move. Skipped because it cannot be met with a system sheet: animating the sheet's
-/// height slides the whole sheet (container and content) up from below, so the controls travel with it. Decision pending.
+/// The owner's requirement: when artwork appears or goes, the area expands or shrinks as a slide, not a snap, while the
+/// controls do not move. Measured on screen: the card's top edge must pass through in-between positions on its way.
 @MainActor final class CardSlideRequirementTests: XCTestCase {
-    func testTheAreaSlidesWhileTheControlsStayPut() throws {
-        throw XCTSkip("blocked: a system sheet cannot animate its height with fixed controls; owner to choose between a snap, a fixed-size sheet with an artwork placeholder, or an app-drawn card")
+    func testTheAreaSlidesWhileTheControlsStayPut() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeArtwork", "-PlayawaySlowAnimations", "-PlayawayAutoNext"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(app.tables["song-table"].waitForExistence(timeout: 15))
+        app.tables["song-table"].cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 20))
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "player-card").firstMatch.waitForExistence(timeout: 30))
+        sleep(8)
+
+        var tops: [Int] = []
+        let deadline = Date().addingTimeInterval(50)               // the app moves to the next song at 10 s and at 30 s
+        while Date() < deadline { if let top = CardAnimationTests.cardTop(in: app.screenshot()) { tops.append(top) } }
+
+        var runs: [[Int]] = []
+        var current: [Int] = [tops[0]]
+        for value in tops.dropFirst() {
+            if value != current.last! { current.append(value) }
+            else { if current.count > 1 { runs.append(current) }; current = [value] }
+        }
+        if current.count > 1 { runs.append(current) }
+        let resizes = runs.filter { abs($0.first! - $0.last!) > 60 }
+        XCTAssertGreaterThanOrEqual(resizes.count, 1, "the card resized as artwork came or went; saw \(runs)")
+        for resize in resizes {
+            XCTAssertGreaterThanOrEqual(resize.count, 3, "the top edge must pass through in-between positions (a slide), not jump: \(resize)")
+        }
     }
 }
 
@@ -797,27 +839,18 @@ import UIKit
         return card
     }
 
-    /// Pulls the sheet up by its handle to the top of the screen, as a finger would; a flick on the content is not
-    /// enough for the system sheet to change its size.
-    private func pullUp(_ app: XCUIApplication, _ card: XCUIElement) {
-        let handle = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: card.frame.midX, dy: card.frame.minY + 12))
-        handle.press(forDuration: 0.2, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)), withVelocity: .slow, thenHoldForDuration: 0.3)
-        sleep(1)
-    }
-
-    func testPullingTheCardUpShowsTheLyricsAndTheCurrentLineFollowsTheSong() {
+    func testTheLyricsSitBelowTheControlsAndTheCurrentLineFollowsTheSong() {
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeLyrics"]; app.launch()
         let card = openCard(app)
-        let playBefore = app.buttons.matching(identifier: "Pause").firstMatch
-        XCTAssertTrue(playBefore.waitForExistence(timeout: 5))
-        let controlsBefore = playBefore.frame
-        XCTAssertFalse(app.staticTexts["lyrics-note"].exists, "the compact card has no lyrics")
-        pullUp(app, card)
-        XCTAssertTrue(app.staticTexts["lyrics-note"].waitForExistence(timeout: 5), "the tall card shows the lyrics and says they are a machine guess")
+        let note = app.staticTexts["lyrics-note"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "the card shows the lyrics and says they are a machine guess")
         XCTAssertTrue(app.staticTexts["lyrics-line-0"].exists)
-        let controlsAfter = app.buttons.matching(identifier: "Pause").firstMatch.frame
-        XCTAssertEqual(controlsAfter.midY, controlsBefore.midY, accuracy: 2, "the controls stay where they were")
-        XCTAssertEqual(controlsAfter.midX, controlsBefore.midX, accuracy: 2)
+        let bigPlay = app.buttons.matching(identifier: "Pause").allElementsBoundByIndex.first { $0.isHittable }
+        XCTAssertNotNil(bigPlay)
+        XCTAssertGreaterThan(note.frame.minY, bigPlay?.frame.maxY ?? .infinity, "the lyrics panel is below the controls")
+        card.swipeUp()                                              // the controls scroll away, the panel comes up
+        sleep(1)
+        XCTAssertTrue(note.exists)
 
         // The seeded sheet has a line every few seconds; the lit line must move on while the song plays.
         func litLine() -> String? {
@@ -850,7 +883,6 @@ import UIKit
     func testWithTheExperimentOffThePanelOnlySaysSo() {
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
         let card = openCard(app)
-        pullUp(app, card)
         let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'experiment'")).firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 5), "the panel says the experiment exists and where to turn it on")
         XCTAssertFalse(app.buttons["lyrics-make"].exists)
@@ -870,7 +902,6 @@ import UIKit
         XCTAssertEqual(toggle.value as? String, "1", "the switch is on")
         app.buttons["Done"].tap()
         let card = openCard(app)
-        pullUp(app, card)
         XCTAssertTrue(app.buttons["lyrics-make"].waitForExistence(timeout: 5), "a song with no sheet offers to make one")
     }
 }

@@ -21,7 +21,7 @@ package final class SpeechAnalyzerTranscriber: LyricTranscribing {
         await SpeechTranscriber.supportedLocales.map(\.identifier)
     }
 
-    package func transcribe(_ url: URL, language: String?) async throws -> [TimedWord] {
+    package func transcribe(_ url: URL, language: String?, progress: @escaping @Sendable (Double) -> Void) async throws -> [TimedWord] {
         let locale = language.map(Locale.init(identifier:)) ?? self.locale
         let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [],
                                             attributeOptions: [.audioTimeRange, .transcriptionConfidence])
@@ -29,9 +29,11 @@ package final class SpeechAnalyzerTranscriber: LyricTranscribing {
             try await request.downloadAndInstall()
         }
         let file = try AVAudioFile(forReading: url)
+        let duration = Double(file.length) / file.processingFormat.sampleRate
         let analyzer = try await SpeechAnalyzer(inputAudioFile: file, modules: [transcriber], finishAfterFile: true)
         var words: [TimedWord] = []
         for try await result in transcriber.results {
+            if duration > 0 { progress(min(CMTimeGetSeconds(CMTimeRangeGetEnd(result.range)) / duration, 1)) }
             let text = result.text
             for run in text.runs {
                 let piece = String(text[run.range].characters)

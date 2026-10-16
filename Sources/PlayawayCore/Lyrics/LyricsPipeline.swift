@@ -26,20 +26,21 @@ package actor LyricsPipeline {
         self.breaking = breaking
     }
 
-    /// The finished sheet, also saved in the store. Throws `LyricsError.nothingTranscribed` when no word survived.
+    /// The finished sheet, also saved in the store. `progress` gets the stage and the share of that stage done, 0 to 1.
+    /// Throws `LyricsError.nothingTranscribed` when no word survived.
     package func makeSheet(for url: URL, songKey: String, language: String?,
-                           progress: @Sendable (Stage) -> Void = { _ in }) async throws -> LyricSheet {
+                           progress: @escaping @Sendable (Stage, Double) -> Void = { _, _ in }) async throws -> LyricSheet {
         var source = url
         var separated = false
         if let separator {
-            progress(.separating)
+            progress(.separating, 0)
             try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
-            source = try await separator.separateVocals(from: url, into: workDirectory)
+            source = try await separator.separateVocals(from: url, into: workDirectory) { progress(.separating, $0) }
             separated = true
         }
-        progress(.transcribing)
-        var words = try await transcriber.transcribe(source, language: language)
-        progress(.finishing)
+        progress(.transcribing, 0)
+        var words = try await transcriber.transcribe(source, language: language) { progress(.transcribing, $0) }
+        progress(.finishing, 0)
         if let activity {
             let ranges = try await activity.vocalRanges(in: source)
             words = gated(words, toVocalRanges: ranges)
@@ -49,6 +50,7 @@ package actor LyricsPipeline {
         let sheet = LyricSheet(songKey: songKey, engine: transcriber.engine, separated: separated, language: language, lines: lines)
         try store.save(sheet)
         if separated { try? FileManager.default.removeItem(at: source) }
+        progress(.finishing, 1)
         return sheet
     }
 }

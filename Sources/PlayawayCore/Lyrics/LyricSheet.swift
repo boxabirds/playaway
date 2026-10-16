@@ -77,12 +77,25 @@ package struct LyricSheet: Codable, Equatable, Sendable {
 package protocol LyricTranscribing: Sendable {
     var engine: LyricEngine { get }
     /// Timed words for the whole file, in order. `language` is a BCP-47 tag when known, nil to let the engine decide.
-    func transcribe(_ url: URL, language: String?) async throws -> [TimedWord]
+    /// `progress` is called with the share of the file done, 0 to 1, as often as the engine knows it.
+    func transcribe(_ url: URL, language: String?, progress: @escaping @Sendable (Double) -> Void) async throws -> [TimedWord]
+}
+
+extension LyricTranscribing {
+    package func transcribe(_ url: URL, language: String?) async throws -> [TimedWord] {
+        try await transcribe(url, language: language, progress: { _ in })
+    }
 }
 
 /// Separates the vocals from a song so the transcriber hears less music. Returns the vocals as an audio file.
 package protocol VocalSeparating: Sendable {
-    func separateVocals(from url: URL, into directory: URL) async throws -> URL
+    func separateVocals(from url: URL, into directory: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL
+}
+
+extension VocalSeparating {
+    package func separateVocals(from url: URL, into directory: URL) async throws -> URL {
+        try await separateVocals(from: url, into: directory, progress: { _ in })
+    }
 }
 
 /// Finds the stretches of a file in which someone is singing, so words outside them can be dropped.

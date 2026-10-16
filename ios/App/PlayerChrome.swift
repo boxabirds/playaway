@@ -10,22 +10,23 @@ enum PlayerBar {
     static func inset(forHeight controller: CGFloat) -> CGFloat { controller + bottomMargin + gapAboveIt }
 }
 
-private enum Chrome {
+enum Chrome {
     static let artworkSide: CGFloat = 44
     static let playButtonSide: CGFloat = 76
     static let playButtonMaxSide: CGFloat = 112
     static let scrubberStep: Double = 1
     static let cardCorner: CGFloat = 24
-    /// The sheet is always this much of the screen, and never changes size: the card is drawn inside it. That way the
-    /// controls cannot move when the card above them grows or shrinks.
-    static let sheetFraction: CGFloat = 0.9
     /// The sheet's height for the instant before the card has measured its content.
-    static let firstSheetHeight: CGFloat = 320
-    /// How tall the card may be before its content scrolls.
-    static let cardMaxFraction: CGFloat = 0.85
-    static let cardResize = Animation.snappy(duration: 0.35)
+    static let firstCardHeight: CGFloat = 320
+    /// How long the card takes to grow or shrink when artwork comes or goes or the lyrics panel changes.
+    static let cardResizeDuration: TimeInterval = 0.35
     /// How far up a drag on the controller must go before it counts as opening the card.
     static let openDragDistance: CGFloat = 24
+    /// The lyrics panel below the controls: a one-line note when the experiment is off, a short panel while there is
+    /// something to do or wait for, and most of the screen once the lyrics are there.
+    static let lyricsNoteHeight: CGFloat = 72
+    static let lyricsPanelHeight: CGFloat = 168
+    static let lyricsPanelFraction: CGFloat = 0.75
 }
 
 /// The floating controller at the bottom, and the player card, which opens in a standard system sheet: the system draws
@@ -48,9 +49,9 @@ struct PlayerChrome: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .sheet(isPresented: $model.cardOpen) {
-                PlayerCard(maxHeight: geo.size.height * Chrome.cardMaxFraction)
-            }
+            .background(CardSheet(isPresented: $model.cardOpen, cornerRadius: Chrome.cardCorner) {
+                PlayerCard(screenHeight: geo.size.height).environmentObject(model)
+            }.frame(width: 0, height: 0).allowsHitTesting(false))
             .onChange(of: active) { _, isActive in if !isActive { model.cardOpen = false } }
         }
         .ignoresSafeArea(.keyboard)
@@ -108,31 +109,49 @@ struct FloatingController: View {
     }
 }
 
+/// The card: handle, playlist link, artwork, title, scrubber and controls, and below them the lyrics panel. It is one
+/// scrolling column whose sheet is exactly as tall as its content (up to the system's limit); pulling up scrolls the
+/// controller and artwork away to reveal the lyrics. There is no blank space: the lyrics panel is a one-line note when
+/// the experiment is off, a short panel while there is something to do or to wait for, and most of the screen once the
+/// words are there. What the card shows is the engine's own state, read where it is drawn; the only thing it keeps is
+/// nothing: its content height goes straight to the sheet.
 struct PlayerCard: View {
     @EnvironmentObject var model: AppModel
-    let maxHeight: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var contentHeight: CGFloat = 0
-    /// True when the card has been pulled up to its tall size, where the lyrics show above the controls.
-    @State private var expanded = false
+    @EnvironmentObject private var resize: CardResize
+    @Environment(\.reportCardContentHeight) private var reportContentHeight
+    let screenHeight: CGFloat
     @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
-    /// What the card shows is the engine's own state, read where it is drawn. The only state here is the height of the
-    /// card's content, which sets the height of the sheet, and whether the card is pulled up. The content is anchored
-    /// to the bottom of the sheet, so when artwork arrives or goes the sheet's top edge moves and the controls, being
-    /// at the bottom, do not. Pulling the card up to the tall size puts the lyrics in the room above the controls.
     var body: some View {
-        let height = min(contentHeight, maxHeight)
-        let compact: PresentationDetent = .height(contentHeight > 0 ? height : Chrome.firstSheetHeight)
-        let selection = Binding<PresentationDetent>(get: { expanded ? .large : compact }, set: { expanded = $0 == .large })
-        return Group {
-            if expanded { expandedContent }
-            else if contentHeight > maxHeight { ScrollView { content }.scrollBounceBehavior(.basedOnSize) } else { content }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                handle
+                playlistLink
+                if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
+                    Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
+                        .frame(maxWidth: .infinity).accessibilityHidden(true)
+                }
+                title
+                scrubber
+                controls
+                LyricsPanel()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: lyricsPanelHeight)
+            }
+            .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportContentHeight($0) }
+            .offset(y: resize.shift)                   // during a resize only: keeps the controls still on screen
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .presentationDetents([compact, .large], selection: selection)
-        .presentationDragIndicator(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
         .accessibilityIdentifier("player-card")
+    }
+
+    private var lyricsPanelHeight: CGFloat {
+        switch model.lyrics.status {
+        case .off: Chrome.lyricsNoteHeight
+        case .ready: screenHeight * Chrome.lyricsPanelFraction
+        case .none, .generating, .failed: Chrome.lyricsPanelHeight
+        }
     }
 
     private var handle: some View {
@@ -151,50 +170,6 @@ struct PlayerCard: View {
 
     private var title: some View {
         Text(model.metadata?.title ?? model.transport.nowPlaying).font(.title2.weight(.bold)).lineLimit(2)
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            handle
-            playlistLink
-            if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
-                Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
-                    .frame(maxWidth: .infinity).accessibilityHidden(true)
-            }
-            title
-            scrubber
-            controls
-        }
-        .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
-        .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { newHeight in
-            if contentHeight == 0 {            // the first measurement is the card appearing, not a resize
-                var transaction = Transaction(); transaction.disablesAnimations = true
-                withTransaction(transaction) { contentHeight = newHeight }
-            } else {
-                withAnimation(reduceMotion ? nil : Chrome.cardResize) { contentHeight = newHeight }
-            }
-        }
-    }
-
-    /// The tall card: the lyrics take the room above a one-line title row; the scrubber and controls stay at the bottom.
-    private var expandedContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            handle
-            playlistLink
-            LyricsPanel()
-            HStack(spacing: 12) {
-                if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
-                    Image(uiImage: image).resizable().scaledToFill()
-                        .frame(width: Chrome.artworkSide, height: Chrome.artworkSide)
-                        .clipShape(RoundedRectangle(cornerRadius: 6)).accessibilityHidden(true)
-                }
-                title
-            }
-            scrubber
-            controls
-        }
-        .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
     }
 
     /// The position slider and the two times. They are drawn on a clock straight from the engine, so they are always the

@@ -35,12 +35,24 @@ package final class WhisperKitTranscriber: LyricTranscribing, @unchecked Sendabl
         return kit
     }
 
-    package func transcribe(_ url: URL, language: String?) async throws -> [TimedWord] {
+    /// How often the share done is read off WhisperKit while it works.
+    private static let progressPoll: Duration = .milliseconds(500)
+
+    package func transcribe(_ url: URL, language: String?, progress: @escaping @Sendable (Double) -> Void) async throws -> [TimedWord] {
         let kit = try await loaded()
         var options = DecodingOptions()
         options.wordTimestamps = true
         options.language = language.map { String($0.prefix(2)) }
+        let kitProgress = kit.progress
+        let poll = Task {
+            while !Task.isCancelled {
+                progress(kitProgress.fractionCompleted)
+                try? await Task.sleep(for: Self.progressPoll)
+            }
+        }
+        defer { poll.cancel() }
         let results = try await kit.transcribe(audioPath: url.path, decodeOptions: options)
+        progress(1)
         var words: [TimedWord] = []
         for segment in results.flatMap(\.segments) {
             for word in segment.words ?? [] where !word.word.hasPrefix("[") {           // "[Pause]" and the like are not lyrics

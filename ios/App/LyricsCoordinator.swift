@@ -11,7 +11,7 @@ final class LyricsCoordinator: ObservableObject {
     enum Status: Equatable {
         case off                       // the experiment is switched off
         case none                      // on, but this song has no sheet yet
-        case generating(String)        // a stage name while a sheet is being made
+        case generating(stage: String, share: Double, since: Date)   // what is being done, how much of it is done, when it began
         case ready
         case failed(String)
     }
@@ -81,11 +81,15 @@ final class LyricsCoordinator: ObservableObject {
                                       separator: settings.separateVocals ? MDXNetSeparator() : nil,
                                       activity: activityDetector(separated: settings.separateVocals),
                                       store: sheets, workDirectory: workDirectory)
-        status = .generating("Starting")
+        let began = Date()
+        status = .generating(stage: "Starting", share: 0, since: began)
         job = Task.detached(priority: .utility) { [weak self] in
             do {
-                let made = try await pipeline.makeSheet(for: url, songKey: key, language: nil) { stage in
-                    Task { @MainActor [weak self] in self?.status = .generating(Self.name(of: stage)) }
+                let made = try await pipeline.makeSheet(for: url, songKey: key, language: nil) { stage, share in
+                    Task { @MainActor [weak self] in
+                        guard let self, case .generating = self.status else { return }
+                        self.status = .generating(stage: Self.name(of: stage), share: share, since: began)
+                    }
                 }
                 await MainActor.run { [weak self] in
                     guard let self, self.currentKey == key else { return }
@@ -164,7 +168,7 @@ final class LyricsCoordinator: ObservableObject {
     /// Documents folder, where the Files app shows it.
     func benchmarkCurrentSong() {
         guard let url = currentURL else { return }
-        status = .generating("Benchmarking")
+        status = .generating(stage: "Benchmarking", share: 0, since: Date())
         let separator = separatorInstalled ? MDXNetSeparator() : nil
         let engines: [(String, any LyricTranscribing)] = [("apple", SpeechAnalyzerTranscriber())] + (whisperInstalled ? [("whisper", WhisperKitTranscriber())] : [])
         let work = workDirectory

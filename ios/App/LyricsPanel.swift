@@ -19,12 +19,8 @@ struct LyricsPanel: View {
                     Text("They are transcribed on this iPhone by \(model.lyrics.settings.engine.displayName) and may be wrong.")
                         .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
-            case .generating(let stage):
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text(stage + "…").font(.subheadline).foregroundStyle(.secondary)
-                    Button("Cancel") { model.lyrics.cancel() }.font(.caption)
-                }
+            case .generating(let stage, let share, let since):
+                LyricsProgress(stage: stage, share: share, since: since) { model.lyrics.cancel() }
             case .failed(let why):
                 VStack(spacing: 12) {
                     message("The lyrics could not be made.", detail: why)
@@ -46,6 +42,42 @@ struct LyricsPanel: View {
         }
         .padding(.horizontal)
         .accessibilityIdentifier("lyrics-status")
+    }
+}
+
+/// What is being done, how far it has got, how long it has taken and a guess at what is left. Whisper on a phone can
+/// take minutes for one song, so a bare spinner is not enough.
+private struct LyricsProgress: View {
+    let stage: String
+    let share: Double
+    let since: Date
+    let cancel: () -> Void
+
+    /// No estimate until this much is done; before that the rate means nothing.
+    private static let estimateAfter = 0.05
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            let spent = context.date.timeIntervalSince(since)
+            VStack(spacing: 10) {
+                ProgressView(value: min(max(share, 0), 1))
+                    .accessibilityIdentifier("lyrics-progress")
+                HStack {
+                    Text("\(stage)… \(Int(share * 100))%").font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(Self.describe(spent: spent, share: share)).font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+                }
+                Button("Cancel", action: cancel).font(.caption)
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    static func describe(spent: TimeInterval, share: Double) -> String {
+        let spentText = "\(TransportViewModel.formatTime(spent)) so far"
+        guard share > estimateAfter else { return spentText }
+        let left = spent / share - spent
+        return spentText + ", about \(TransportViewModel.formatTime(left)) left"
     }
 }
 
