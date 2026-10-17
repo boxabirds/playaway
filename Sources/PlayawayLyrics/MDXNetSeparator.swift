@@ -1,4 +1,5 @@
 import Foundation
+import Accelerate
 import CoreML
 import PlayawayCore
 
@@ -73,28 +74,53 @@ package final class MDXNetSeparator: VocalSeparating, @unchecked Sendable {
     }
 
     /// One chunk of exactly `chunkSamples` per channel: STFT, the network, inverse STFT.
+    /// The model speaks half floats; Accelerate converts whole planes at once, on Apple silicon and Intel alike (the
+    /// `Float16` type itself does not exist on Intel Macs).
+    private static func writeHalves(_ floats: [Float], into array: MLMultiArray) {
+        floats.withUnsafeBufferPointer { source in
+            var from = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: source.baseAddress!), height: 1,
+                                     width: vImagePixelCount(floats.count), rowBytes: floats.count * MemoryLayout<Float>.size)
+            var to = vImage_Buffer(data: array.dataPointer, height: 1, width: vImagePixelCount(floats.count),
+                                   rowBytes: floats.count * MemoryLayout<UInt16>.size)
+            vImageConvert_PlanarFtoPlanar16F(&from, &to, 0)
+        }
+    }
+
+    private static func readHalves(from array: MLMultiArray) -> [Float] {
+        var floats = [Float](repeating: 0, count: array.count)
+        floats.withUnsafeMutableBufferPointer { destination in
+            var from = vImage_Buffer(data: array.dataPointer, height: 1, width: vImagePixelCount(array.count),
+                                     rowBytes: array.count * MemoryLayout<UInt16>.size)
+            var to = vImage_Buffer(data: destination.baseAddress!, height: 1, width: vImagePixelCount(array.count),
+                                   rowBytes: array.count * MemoryLayout<Float>.size)
+            vImageConvert_Planar16FtoPlanarF(&from, &to, 0)
+        }
+        return floats
+    }
+
     func separateChunk(_ l: [Float], _ r: [Float], with model: MLModel) throws -> (left: [Float], right: [Float]) {
         let dimF = Self.dimF, dimT = Self.dimT
         let sl = stft.transform(l), sr = stft.transform(r)
         let input = try MLMultiArray(shape: [1, 4, NSNumber(value: dimF), NSNumber(value: dimT)], dataType: .float16)
-        let p = input.dataPointer.bindMemory(to: Float16.self, capacity: input.count)
+        var planes = [Float](repeating: 0, count: input.count)
         for (plane, spec) in [sl.re, sl.im, sr.re, sr.im].enumerated() {
-            for bin in 0..<dimF { for frame in 0..<dimT { p[((plane * dimF) + bin) * dimT + frame] = Float16(spec[frame][bin]) } }
+            for bin in 0..<dimF { for frame in 0..<dimT { planes[((plane * dimF) + bin) * dimT + frame] = spec[frame][bin] } }
         }
+        Self.writeHalves(planes, into: input)
         let inputName = model.modelDescription.inputDescriptionsByName.keys.first ?? "input"
         let outputName = model.modelDescription.outputDescriptionsByName.keys.first ?? "output"
         let out = try model.prediction(from: MLDictionaryFeatureProvider(dictionary: [inputName: input]))
         guard let stems = out.featureValue(for: outputName)?.multiArrayValue else {
             throw LyricsError.unsupported("The separator model gave no output.")
         }
-        let q = stems.dataPointer.bindMemory(to: Float16.self, capacity: stems.count)
+        let q = Self.readHalves(from: stems)
         var re = [[[Float]]](repeating: [[Float]](repeating: [Float](repeating: 0, count: dimF), count: dimT), count: 2)
         var im = re
         for channel in 0..<2 {
             for bin in 0..<dimF {
                 for frame in 0..<dimT {
-                    re[channel][frame][bin] = Float(q[((channel * 2 * dimF) + bin) * dimT + frame])
-                    im[channel][frame][bin] = Float(q[((channel * 2 + 1) * dimF + bin) * dimT + frame])
+                    re[channel][frame][bin] = q[((channel * 2 * dimF) + bin) * dimT + frame]
+                    im[channel][frame][bin] = q[((channel * 2 + 1) * dimF + bin) * dimT + frame]
                 }
             }
         }
