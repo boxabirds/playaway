@@ -141,7 +141,7 @@ final class FilesIntakeTests: XCTestCase {
         let (doc, fixture) = open("Morning")
         let actions = AppActions(services: app.services)
         actions.isReady = { true }
-        let path = try actions.syncPlaylist("Morning", answering: "move", files: "copy")
+        let path = try actions.syncPlaylist("Morning", answering: "move", files: "copy").path
         XCTAssertEqual(URL(fileURLWithPath: path).canonicalPath, inCloud("Morning.\(playlistFileExtension)"))
         XCTAssertEqual(paths(doc), names(doc).map { inCloud($0) })
         for url in fixture.urls { XCTAssertTrue(FileManager.default.fileExists(atPath: url.path)) }

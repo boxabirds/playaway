@@ -48,4 +48,13 @@ extension AppDelegate {
 extension PlaylistDocument {
     @objc var scriptTrackCount: Int { playlist.tracks.count }
     @objc var scriptFilePath: String { fileURL?.path ?? "" }
+    /// Story 22: the state the window shows, readable by script. Reading changes nothing.
+    @objc var scriptICloudSync: Bool { sync.state == .on }
+    /// Where each song's file is, in row order: location only, never whether it is downloaded (owner decision).
+    @objc var scriptTrackICloudStates: [String] { playlist.tracks.map { isInICloud($0) ? ScriptTrackState.inICloud : ScriptTrackState.notInICloud } }
+}
+
+enum ScriptTrackState {
+    static let inICloud = "in iCloud"
+    static let notInICloud = "not in iCloud"
 }

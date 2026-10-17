@@ -54,6 +54,15 @@
                       description="POSIX path of the saved playlist file, or empty text when not saved yet.">
                 <cocoa key="scriptFilePath"/>
             </property>
+            <property name="iCloud sync" code="lpIS" type="boolean" access="r"
+                      description="Whether the playlist is synced with iCloud: its file is in the Playaway folder, as the activated cloud in its title bar shows.">
+                <cocoa key="scriptICloudSync"/>
+            </property>
+            <property name="track iCloud states" code="lpTS" access="r"
+                      description="Where each track's file is, in order: in iCloud, or not in iCloud. Location only, as the cloud at the end of each row shows; whether a file is on this Mac is not reported.">
+                <type type="text" list="yes"/>
+                <cocoa key="scriptTrackICloudStates"/>
+            </property>
         </class>
 
         <command name="open audio file" code="LPlrOpAF" description="Open an audio file and play it, as opening it from Finder does.">
@@ -115,11 +124,14 @@
             </parameter>
         </command>
 
-        <command name="add track" code="LPlrAddT" description="Add an audio file to an open playlist.">
+        <command name="add track" code="LPlrAddT" description="Add an audio file to an open playlist, as Add Files and a drop do. Into a synced playlist a file not in iCloud gets the Files question, answered by the files parameter.">
             <cocoa class="AddTrackCommand"/>
             <direct-parameter description="POSIX path of an mp3, wav or m4a file." type="text"/>
             <parameter name="to" code="LPto" type="text" description="Name of an open playlist.">
                 <cocoa key="playlist"/>
+            </parameter>
+            <parameter name="files" code="LPfa" type="text" optional="yes" description="The answer to the Files question when the playlist is synced and the file is not in iCloud: move to iCloud, copy to iCloud, or add without syncing (the answer when none is given).">
+                <cocoa key="filesAnswer"/>
             </parameter>
         </command>
 
@@ -166,7 +178,25 @@
             <parameter name="files" code="LPfa" type="text" optional="yes" description="The answer to the Files question for songs not in iCloud: move to iCloud, copy to iCloud, or add without syncing (the answer when none is given).">
                 <cocoa key="filesAnswer"/>
             </parameter>
-            <result type="text" description="POSIX path of the playlist file afterwards."/>
+            <result type="sync report" description="Where the playlist file is afterwards and what was done with its songs."/>
         </command>
+
+        <record-type name="sync report" code="LPsr" description="What a sync did: the counts the on-screen report shows.">
+            <property name="path" code="LPrp" type="text" description="POSIX path of the playlist file afterwards.">
+                <cocoa key="path"/>
+            </property>
+            <property name="moved" code="LPrm" type="integer" description="Songs moved into the playlist's iCloud folder.">
+                <cocoa key="moved"/>
+            </property>
+            <property name="copied" code="LPrc" type="integer" description="Songs copied into the playlist's iCloud folder.">
+                <cocoa key="copied"/>
+            </property>
+            <property name="copied instead" code="LPri" type="integer" description="Songs the script asked to move that were copied instead (another volume, or read only), the number the report box shows.">
+                <cocoa key="copiedInstead"/>
+            </property>
+            <property name="failed" code="LPrf" type="integer" description="Songs that could not be moved or copied and were left where they were.">
+                <cocoa key="failed"/>
+            </property>
+        </record-type>
     </suite>
 </dictionary>

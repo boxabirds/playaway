@@ -15,6 +15,8 @@ enum ScriptError {
     static let iCloudUnavailable = 1009
     /// Proposal: turning sync on could not move the playlist (nothing changed).
     static let syncFailed = 1010
+    /// A scripted play whose download from iCloud failed (number and wording a proposal; PRD story 22 open question 10).
+    static let downloadFailed = 1011
 }
 
 /// A refused command: a number and a plain-language message. A refused command changes nothing.
@@ -45,6 +47,9 @@ struct ScriptFailure: Error, Equatable {
     static let iCloudUnavailable = ScriptFailure(number: ScriptError.iCloudUnavailable,
                                                  message: "iCloud unavailable: \(ICloudAvailability.unavailableReason)")
     static func syncFailed(_ message: String) -> ScriptFailure { ScriptFailure(number: ScriptError.syncFailed, message: message) }
+    static func downloadFailed(_ name: String) -> ScriptFailure {
+        ScriptFailure(number: ScriptError.downloadFailed, message: "\(name) could not be downloaded from iCloud, so it was not played.")
+    }
 }
 
 extension NSScriptCommand {

@@ -244,6 +244,18 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
 
     /// Takes the playlist back from the shared intake flow with songs re-pointed at their new files (story 19): the
     /// same rows in the same order, then every row resolved again so it plays from its new place.
+    /// Where a track's file is, resolved the way the player resolves it (cloud-relative, then beside the playlist).
+    func songURL(for track: Track) -> URL? {
+        services.resolver.resolve(track.reference, besidePlaylistAt: folder).0.resolvedURL
+    }
+
+    /// Whether a track's file is in iCloud (location only; whether it is downloaded is a separate matter). A file
+    /// that cannot be found counts as not in iCloud, as the window draws it.
+    func isInICloud(_ track: Track) -> Bool {
+        guard let url = songURL(for: track) else { return false }
+        return services.cloudSongs.presence(of: url) != .localOnly
+    }
+
     func acceptTransferred(_ updated: Playlist) {
         guard updated.tracks.map(\.id) == playlist.tracks.map(\.id) else { return }
         replacePlaylist(updated, actionName: "Move to iCloud")

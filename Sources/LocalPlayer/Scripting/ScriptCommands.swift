@@ -74,7 +74,7 @@ class LocalPlayerCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
         run { actions in
             guard let name = stringArgument else { throw ScriptFailure.invalid("Sync playlist needs the playlist's name.") }
-            return try actions.syncPlaylist(name, answering: string("playlistAnswer"), files: string("filesAnswer"))
+            return try actions.syncPlaylist(name, answering: string("playlistAnswer"), files: string("filesAnswer")).record
         }
     }
 }
@@ -93,7 +93,7 @@ class LocalPlayerCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
         run { actions in
             guard let file = stringArgument, let playlist = string("playlist") else { throw ScriptFailure.invalid("Add track needs a file and a playlist.") }
-            try actions.addTrack(path: file, toPlaylist: playlist)
+            try actions.addTrack(path: file, toPlaylist: playlist, files: string("filesAnswer"))
             return nil
         }
     }

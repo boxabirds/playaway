@@ -6,6 +6,8 @@ import AppKit
 /// its click cannot drift apart.
 final class AppActions {
     private static let saveWaitSeconds: TimeInterval = 10
+    /// How long a scripted play waits for a download from iCloud before giving up (a proposal; no bound is decided).
+    private static let downloadWaitSeconds: TimeInterval = 110
     private static let runLoopStep: TimeInterval = 0.01
 
     let services: AppServices
@@ -95,18 +97,28 @@ final class AppActions {
         return tracks[position - 1]
     }
 
-    /// Plays a track of an open playlist exactly as a double-click on its row does.
+    /// Plays a track of an open playlist exactly as a double-click on its row does. A song in iCloud but not on this
+    /// Mac starts the same download the window would (story 20) and the command returns once the song is playing,
+    /// or with an error if the download failed (story 22).
     func playTrack(_ position: Int, inPlaylist name: String) throws {
         try ready()
         let document = try document(named: name)
         let track = try track(at: position, in: document)
         document.player.play(track: track)
-        guard document.player.isSessionActive, document.player.current == track else {
-            if services.marks.mark(of: track) == .unreadable {
-                throw ScriptFailure.notFound(track.reference.lastKnownPath)
+        let playing = { document.player.isSessionActive && document.player.current == track }
+        guard !playing() else { return }
+        if let url = document.songURL(for: track) {
+            let song = MacSongs.id(for: url)
+            if services.downloads.state(of: song).isDownloading {
+                waitUntil(seconds: Self.downloadWaitSeconds) { playing() || !self.services.downloads.state(of: song).isDownloading }
+                if playing() { return }
+                throw ScriptFailure.downloadFailed(track.reference.fileName)
             }
-            throw ScriptFailure.invalid("The track could not be played.")
         }
+        if services.marks.mark(of: track) == .unreadable {
+            throw ScriptFailure.notFound(track.reference.lastKnownPath)
+        }
+        throw ScriptFailure.invalid("The track could not be played.")
     }
 
     /// A new untitled playlist. With a path it is saved there; with only a name, in the default save folder.
@@ -161,12 +173,35 @@ final class AppActions {
         }
     }
 
-    func addTrack(path: String, toPlaylist name: String) throws {
+    /// Adds a file as the window's Add Files and a drop do (story 21): into a synced playlist the song then goes
+    /// through the one shared Files flow with the answer given here ("move to iCloud", "copy to iCloud", "add without
+    /// syncing"; none means add without syncing). An answer that would move or copy into iCloud is refused with 1009
+    /// while iCloud is unavailable, before anything is added.
+    func addTrack(path: String, toPlaylist name: String, files filesAnswer: String? = nil) throws {
         try ready()
         let document = try document(named: name)
+        let files = try Self.filesChoice(from: filesAnswer)
         guard FileManager.default.fileExists(atPath: path) else { throw ScriptFailure.notFound(path) }
+        if let files, files != .doNothing, services.cloud.availability.root == nil { throw ScriptFailure.iCloudUnavailable }
         let result = document.addFiles([URL(fileURLWithPath: path)])
         if let rejected = result.rejected.first { throw ScriptFailure.unsupported(rejected.reason) }
+        var done = false
+        Task { @MainActor in
+            await document.sync.bringAdded(result.added, presenter: ScriptedFilesPresenter(files))
+            done = true
+        }
+        waitUntil { done }
+    }
+
+    /// The Files question's answer as a script gives it. Nil when none was given.
+    static func filesChoice(from answer: String?) throws -> FilesChoice? {
+        switch answer?.lowercased() {
+        case nil: return nil
+        case "move", "move to icloud": return .moveToICloud
+        case "copy", "copy to icloud": return .copyToICloud
+        case "add without syncing": return .doNothing
+        default: throw ScriptFailure.invalid("The files answer must be move to iCloud, copy to iCloud or add without syncing.")
+        }
     }
 
     func removeTrack(_ position: Int, fromPlaylist name: String) throws {
@@ -201,11 +236,11 @@ final class AppActions {
     /// Turns iCloud sync on for an open playlist, with the Playlist dialog's answer given in advance ("move" or
     /// "don't sync") so no script waits on a sheet. Returns the playlist file's path afterwards. A playlist already
     /// in iCloud needs no answer. Refused with 1009 while iCloud is unavailable, as the window's switch is disabled.
-    func syncPlaylist(_ name: String, answering answer: String?, files filesAnswer: String? = nil) throws -> String {
+    func syncPlaylist(_ name: String, answering answer: String?, files filesAnswer: String? = nil) throws -> SyncReport {
         try ready()
         let document = try document(named: name)
         guard services.cloud.availability.root != nil else { throw ScriptFailure.iCloudUnavailable }
-        if document.sync.state == .on { return document.fileURL?.path ?? "" }
+        if document.sync.state == .on { return SyncReport(path: document.fileURL?.path ?? "", result: TransferResult()) }
         let choice: PlaylistChoice
         switch answer?.lowercased() {
         case "move": choice = .move
@@ -213,26 +248,26 @@ final class AppActions {
         case nil: throw ScriptFailure.invalid("Sync playlist needs an answer for the Playlist question: move or don't sync.")
         default: throw ScriptFailure.invalid("The answer must be move or don't sync.")
         }
-        let files: FilesChoice?
-        switch filesAnswer?.lowercased() {
-        case nil: files = nil
-        case "move", "move to icloud": files = .moveToICloud
-        case "copy", "copy to icloud": files = .copyToICloud
-        case "add without syncing": files = .doNothing
-        default: throw ScriptFailure.invalid("The files answer must be move to iCloud, copy to iCloud or add without syncing.")
-        }
+        let files = try Self.filesChoice(from: filesAnswer)
         var outcome: PlaylistSyncOutcome?
         Task { @MainActor in
             outcome = await document.sync.turnOn(presenter: ScriptedPlaylistPresenter(choice), filesPresenter: ScriptedFilesPresenter(files))
         }
         waitUntil { outcome != nil }
         switch outcome {
-        case .on(let url): return url.path
-        case .left: return document.fileURL?.path ?? ""
+        case .on(let url): return SyncReport(path: url.path, result: document.sync.lastReport)
+        case .left: return SyncReport(path: document.fileURL?.path ?? "", result: TransferResult())
         case .failed(let why): throw ScriptFailure.syncFailed(why)
         case .unavailable: throw ScriptFailure.iCloudUnavailable
         case nil: throw ScriptFailure.syncFailed("Syncing did not finish.")
         }
+    }
+
+    /// Where each song of an open playlist is: "in iCloud" or "not in iCloud", in row order, as the window shows it.
+    /// Reading changes nothing.
+    func trackICloudStates(_ name: String) throws -> [String] {
+        try ready()
+        return try document(named: name).scriptTrackICloudStates
     }
 
     /// Whether an open playlist has iCloud sync on. Reading changes nothing.
@@ -248,10 +283,27 @@ final class AppActions {
         updater.checkForUpdates()
     }
 
-    private func waitUntil(_ condition: () -> Bool) {
-        let deadline = Date().addingTimeInterval(Self.saveWaitSeconds)
+    private func waitUntil(seconds: TimeInterval = AppActions.saveWaitSeconds, _ condition: () -> Bool) {
+        let deadline = Date().addingTimeInterval(seconds)
         while !condition() && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(Self.runLoopStep))
         }
+    }
+}
+
+/// What a scripted sync did, returned to the script as a record: the path of the playlist file afterwards and the
+/// counts the on-screen report box shows.
+struct SyncReport: Equatable {
+    let path: String
+    let moved: Int, copied: Int, copiedInstead: Int, failed: Int
+
+    init(path: String, result: TransferResult) {
+        self.path = path
+        moved = result.moved; copied = result.copied; copiedInstead = result.copiedInstead; failed = result.failures.count
+    }
+
+    /// The record's fields, keyed as the scripting dictionary names them.
+    var record: [String: Any] {
+        ["path": path, "moved": moved, "copied": copied, "copiedInstead": copiedInstead, "failed": failed]
     }
 }

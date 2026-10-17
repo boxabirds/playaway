@@ -143,10 +143,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
 
     // MARK: Song rows in iCloud (story 20)
 
-    /// Where the row's song file is, resolved the way the player resolves it (cloud-relative, then beside the playlist).
-    private func songURL(for track: Track) -> URL? {
-        services.resolver.resolve(track.reference, besidePlaylistAt: playlistDocument.folder).0.resolvedURL
-    }
+    private func songURL(for track: Track) -> URL? { playlistDocument.songURL(for: track) }
 
     /// What a row's cloud icon shows: the shared row rule over this Mac's answer about the file and the download
     /// coordinator's. Only a synced playlist shows cloud state (an unsynced one shows nothing, as on the iPhone).

@@ -14,6 +14,8 @@ final class PlaylistSyncController {
     }
 
     var state: ICloudSyncState { playlistSyncState(of: document.fileURL, root: services.cloud.root) }
+    /// What the last run of the shared flow did (the counts the on-screen box reports), for the script route.
+    private(set) var lastReport = TransferResult()
 
     var presentation: ICloudButtonPresentation {
         ICloudButtonPresentation(state: state, availability: services.cloud.availability)
@@ -63,6 +65,7 @@ final class PlaylistSyncController {
         let playlist = document.playlist
         let name = document.displayName ?? ""
         let outcome = await flow.run(playlist: playlist, playlistName: name, tracks: tracks, source: source)
+        lastReport = outcome.result
         if outcome.playlist != playlist { document.acceptTransferred(outcome.playlist) }
     }
 
