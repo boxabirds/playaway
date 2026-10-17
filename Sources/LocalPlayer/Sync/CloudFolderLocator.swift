@@ -10,6 +10,9 @@ final class CloudFolderLocator {
     private(set) var root: URL?
     /// Fires after `root` changed.
     let changes = PassthroughSubject<Void, Never>()
+    /// The system's answer for whether a file is in iCloud Drive (anywhere in it), nil when it cannot be asked; the
+    /// same question the phone asks, so both apps sort songs the same way. Tests answer it from a stand-in folder.
+    var isUbiquitous: (URL) -> Bool? = { url in try? url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem }
 
     init(find: @escaping () -> URL?) {
         self.find = find

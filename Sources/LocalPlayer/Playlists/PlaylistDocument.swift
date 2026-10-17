@@ -149,6 +149,27 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
     }
 
     /// Entry point for refreshed and located references. Replaces only that track's reference.
+    /// NSDocument's own errors (a file gone at save time, say) go through the app's one notice channel instead of
+    /// AppKit's modal alert, so the person gets the house style and a test never blocks on a panel.
+    override func presentError(_ error: Error) -> Bool {
+        services.notices.show(.saveFailed(error.localizedDescription))
+        return false
+    }
+
+    override func presentError(_ error: Error, modalFor window: NSWindow, delegate: Any?, didPresent didPresentSelector: Selector?,
+                               contextInfo: UnsafeMutableRawPointer?) {
+        _ = presentError(error)
+    }
+
+    /// Takes the playlist back from the shared intake flow with songs re-pointed at their new files (story 19): the
+    /// same rows in the same order, then every row resolved again so it plays from its new place.
+    func acceptTransferred(_ updated: Playlist) {
+        guard updated.tracks.map(\.id) == playlist.tracks.map(\.id) else { return }
+        replacePlaylist(updated, actionName: "Move to iCloud")
+        statuses.setAll([:])
+        resolveStatuses()
+    }
+
     func apply(_ updatedReference: TrackReference, toTrack id: UUID) {
         guard let index = playlist.index(ofTrackWithID: id), playlist.tracks[index].reference != updatedReference else { return }
         playlist.tracks[index].reference = updatedReference

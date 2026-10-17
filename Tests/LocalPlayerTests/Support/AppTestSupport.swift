@@ -30,6 +30,7 @@ final class TestApp {
                                       settings: VolumeSettingsStore(defaults: defaults))
         services = AppServices(defaults: defaults, engine: engine, notices: notices, resolver: resolver, store: store,
                                shuffleOrder: seededShuffler(), runsTimer: false, cloudRoot: cloudRoot)
+        services.cloud.isUbiquitous = { url in isStrictlyInside(url, folder: cloudRoot()) }   // in the stand-in, "in iCloud" is inside the root
         AppServices.shared = services
         services.connect(controller: controller)
         controller.closeAllDocuments(withDelegate: nil, didCloseAllSelector: nil, contextInfo: nil)

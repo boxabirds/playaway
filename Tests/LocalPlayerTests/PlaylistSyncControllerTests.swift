@@ -28,6 +28,7 @@ final class PlaylistSyncControllerTests: XCTestCase {
 
     private func press(_ window: PlaylistWindowController, answering answer: PlaylistChoice) {
         window.askPlaylistChoice = { answer }
+        window.askFilesChoice = { .doNothing }          // the songs' question (story 19) is answered elsewhere; never a sheet here
         window.syncPressed(nil)
     }
 

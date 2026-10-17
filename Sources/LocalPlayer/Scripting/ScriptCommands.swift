@@ -74,7 +74,7 @@ class LocalPlayerCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
         run { actions in
             guard let name = stringArgument else { throw ScriptFailure.invalid("Sync playlist needs the playlist's name.") }
-            return try actions.syncPlaylist(name, answering: string("playlistAnswer"))
+            return try actions.syncPlaylist(name, answering: string("playlistAnswer"), files: string("filesAnswer"))
         }
     }
 }

@@ -38,8 +38,13 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     let syncButton = NSButton()
     let syncReason = NSTextField(labelWithString: "")
     private let syncRow = NSStackView()
-    /// Test seam: the Playlist dialog is a sheet, so tests answer it here instead.
+    /// Test seams: the Playlist and Files dialogs are sheets, so tests answer them here instead and read the messages.
     var askPlaylistChoice: (() async -> PlaylistChoice)?
+    var askFilesChoice: (() async -> FilesChoice)?
+    private(set) var filesAsked = 0
+    private(set) var filesMessages: [String] = []
+    /// True once a press of the switch has run to the end (the intake flow included), for tests to wait on.
+    private(set) var intakeFinished = false
     /// The symbol the switch shows (symbol images carry no name of their own).
     private(set) var syncSymbolName = ""
     let transport: TransportControlsView
@@ -114,10 +119,16 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     @objc func syncPressed(_ sender: Any?) {
         guard playlistDocument.sync.state == .off, playlistDocument.sync.presentation.isEnabled else { return }
         let presenter: PlaylistPromptPresenting = askPlaylistChoice.map { ClosurePlaylistPresenter($0) } ?? MacPlaylistPresenter(window: window)
+        let filesPresenter: FilesPromptPresenting = askFilesChoice.map { ask in
+            ClosureFilesPresenter(ask: { [weak self] in self?.filesAsked += 1; return await ask() },
+                                  shown: { [weak self] in self?.filesMessages.append($0) })
+        } ?? MacFilesPresenter(window: window)
+        intakeFinished = false
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await playlistDocument.sync.turnOn(presenter: presenter)
+            await playlistDocument.sync.turnOn(presenter: presenter, filesPresenter: filesPresenter)
             refreshSync()
+            intakeFinished = true
         }
     }
 

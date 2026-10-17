@@ -163,6 +163,9 @@
             <parameter name="answering" code="LPan" type="text" optional="yes" description="The answer to the Playlist question: move, or don't sync.">
                 <cocoa key="playlistAnswer"/>
             </parameter>
+            <parameter name="files" code="LPfa" type="text" optional="yes" description="The answer to the Files question for songs not in iCloud: move to iCloud, copy to iCloud, or add without syncing (the answer when none is given).">
+                <cocoa key="filesAnswer"/>
+            </parameter>
             <result type="text" description="POSIX path of the playlist file afterwards."/>
         </command>
     </suite>

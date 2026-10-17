@@ -135,8 +135,9 @@ final class DualPathTests: XCTestCase {
         case ("checkForUpdates", _): return rig.snapshot()      // compared on the updater's own state, see testCheckForUpdates...
 
         case ("syncPlaylist", .ui):
-            rig.window.askPlaylistChoice = { .move }; rig.window.syncPressed(nil); spin { rig.doc.sync.state == .on }
-        case ("syncPlaylist", .script): _ = try rig.actions.syncPlaylist("Morning", answering: "move")
+            rig.window.askPlaylistChoice = { .move }; rig.window.askFilesChoice = { .copyToICloud }
+            rig.window.syncPressed(nil); spin { rig.doc.sync.state == .on && rig.window.intakeFinished }
+        case ("syncPlaylist", .script): _ = try rig.actions.syncPlaylist("Morning", answering: "move", files: "copy")
 
         default: XCTFail("no scenario for \(action) on \(route)")
         }

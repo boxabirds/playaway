@@ -19,22 +19,54 @@ final class PlaylistSyncController {
         ICloudButtonPresentation(state: state, availability: services.cloud.availability)
     }
 
-    /// Turns sync on. A press while on, or while iCloud is unavailable, changes nothing.
+    /// Turns sync on. A press while on, or while iCloud is unavailable, changes nothing. When the playlist has just
+    /// been moved into iCloud, its songs go through the one shared intake flow (story 19) with `filesPresenter`.
     @discardableResult
-    @MainActor func turnOn(presenter: PlaylistPromptPresenting) async -> PlaylistSyncOutcome {
+    @MainActor func turnOn(presenter: PlaylistPromptPresenting, filesPresenter: FilesPromptPresenting) async -> PlaylistSyncOutcome {
         guard let url = document.fileURL else { return .failed("Save the playlist before syncing it.") }   // open question 6
+        let wasOn = state == .on
         let core = PlaylistSyncCore(availability: services.cloud.availability, mover: DocumentMover(document: document), presenter: presenter)
         let outcome = await core.turnOn(playlistAt: url)
-        if case .failed(let why) = outcome { services.notices.show(.syncFailed(why)) }
+        switch outcome {
+        case .failed(let why): services.notices.show(.syncFailed(why))
+        case .on where !wasOn: await bringSongs(presenter: filesPresenter)
+        default: break
+        }
         return outcome
     }
 
-    /// Moves the file with the file coordinator (so the document, a file presenter, is told) and points the
-    /// document at the new place, so its window title and autosave follow the file.
+    /// The turn-on adapter of the shared flow: the playlist's songs, in order, handed to SongIntakeFlow once; the
+    /// question, the transfer, the report and the messages are all the flow's. The document takes the re-pointed rows.
+    @MainActor private func bringSongs(presenter: FilesPromptPresenting) async {
+        let resolver = services.resolver
+        let folder = document.folder
+        let flow = SongIntakeFlow(root: services.cloud.root, isUbiquitous: services.cloud.isUbiquitous, resolve: { track in
+            resolver.resolve(track.reference, besidePlaylistAt: folder).0.resolvedURL
+        }, presenter: presenter)
+        let playlist = document.playlist
+        let name = document.displayName ?? ""
+        let outcome = await flow.run(playlist: playlist, playlistName: name, tracks: playlist.tracks, source: .turnOnSync)
+        if outcome.playlist != playlist { document.acceptTransferred(outcome.playlist) }
+    }
+
+    /// Moves the file with the file coordinator and tells it where the item went, so the document (a file presenter)
+    /// learns of the move instead of taking its file for deleted and asking the person about it on the next save;
+    /// then points the document at the new place, so its window title and autosave follow the file.
     private struct DocumentMover: PlaylistMoving {
         let document: PlaylistDocument
         @MainActor func movePlaylist(from source: URL, to destination: URL) async throws {
-            try SystemTransferFileSystem().move(source, to: destination)
+            let coordinator = NSFileCoordinator(filePresenter: document)
+            var coordinationError: NSError?
+            var thrown: Error?
+            coordinator.coordinate(writingItemAt: source, options: .forMoving, writingItemAt: destination,
+                                   options: .forReplacing, error: &coordinationError) { from, to in
+                do {
+                    try FileManager.default.moveItem(at: from, to: to)
+                    coordinator.item(at: from, didMoveTo: to)
+                } catch { thrown = error }
+            }
+            if let coordinationError { throw coordinationError }
+            if let thrown { throw thrown }
             document.fileURL = destination
             document.fileModificationDate = try? destination.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         }

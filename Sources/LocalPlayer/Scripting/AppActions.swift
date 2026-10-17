@@ -201,7 +201,7 @@ final class AppActions {
     /// Turns iCloud sync on for an open playlist, with the Playlist dialog's answer given in advance ("move" or
     /// "don't sync") so no script waits on a sheet. Returns the playlist file's path afterwards. A playlist already
     /// in iCloud needs no answer. Refused with 1009 while iCloud is unavailable, as the window's switch is disabled.
-    func syncPlaylist(_ name: String, answering answer: String?) throws -> String {
+    func syncPlaylist(_ name: String, answering answer: String?, files filesAnswer: String? = nil) throws -> String {
         try ready()
         let document = try document(named: name)
         guard services.cloud.availability.root != nil else { throw ScriptFailure.iCloudUnavailable }
@@ -213,8 +213,18 @@ final class AppActions {
         case nil: throw ScriptFailure.invalid("Sync playlist needs an answer for the Playlist question: move or don't sync.")
         default: throw ScriptFailure.invalid("The answer must be move or don't sync.")
         }
+        let files: FilesChoice?
+        switch filesAnswer?.lowercased() {
+        case nil: files = nil
+        case "move", "move to icloud": files = .moveToICloud
+        case "copy", "copy to icloud": files = .copyToICloud
+        case "add without syncing": files = .doNothing
+        default: throw ScriptFailure.invalid("The files answer must be move to iCloud, copy to iCloud or add without syncing.")
+        }
         var outcome: PlaylistSyncOutcome?
-        Task { @MainActor in outcome = await document.sync.turnOn(presenter: ScriptedPlaylistPresenter(choice)) }
+        Task { @MainActor in
+            outcome = await document.sync.turnOn(presenter: ScriptedPlaylistPresenter(choice), filesPresenter: ScriptedFilesPresenter(files))
+        }
         waitUntil { outcome != nil }
         switch outcome {
         case .on(let url): return url.path
