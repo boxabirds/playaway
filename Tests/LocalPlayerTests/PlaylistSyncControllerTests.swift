@@ -171,4 +171,34 @@ final class PlaylistSyncControllerTests: XCTestCase {
         spin(timeout: 1) { asked == 1 }
         XCTAssertEqual(asked, 1, "a press now asks")
     }
+
+    func testANameAlreadyInICloudIsRefusedThroughTheWindowWithBothPlaylistsIntact() throws {        // TC-11 (open question 7: one defined state, nothing lost)
+        let theirs = open("Morning", in: cloud.url.appendingPathComponent("Morning"))
+        let mine = open("Morning")                                      // a different playlist with the same name, outside
+        let theirBytes = try Data(contentsOf: theirs.fileURL!), mineBytes = try Data(contentsOf: mine.fileURL!)
+        let mineURL = mine.fileURL!
+        press(app.window(of: mine), answering: .move)
+        spin { !app.notices.shown.isEmpty }
+        XCTAssertEqual(mine.fileURL, mineURL)
+        XCTAssertEqual(mine.sync.state, .off)
+        XCTAssertEqual(try Data(contentsOf: mineURL), mineBytes)
+        XCTAssertEqual(try Data(contentsOf: theirs.fileURL!), theirBytes)
+        XCTAssertEqual(theirs.sync.state, .on)
+        if case .syncFailed(let why) = app.notices.shown.first { XCTAssertTrue(why.contains("Morning"), why) } else { XCTFail("a plain refusal: \(app.notices.shown)") }
+    }
+
+    func testAPlaylistNeverSavedCannotBeSyncedYetAndNothingCrashes() {                               // TC-12 (open question 6: until decided, the switch says to save first)
+        let untitled = app.newDocument()
+        let window = app.window(of: untitled)
+        XCTAssertEqual(untitled.sync.state, .off)
+        XCTAssertEqual(window.syncButton.accessibilityValue() as? String, "off")
+        var asked = 0
+        window.askPlaylistChoice = { asked += 1; return .move }
+        window.syncPressed(nil)
+        spin { !app.notices.shown.isEmpty }
+        XCTAssertEqual(asked, 0, "nothing to move yet, so nothing is asked")
+        XCTAssertNil(untitled.fileURL)
+        XCTAssertEqual(untitled.sync.state, .off)
+        XCTAssertEqual(try? FileManager.default.contentsOfDirectory(atPath: cloud.url.path), [])
+    }
 }
