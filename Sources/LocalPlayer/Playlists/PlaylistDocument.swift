@@ -19,11 +19,15 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
 
     lazy var player: PlaylistPlayer = PlaylistPlayer(
         playlist: { [weak self] in self?.playlist ?? Playlist() },
+        playlistFolder: { [weak self] in self?.folder },
         settings: services.settings, order: services.shuffleOrder, resolver: services.resolver, gate: services.gate,
         classifier: services.classifier, engine: services.engine, marks: services.marks,
         registry: services.registry, reporter: self)
 
     lazy var relinker = MissingTrackRelinker(statuses: statuses, marks: services.marks)
+
+    /// Where the playlist's file is, nil before its first save. A song another device stored is looked for here by name.
+    var folder: URL? { fileURL?.deletingLastPathComponent() }
 
     // MARK: Document type
 
@@ -124,7 +128,7 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         let result = adding(urls, to: playlist, classifier: services.classifier)
         if let first = result.rejected.first { services.notices.show(.unsupported(first.reason)) }
         for track in result.added {
-            if let resolved = services.resolver.resolve(track.reference).0.resolvedURL {
+            if let resolved = services.resolver.resolve(track.reference, besidePlaylistAt: folder).0.resolvedURL {
                 statuses.set(.resolved(resolved), for: track.id)
             }
         }
@@ -174,8 +178,9 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
     func resolveStatuses(completion: (() -> Void)? = nil) {
         let snapshot = playlist.tracks
         let resolver = services.resolver
+        let folder = self.folder
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let results = snapshot.map { (track: $0, result: resolver.resolve($0.reference)) }
+            let results = snapshot.map { (track: $0, result: resolver.resolve($0.reference, besidePlaylistAt: folder)) }
             DispatchQueue.main.async {
                 guard let self else { return }
                 // A track whose reference changed while this ran (a Locate, say) was resolved from a stale

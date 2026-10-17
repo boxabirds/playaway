@@ -8,6 +8,8 @@ package final class PlaylistPlayer: SessionEnding {
     private enum Prepared { case refused, ready(URL) }
 
     private let playlistProvider: () -> Playlist
+    /// Where the playlist's file is (nil before it has one), so a song another device stored can be found beside it.
+    private let playlistFolder: () -> URL?
     private let settings: PlayModeSettings
     private let decider: AdvanceDeciding
     private let order: ShuffleOrdering
@@ -34,13 +36,15 @@ package final class PlaylistPlayer: SessionEnding {
     /// The order the current track was started in, so the decider can carry on from where a removed track was.
     private var startedOrder: [Track] = []
 
-    package init(playlist: @escaping () -> Playlist, settings: PlayModeSettings,
+    package init(playlist: @escaping () -> Playlist, playlistFolder: @escaping () -> URL? = { nil },
+         settings: PlayModeSettings,
          decider: AdvanceDeciding = AdvanceDecider(), order: ShuffleOrdering = ShuffleOrder(),
          resolver: TrackResolving = TrackResolver(), gate: PlaybackGating = PlaybackGate(),
          classifier: FormatClassifying = FormatClassifier(), engine: PlaybackEngine,
          marks: ReadabilityMarkStoring, registry: ActiveSessionRegistry,
          reporter: TrackResolutionReporting? = nil) {
         self.playlistProvider = playlist
+        self.playlistFolder = playlistFolder
         self.settings = settings
         self.decider = decider
         self.order = order
@@ -254,7 +258,7 @@ package final class PlaylistPlayer: SessionEnding {
 
     /// Resolve, gate, classify, in that order, so a blocked track never touches the engine.
     private func prepare(_ track: Track) -> Prepared {
-        let (status, reference) = resolver.resolve(track.reference)
+        let (status, reference) = resolver.resolve(track.reference, besidePlaylistAt: playlistFolder())
         reporter?.trackResolved(id: track.id, status: status, reference: reference)
         switch gate.decide(for: status) {
         case .refuse:

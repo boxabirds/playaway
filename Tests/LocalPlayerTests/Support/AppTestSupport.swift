@@ -13,7 +13,7 @@ final class TestApp {
     let services: AppServices
     let controller: PlaylistDocumentController
 
-    init(hasDevice: Bool = true, store: PlaylistStoring = PlaylistStore()) {
+    init(hasDevice: Bool = true, store: PlaylistStoring = PlaylistStore(), resolver: TrackResolving = TrackResolver()) {
         if !Self.bootstrapped {
             _ = PlaylistDocumentController()      // the first controller created becomes the shared one
             _ = NSApplication.shared
@@ -26,7 +26,7 @@ final class TestApp {
         let defaults = isolatedDefaults()
         let engine = AVPlaybackEngine(backend: backend, devices: StubOutputDevices(hasOutputDevice: hasDevice),
                                       settings: VolumeSettingsStore(defaults: defaults))
-        services = AppServices(defaults: defaults, engine: engine, notices: notices, store: store,
+        services = AppServices(defaults: defaults, engine: engine, notices: notices, resolver: resolver, store: store,
                                shuffleOrder: seededShuffler(), runsTimer: false)
         AppServices.shared = services
         services.connect(controller: controller)
