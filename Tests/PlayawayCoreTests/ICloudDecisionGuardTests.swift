@@ -39,4 +39,13 @@ final class ICloudDecisionGuardTests: XCTestCase {
             XCTAssertFalse(adapter.contains(forbidden), "no flow logic of its own: found \(forbidden)")
         }
     }
+
+    /// Story 21 (TC-99): the drop and Add Files entry in the window reaches the flow only through the sync controller.
+    func testTheMacDropEntryHoldsNoFlowLogicOfItsOwn() throws {
+        let window = try String(contentsOf: root.appendingPathComponent("Sources/LocalPlayer/Playlists/PlaylistWindowController.swift"), encoding: .utf8)
+        XCTAssertTrue(window.contains("sync.bringAdded("), "the drop hands the added songs to the sync controller")
+        for forbidden in ["SongIntakeFlow(", "FilesPrompt.", "runTransfer(", "FileAssessor(", "transferDestination(", ".doNothing", "copiedInsteadReport"] {
+            XCTAssertFalse(window.contains(forbidden), "no flow logic in the window: found \(forbidden)")
+        }
+    }
 }

@@ -46,6 +46,14 @@ final class PlaylistSyncController {
         await bringSongs([track], source: .drop, presenter: presenter)
     }
 
+    /// Songs just added by a drop or by Add Files (story 21): nothing more for a playlist that is not synced; for a
+    /// synced one, the added songs go through the same shared flow as turning sync on does, with the same question,
+    /// answers, report and failure messages, for those songs only.
+    @MainActor func bringAdded(_ tracks: [Track], presenter: FilesPromptPresenting) async {
+        guard state == .on, !tracks.isEmpty else { return }
+        await bringSongs(tracks, source: .drop, presenter: presenter)
+    }
+
     @MainActor private func bringSongs(_ tracks: [Track], source: IntakeSource, presenter: FilesPromptPresenting) async {
         let resolver = services.resolver
         let folder = document.folder

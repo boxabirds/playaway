@@ -383,7 +383,22 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
 
     @objc func addFiles(_ sender: Any?) {
         guard let urls = chooseFilesToAdd(), !urls.isEmpty else { return }
-        playlistDocument.addFiles(urls)
+        dropFiles(urls)
+    }
+
+    /// Songs arriving by a drop or by Add Files (story 21): the rows are added as they always were (unsupported files
+    /// rejected, new rows at the end), then the sync controller takes the added songs through the one shared Files
+    /// flow when the playlist is synced, and does nothing more when it is not. The window holds no flow logic.
+    func dropFiles(_ urls: [URL]) {
+        intakeFinished = false
+        let added = playlistDocument.addFiles(urls).added
+        let presenter = makeFilesPresenter()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await playlistDocument.sync.bringAdded(added, presenter: presenter)
+            refreshRows()
+            intakeFinished = true
+        }
     }
 
     /// Delete and Forward Delete reach here from the table through the responder chain.
@@ -459,7 +474,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         }
         let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         guard !urls.isEmpty else { return false }
-        playlistDocument.addFiles(urls)
+        dropFiles(urls)
         return true
     }
 
