@@ -1,154 +1,176 @@
 import XCTest
 @testable import PlayawayCore
 
-/// The coordinator driving the real shared player and playlist over real audio files, with a scripted download seam.
+/// Story 31, tasks 31.6 and 31.10: the download-on-play coordinator driving the real shared player and playlist over
+/// the repo's real audio fixtures, with a scripted download seam (no real iCloud). Playback starts only when a
+/// download finishes for the song that is still current; a download, a cancel, a failure and every icon tap leave the
+/// playlist, its order and every file untouched.
 final class DownloadOnPlayIntegrationTests: XCTestCase {
+    /// The scripted platform: records the start and cancel commands; which songs are on the device is the test's say.
     private final class ScriptedDownloader: SongDownloading {
-        var started: [SongID] = []
-        var cancelled: [SongID] = []
+        var started: [SongID] = [], cancelled: [SongID] = []
         func startDownload(of song: SongID) { started.append(song) }
         func cancelDownload(of song: SongID) { cancelled.append(song) }
     }
 
-    /// Plays the chosen track through the real player, as the iPhone and the Mac do.
-    private final class RealPlayback: SongPlaybackStarting {
-        let rig: PlayerRig
-        var tracksBySong: [SongID: Track] = [:]
-        init(rig: PlayerRig) { self.rig = rig }
-        func startPlayback(of song: SongID) { if let track = tracksBySong[song] { rig.player.play(track: track) } }
-    }
-
-    private struct Fixture {
-        let rig = PlayerRig()
-        let downloader = ScriptedDownloader()
-        let playback: RealPlayback
-        let coordinator: DownloadOnPlayCoordinator
-        let songs: [SongID]
-
-        init() {
-            playback = RealPlayback(rig: rig)
-            coordinator = DownloadOnPlayCoordinator(downloader: downloader, player: playback)
-            songs = rig.fixture.urls.map { SongID($0.path) }
-            for (song, track) in zip(songs, rig.fixture.tracks) { playback.tracksBySong[song] = track }
+    /// The adapter's side of "start playback": the song id names a track of the real player.
+    private final class Starter: SongPlaybackStarting {
+        var player: PlaylistPlayer!
+        var tracks: [SongID: Track] = [:]
+        private(set) var starts: [SongID] = []
+        func startPlayback(of song: SongID) {
+            starts.append(song)
+            if let track = tracks[song] { player.play(track: track) }
         }
-        var started: [String] { rig.startedNames }
-        var filesBefore: [Data] { rig.fixture.urls.map { try! Data(contentsOf: $0) } }
     }
 
-    func testASongOnTheDevicePlaysAtOnceWithNoDownload() {
-        let f = Fixture()
-        f.coordinator.request(f.songs[0], source: .list, isOnDevice: true)
-        XCTAssertEqual(f.started, ["track1.mp3"])
-        XCTAssertTrue(f.downloader.started.isEmpty)
+    private var fixture: PlaylistFixture!
+    private var engine: AVPlaybackEngine!
+    private var player: PlaylistPlayer!
+    private var downloader: ScriptedDownloader!
+    private var starter: Starter!
+    private var sut: DownloadOnPlayCoordinator!
+    private var ids: [SongID] = []
+    private var bytesBefore: [Data] = []
+
+    override func setUp() {
+        fixture = PlaylistFixture(trackNames: ["track1.mp3", "track2.mp3", "track3.mp3"])
+        engine = makeEngine()
+        starter = Starter()
+        let playlist = fixture.playlist
+        player = PlaylistPlayer(playlist: { playlist }, settings: PlayModeSettings(store: PlayModeStore(defaults: isolatedDefaults())),
+                                engine: engine, marks: ReadabilityMarkStore(), registry: ActiveSessionRegistry())
+        starter.player = player
+        ids = fixture.tracks.map { SongID($0.id.uuidString) }
+        for (id, track) in zip(ids, fixture.tracks) { starter.tracks[id] = track }
+        downloader = ScriptedDownloader()
+        sut = DownloadOnPlayCoordinator(downloader: downloader, player: starter)
+        bytesBefore = fixture.urls.map { try! Data(contentsOf: $0) }
     }
 
-    func testASongNotOnTheDevicePlaysOnlyWhenItsDownloadFinishes() {
-        let f = Fixture()
-        f.coordinator.request(f.songs[2], source: .list, isOnDevice: false)
-        XCTAssertEqual(f.downloader.started, [f.songs[2]])
-        XCTAssertTrue(f.started.isEmpty, "nothing plays while it downloads")
-        XCTAssertEqual(f.rig.engine.state, .idle)
-        f.coordinator.handle(.finished(f.songs[2]))
-        XCTAssertEqual(f.started, ["track3.mp3"])
-        XCTAssertEqual(f.rig.player.current, f.rig.fixture.tracks[2])
+    private func assertNothingElseChanged(file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(fixture.playlist.tracks, fixture.tracks, "the playlist and its order are unchanged", file: file, line: line)
+        XCTAssertEqual(fixture.urls.map { try! Data(contentsOf: $0) }, bytesBefore, "every file is unchanged", file: file, line: line)
     }
 
-    func testPlayIsIgnoredWhileTheCurrentSongDownloadsAndAllowedAfter() {
-        let f = Fixture()
-        f.coordinator.request(f.songs[1], source: .list, isOnDevice: false)
-        XCTAssertEqual(f.coordinator.transportPlay(), .ignored)
-        f.coordinator.handle(.finished(f.songs[1]))
-        XCTAssertEqual(f.coordinator.transportPlay(), .proceed)
+    // MARK: Playback only at finish, only for the current song (TC-30, TC-31)
+
+    func testASongOnTheDevicePlaysAtOnceThroughTheRealPlayer() {                                 // TC-01 with the real player
+        sut.request(ids[0], source: .list, isOnDevice: true)
+        XCTAssertEqual(engine.currentURL, fixture.urls[0])
+        XCTAssertEqual(downloader.started, [])
+        assertNothingElseChanged()
     }
 
-    func testADownloadThatFinishesForAnotherSongKeepsTheFileAndPlaysNothing() {
-        let f = Fixture()
-        f.coordinator.request(f.songs[1], source: .list, isOnDevice: false)
-        f.coordinator.request(f.songs[0], source: .list, isOnDevice: true)        // the person chose another song
-        XCTAssertEqual(f.started, ["track1.mp3"])
-        f.coordinator.handle(.finished(f.songs[1]))
-        XCTAssertEqual(f.started, ["track1.mp3"], "the late download does not interrupt the song now playing")
-        XCTAssertEqual(f.coordinator.state(of: f.songs[1]), .onThisDevice, "but the finished file is kept")
+    func testASongNotOnTheDevicePlaysOnlyWhenItsDownloadFinishesWhileStillCurrent() {              // TC-30
+        sut.request(ids[1], source: .list, isOnDevice: false)
+        XCTAssertNil(engine.currentURL, "nothing plays while it downloads")
+        XCTAssertEqual(downloader.started, [ids[1]])
+        sut.handle(.progress(ids[1], reportedPercent: 50))
+        XCTAssertNil(engine.currentURL)
+        sut.handle(.finished(ids[1]))
+        XCTAssertEqual(engine.currentURL, fixture.urls[1], "it plays when it arrives")
+        XCTAssertEqual(starter.starts, [ids[1]], "one start")
+        assertNothingElseChanged()
     }
 
-    func testAFailedDownloadPlaysNothingAndRetryStartsItAgainWithoutAnAutomaticRetry() {
-        let f = Fixture()
-        f.coordinator.request(f.songs[3], source: .list, isOnDevice: false)
-        f.coordinator.handle(.failed(f.songs[3]))
-        XCTAssertEqual(f.coordinator.state(of: f.songs[3]), .failed)
-        XCTAssertEqual(f.downloader.started.count, 1, "no automatic retry")
-        XCTAssertTrue(f.started.isEmpty)
-        f.coordinator.retry(f.songs[3])
-        XCTAssertEqual(f.downloader.started.count, 2)
-        f.coordinator.handle(.finished(f.songs[3]))
-        XCTAssertEqual(f.started, ["track4.mp3"])
+    func testAFinishForASongNoLongerCurrentIsKeptWithoutInterruptingWhatPlays() {                 // TC-30, TC-41
+        sut.request(ids[1], source: .list, isOnDevice: false)
+        sut.request(ids[0], source: .list, isOnDevice: true)
+        XCTAssertEqual(engine.currentURL, fixture.urls[0])
+        sut.handle(.finished(ids[1]))
+        XCTAssertEqual(engine.currentURL, fixture.urls[0], "the song playing is not interrupted")
+        XCTAssertEqual(sut.state(of: ids[1]), .onThisDevice, "the file is kept")
+        XCTAssertEqual(starter.starts, [ids[0]])
+        assertNothingElseChanged()
     }
 
-    func testCancellingStopsTheDownloadAndNothingPlays() {
-        let f = Fixture()
-        f.coordinator.request(f.songs[4], source: .list, isOnDevice: false)
-        f.coordinator.cancel(f.songs[4])
-        XCTAssertEqual(f.downloader.cancelled, [f.songs[4]])
-        XCTAssertEqual(f.coordinator.state(of: f.songs[4]), .notOnThisDevice)
-        f.coordinator.handle(.finished(f.songs[4]))
-        XCTAssertTrue(f.started.isEmpty)
+    func testARequestForASongAlreadyDownloadingJoinsIt() {                                       // TC-31
+        sut.request(ids[2], source: .list, isOnDevice: false)
+        sut.request(ids[2], source: .next, isOnDevice: false)
+        XCTAssertEqual(downloader.started, [ids[2]], "one download")
+        sut.handle(.finished(ids[2]))
+        XCTAssertEqual(engine.currentURL, fixture.urls[2])
+        XCTAssertEqual(starter.starts, [ids[2]], "one start")
     }
 
-    func testEveryIconTapLeavesThePlaylistOrderAndFilesUnchanged() {
-        let f = Fixture()
-        let playlistBefore = f.rig.playlist
-        let filesBefore = f.filesBefore
-        // Cover every tap rule: a pie cancels, an exclamation mark retries, an outline does nothing.
-        f.coordinator.request(f.songs[1], source: .list, isOnDevice: false)
-        f.coordinator.cancel(f.songs[1])
-        f.coordinator.request(f.songs[2], source: .list, isOnDevice: false)
-        f.coordinator.handle(.failed(f.songs[2]))
-        f.coordinator.retry(f.songs[2])
-        f.coordinator.retry(f.songs[0])           // not failed: ignored
-        f.coordinator.cancel(f.songs[0])          // not downloading: ignored
-        XCTAssertEqual(f.rig.playlist, playlistBefore)
-        XCTAssertEqual(f.filesBefore, filesBefore, "no audio file is changed by any icon tap")
+    func testASlowDownloadNeverRemovesTheSongOrChangesAnything() {                                // TC-40, TC-45
+        sut.request(ids[1], source: .autoAdvance, isOnDevice: false)
+        for percent in stride(from: 0.0, through: 90, by: 10) { sut.handle(.progress(ids[1], reportedPercent: percent)) }
+        XCTAssertEqual(sut.state(of: ids[1]), .downloading(0.9))
+        XCTAssertNil(engine.currentURL)
+        assertNothingElseChanged()
     }
 
-    func testARequestForASongAlreadyDownloadingJoinsThatDownloadInsteadOfStartingAnother() {         // TC-31
-        let f = Fixture()
-        f.coordinator.request(f.songs[2], source: .list, isOnDevice: false)
-        f.coordinator.request(f.songs[2], source: .next, isOnDevice: false)
-        XCTAssertEqual(f.downloader.started, [f.songs[2]], "one download, not two")
-        f.coordinator.handle(.finished(f.songs[2]))
-        XCTAssertEqual(f.started, ["track3.mp3"], "and it plays once")
+    // MARK: Cancel, failure, retry (TC-12, TC-46, TC-11, TC-67, TC-62)
+
+    func testACancelledDownloadPlaysNothingAndChangesNothing() {
+        sut.request(ids[1], source: .list, isOnDevice: false)
+        sut.cancel(ids[1])
+        XCTAssertEqual(downloader.cancelled, [ids[1]])
+        XCTAssertEqual(sut.state(of: ids[1]), .notOnThisDevice)
+        sut.handle(.finished(ids[1]))                                       // a late finish after the cancel
+        XCTAssertNil(engine.currentURL)
+        XCTAssertEqual(starter.starts, [])
+        assertNothingElseChanged()
     }
 
-    func testASlowOrUnfinishedDownloadNeverRemovesTheSongFromThePlaylist() {                          // TC-45
-        let f = Fixture()
-        let before = f.rig.playlist
-        f.coordinator.request(f.songs[1], source: .list, isOnDevice: false)
-        f.coordinator.handle(.progress(f.songs[1], reportedPercent: nil))
-        f.coordinator.handle(.progress(f.songs[1], reportedPercent: 40))
-        XCTAssertEqual(f.rig.playlist, before)
-        XCTAssertNotNil(f.rig.playlist.track(withID: f.rig.fixture.tracks[1].id))
+    func testAFailedDownloadPlaysNothingRetriesNothingAndChangesNothing() {
+        sut.request(ids[1], source: .list, isOnDevice: false)
+        sut.handle(.failed(ids[1]))
+        XCTAssertEqual(sut.state(of: ids[1]), .failed)
+        XCTAssertNil(engine.currentURL)
+        XCTAssertEqual(downloader.started, [ids[1]], "no automatic retry")
+        assertNothingElseChanged()
     }
 
-    func testARetryThatFinishesWhileItsSongIsStillCurrentStartsPlaybackOnce() {                       // TC-62
-        let f = Fixture()
-        f.coordinator.request(f.songs[3], source: .list, isOnDevice: false)
-        f.coordinator.handle(.failed(f.songs[3]))
-        f.coordinator.retry(f.songs[3])
-        f.coordinator.handle(.finished(f.songs[3]))
-        f.coordinator.handle(.finished(f.songs[3]))      // a repeated finish does nothing
-        XCTAssertEqual(f.started, ["track4.mp3"], "playback starts once")
+    func testARetryPlaysOnlyAtFinishWhileStillCurrent() {                                        // TC-62, TC-30 extension
+        sut.request(ids[1], source: .list, isOnDevice: false)
+        sut.handle(.failed(ids[1]))
+        sut.retry(ids[1])
+        XCTAssertEqual(downloader.started, [ids[1], ids[1]])
+        XCTAssertEqual(sut.state(of: ids[1]), .downloading(0))
+        XCTAssertNil(engine.currentURL)
+        sut.handle(.finished(ids[1]))
+        XCTAssertEqual(engine.currentURL, fixture.urls[1])
+        XCTAssertEqual(starter.starts, [ids[1]], "once")
+        assertNothingElseChanged()
     }
 
-    func testAFailureAndACancelLeavePlaylistOrderAndFilesUnchangedAndNeverPlay() {                    // TC-11, TC-12, TC-46, TC-67
-        let f = Fixture()
-        let playlistBefore = f.rig.playlist
-        let filesBefore = f.filesBefore
-        f.coordinator.request(f.songs[1], source: .list, isOnDevice: false)
-        f.coordinator.handle(.failed(f.songs[1]))
-        f.coordinator.request(f.songs[2], source: .list, isOnDevice: false)
-        f.coordinator.cancel(f.songs[2])
-        XCTAssertTrue(f.started.isEmpty)
-        XCTAssertEqual(f.rig.playlist, playlistBefore)
-        XCTAssertEqual(f.filesBefore, filesBefore)
+    // MARK: Every icon tap, with the real player (TC-39, TC-59)
+
+    func testEveryIconTapLeavesThePlaylistAndFilesUntouchedAndStartsNoPlaybackByItself() {
+        // Crossed-out: only a dialog request, which is the caller's to show; nothing here moves.
+        XCTAssertEqual(cloudIconTapAction(state: .crossedOut, kind: .song), .openSyncDialog(.song))
+        XCTAssertEqual(cloudIconTapAction(state: .crossedOut, kind: .playlist), .openSyncDialog(.playlist))
+        // Outline: nothing at all.
+        XCTAssertEqual(cloudIconTapAction(state: .outline, kind: .song), CloudIconTapAction.none)
+        // Pie of a download: the cancel command only.
+        sut.request(ids[1], source: .list, isOnDevice: false)
+        if cloudIconTapAction(state: .pieDownload, kind: .song) == .cancelDownload { sut.cancel(ids[1]) }
+        XCTAssertEqual(downloader.cancelled, [ids[1]])
+        XCTAssertNil(engine.currentURL)
+        // Pie of a sync: the cancel request only (what a cancelled sync leaves behind is PRD open question 9).
+        XCTAssertEqual(cloudIconTapAction(state: .pieSync, kind: .song), .cancelSync)
+        // Exclamation mark: the start command only, then the pie.
+        sut.request(ids[2], source: .list, isOnDevice: false)
+        sut.handle(.failed(ids[2]))
+        if cloudIconTapAction(state: .exclamation, kind: .song) == .retryDownload { sut.retry(ids[2]) }
+        XCTAssertEqual(downloader.started, [ids[1], ids[2], ids[2]])
+        XCTAssertEqual(sut.state(of: ids[2]), .downloading(0))
+        XCTAssertNil(engine.currentURL, "no tap starts playback by itself")
+        XCTAssertEqual(starter.starts, [])
+        assertNothingElseChanged()
+    }
+
+    func testATapOnThePieThatArrivesAfterTheDownloadFinishedDoesNothing() {                       // TC-59
+        sut.request(ids[1], source: .list, isOnDevice: false)
+        sut.handle(.finished(ids[1]))
+        XCTAssertEqual(engine.currentURL, fixture.urls[1])
+        let iconNow: CloudIconState = sut.state(of: ids[1]).isDownloading ? .pieDownload : .outline
+        XCTAssertEqual(cloudIconTapAction(state: iconNow, kind: .song), CloudIconTapAction.none)
+        sut.cancel(ids[1])                                                  // even if it reached the coordinator
+        XCTAssertEqual(downloader.cancelled, [])
+        XCTAssertEqual(engine.currentURL, fixture.urls[1], "still playing")
     }
 }
