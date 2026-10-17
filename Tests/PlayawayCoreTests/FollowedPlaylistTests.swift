@@ -271,4 +271,59 @@ final class FollowedPlaylistTests: XCTestCase {
         XCTAssertEqual(Set(names(onDisk)), ["a.mp3", "mine.mp3", "theirs.mp3"])
         XCTAssertFalse(followed.isEdited, "the one write carried the edit")
     }
+
+    // MARK: Through the player (TC-29 to TC-31): a reload never touches the engine
+
+    private func audioTrack(_ name: String) -> Track {
+        Track(id: UUID(), reference: TrackReference.make(for: dir.copyFixture(name))!)
+    }
+
+    private func playerRig(_ followed: FollowedPlaylist) -> (PlaylistPlayer, AVPlaybackEngine) {
+        let engine = makeEngine()
+        let player = PlaylistPlayer(playlist: { followed.playlist }, settings: PlayModeSettings(store: PlayModeStore(defaults: isolatedDefaults())),
+                                    engine: engine, marks: ReadabilityMarkStore(), registry: ActiveSessionRegistry())
+        return (player, engine)
+    }
+
+    func testAReloadWhileNothingPlaysTouchesNoEngine() {                                        // TC-29
+        let a = audioTrack("track1.mp3")
+        write(Playlist(tracks: [a]))
+        let followed = opened()
+        let (_, engine) = playerRig(followed)
+        otherDeviceWrites(Playlist(tracks: [a, audioTrack("track2.mp3")]))
+        XCTAssertEqual(followed.fileChanged(), .replaced)
+        XCTAssertEqual(engine.state, .idle)
+        XCTAssertNil(engine.currentURL)
+    }
+
+    func testAReloadThatKeepsTheCurrentSongLeavesTheEngineAlone() {                             // TC-30
+        let a = audioTrack("track1.mp3"), b = audioTrack("track2.mp3")
+        write(Playlist(tracks: [a, b]))
+        let followed = opened()
+        let (player, engine) = playerRig(followed)
+        player.start()
+        let playing = engine.currentURL
+        XCTAssertEqual(engine.state, .playing)
+        otherDeviceWrites(Playlist(tracks: [a, b, audioTrack("track3.mp3")]))
+        XCTAssertEqual(followed.fileChanged(), .replaced)
+        XCTAssertEqual(engine.currentURL, playing, "the engine was not asked to do anything")
+        XCTAssertEqual(engine.state, .playing)
+        XCTAssertEqual(player.current?.id, a.id)
+        XCTAssertEqual(followed.playlist.tracks.count, 3)
+    }
+
+    func testAReloadThatRemovesTheCurrentSongLetsItPlayOnAndThenFollowsTheNewOrder() {          // TC-31
+        let a = audioTrack("track1.mp3"), b = audioTrack("track2.mp3")
+        write(Playlist(tracks: [a, b]))
+        let followed = opened()
+        let (player, engine) = playerRig(followed)
+        player.start()
+        let playing = engine.currentURL
+        otherDeviceWrites(Playlist(tracks: [b, audioTrack("track3.mp3")]))          // the other device removed a
+        XCTAssertEqual(followed.fileChanged(), .replaced)
+        XCTAssertEqual(engine.currentURL, playing, "the removed song plays on to its end")
+        XCTAssertEqual(engine.state, .playing)
+        player.next()
+        XCTAssertEqual(engine.currentURL?.lastPathComponent, "track2.mp3", "the next step follows the new order")
+    }
 }
