@@ -97,3 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return panel.runModal() == .OK ? panel.url : nil
     }
 }
+
+extension AppDelegate {
+    /// A sign-in or sign-out of iCloud shows the next time the app comes to the front, without a relaunch.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        services?.cloud.refresh()
+    }
+}

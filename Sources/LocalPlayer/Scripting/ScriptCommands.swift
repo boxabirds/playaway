@@ -70,6 +70,15 @@ class LocalPlayerCommand: NSScriptCommand {
     }
 }
 
+@objc(SyncPlaylistCommand) final class SyncPlaylistCommand: LocalPlayerCommand {
+    override func performDefaultImplementation() -> Any? {
+        run { actions in
+            guard let name = stringArgument else { throw ScriptFailure.invalid("Sync playlist needs the playlist's name.") }
+            return try actions.syncPlaylist(name, answering: string("playlistAnswer"))
+        }
+    }
+}
+
 @objc(RenamePlaylistCommand) final class RenamePlaylistCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
         run { actions in

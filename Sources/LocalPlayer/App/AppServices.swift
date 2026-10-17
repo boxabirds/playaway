@@ -18,6 +18,8 @@ final class AppServices {
     let gate: PlaybackGating
     let store: PlaylistStoring
     let transport: TransportViewModel
+    /// The Playaway folder in iCloud Drive on this Mac, when there is one.
+    let cloud: CloudFolderLocator
     private(set) var openCoordinator: OpenCoordinator!
     private(set) var playlistRouter: PlaylistOpenRouter!
     private(set) var lastSingleFile: URL?
@@ -26,17 +28,20 @@ final class AppServices {
          engine: PlaybackEngine? = nil,
          notices: NoticePresenting = NoticePresenter(),
          classifier: FormatClassifying = FormatClassifier(),
-         resolver: TrackResolving = TrackResolver(),
+         resolver: TrackResolving? = nil,
          gate: PlaybackGating = PlaybackGate(),
          store: PlaylistStoring = PlaylistStore(),
          shuffleOrder: ShuffleOrdering = ShuffleOrder(),
-         runsTimer: Bool = true) {
+         runsTimer: Bool = true,
+         cloudRoot: @escaping () -> URL? = { CloudFolder.documentsOnThisDevice() }) {
         self.defaults = defaults
         self.engine = engine ?? AVPlaybackEngine(settings: VolumeSettingsStore(defaults: defaults))
         self.settings = PlayModeSettings(store: PlayModeStore(defaults: defaults))
         self.notices = notices
         self.classifier = classifier
-        self.resolver = resolver
+        let cloud = CloudFolderLocator(find: cloudRoot)
+        self.cloud = cloud
+        self.resolver = resolver ?? TrackResolver(cloudDocuments: cloud.root)
         self.gate = gate
         self.store = store
         self.shuffleOrder = shuffleOrder

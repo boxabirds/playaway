@@ -15,6 +15,8 @@ final class DualPathTests: XCTestCase {
         let actions: AppActions
         let dir = TempDir("dual")
         let audio = TempDir("dualaudio")
+        /// Stands in for the Playaway folder in iCloud Drive.
+        let cloud = TempDir("dualcloud")
         let fixture = PlaylistFixture(trackNames: ["track1.mp3", "track2.mp3", "track3.mp3"])
         var doc: PlaylistDocument!
         var transportView: TransportControlsView!
@@ -23,7 +25,8 @@ final class DualPathTests: XCTestCase {
         var updateChecks = 0
 
         init(withPlaylist: Bool = true) {
-            app = TestApp()
+            let root = cloud.url
+            app = TestApp(cloudRoot: { root })
             actions = AppActions(services: app.services)
             actions.isReady = { true }
             actions.defaultSaveDirectory = dir.url
@@ -44,7 +47,7 @@ final class DualPathTests: XCTestCase {
                 }
             }
             let defaults = app.services.defaults
-            return StateSnapshot(playing: actions.isPlaying, current: actions.currentTrackName, position: actions.position,
+            var snapshot = StateSnapshot(playing: actions.isPlaying, current: actions.currentTrackName, position: actions.position,
                                  volume: actions.volumePercent, muted: actions.isMuted, shuffle: actions.shuffleOn, repeatMode: actions.repeatName,
                                  playlists: playlists, startedNames: app.backend.startedNames,
                                  savedVolume: defaults.object(forKey: volumeSettingKey) as? Double,
@@ -52,6 +55,8 @@ final class DualPathTests: XCTestCase {
                                  savedShuffle: defaults.object(forKey: shuffleSettingKey) as? Bool,
                                  savedRepeat: defaults.object(forKey: repeatSettingKey) as? String,
                                  fileNames: ((try? FileManager.default.contentsOfDirectory(atPath: dir.url.path)) ?? []).sorted())
+            snapshot.synced = Dictionary(uniqueKeysWithValues: app.controller.playlistDocuments.map { ($0.displayName, $0.sync.state == .on) })
+            return snapshot
         }
     }
 
@@ -129,6 +134,10 @@ final class DualPathTests: XCTestCase {
 
         case ("checkForUpdates", _): return rig.snapshot()      // compared on the updater's own state, see testCheckForUpdates...
 
+        case ("syncPlaylist", .ui):
+            rig.window.askPlaylistChoice = { .move }; rig.window.syncPressed(nil); spin { rig.doc.sync.state == .on }
+        case ("syncPlaylist", .script): _ = try rig.actions.syncPlaylist("Morning", answering: "move")
+
         default: XCTFail("no scenario for \(action) on \(route)")
         }
         return rig.snapshot()
@@ -137,11 +146,11 @@ final class DualPathTests: XCTestCase {
     /// Every action the manifest lists has a case; adding one without a case fails this test (TC-67 / TC-68).
     static let covered: Set<String> = ["openFile", "play", "playTrack", "pause", "stop", "seek", "next", "previous", "volume", "mute",
                                        "shuffle", "repeat", "newPlaylist", "renamePlaylist", "addTrack", "removeTrack", "reorderTrack",
-                                       "locate", "checkForUpdates"]
+                                       "locate", "checkForUpdates", "syncPlaylist"]
 
     func testEveryManifestActionHasADualRouteCase() {
         XCTAssertEqual(Set(ActionManifest.actions.map(\.id)), Self.covered, "an action without a dual-route case fails the suite")
-        XCTAssertEqual(Self.covered.count, 19, "19 UI cases and 19 script cases")
+        XCTAssertEqual(Self.covered.count, 20, "20 UI cases and 20 script cases")
     }
 
     func testBothRoutesGiveTheSameResultForEveryAction() throws {

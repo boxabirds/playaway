@@ -20,6 +20,10 @@ enum WindowElementWalker {
         content.layoutSubtreeIfNeeded()
         var found: [ObservedElement] = []
         walk(content, into: &found)
+        for accessory in window.titlebarAccessoryViewControllers {    // the title bar's own controls count too
+            accessory.view.layoutSubtreeIfNeeded()
+            walk(accessory.view, into: &found)
+        }
         return found.sorted { ($0.id ?? "", $0.role) < ($1.id ?? "", $1.role) }
     }
 

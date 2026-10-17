@@ -196,6 +196,41 @@ final class AppActions {
         }
     }
 
+    // MARK: iCloud sync (story 18)
+
+    /// Turns iCloud sync on for an open playlist, with the Playlist dialog's answer given in advance ("move" or
+    /// "don't sync") so no script waits on a sheet. Returns the playlist file's path afterwards. A playlist already
+    /// in iCloud needs no answer. Refused with 1009 while iCloud is unavailable, as the window's switch is disabled.
+    func syncPlaylist(_ name: String, answering answer: String?) throws -> String {
+        try ready()
+        let document = try document(named: name)
+        guard services.cloud.availability.root != nil else { throw ScriptFailure.iCloudUnavailable }
+        if document.sync.state == .on { return document.fileURL?.path ?? "" }
+        let choice: PlaylistChoice
+        switch answer?.lowercased() {
+        case "move": choice = .move
+        case "don't sync", "don’t sync", "dont sync": choice = .dontSync
+        case nil: throw ScriptFailure.invalid("Sync playlist needs an answer for the Playlist question: move or don't sync.")
+        default: throw ScriptFailure.invalid("The answer must be move or don't sync.")
+        }
+        var outcome: PlaylistSyncOutcome?
+        Task { @MainActor in outcome = await document.sync.turnOn(presenter: ScriptedPlaylistPresenter(choice)) }
+        waitUntil { outcome != nil }
+        switch outcome {
+        case .on(let url): return url.path
+        case .left: return document.fileURL?.path ?? ""
+        case .failed(let why): throw ScriptFailure.syncFailed(why)
+        case .unavailable: throw ScriptFailure.iCloudUnavailable
+        case nil: throw ScriptFailure.syncFailed("Syncing did not finish.")
+        }
+    }
+
+    /// Whether an open playlist has iCloud sync on. Reading changes nothing.
+    func isPlaylistSynced(_ name: String) throws -> Bool {
+        try ready()
+        return try document(named: name).sync.state == .on
+    }
+
     // MARK: Updates
 
     func checkForUpdates() throws {

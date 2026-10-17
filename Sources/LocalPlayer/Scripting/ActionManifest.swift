@@ -19,7 +19,7 @@ enum ExcludedSystemItems {
     static let documentMenuTitles: Set<String> = ["Open…", "Open Recent", "Clear Menu", "Close", "Save", "Undo", "Redo", "Select All"]
 }
 
-/// The single list of actions behind the windows, the menus and the scripting dictionary. 19 today.
+/// The single list of actions behind the windows, the menus and the scripting dictionary. 20 today.
 enum ActionManifest {
     static let actions: [ManifestAction] = [
         ManifestAction(id: "openFile", description: "Open an audio file and play it.", uiBinding: "File > Open Audio File…", scriptBinding: "open audio file"),
@@ -41,6 +41,7 @@ enum ActionManifest {
         ManifestAction(id: "reorderTrack", description: "Move a track to another position.", uiBinding: "Drag a track row", scriptBinding: "move track"),
         ManifestAction(id: "locate", description: "Point a missing track at its file.", uiBinding: "Track row context menu > Locate…", scriptBinding: "locate track"),
         ManifestAction(id: "checkForUpdates", description: "Check for a newer version.", uiBinding: "LocalPlayer > Check for Updates…", scriptBinding: "check for updates"),
+        ManifestAction(id: "syncPlaylist", description: "Turn iCloud sync on for a playlist.", uiBinding: "Title-bar cloud button", scriptBinding: "sync playlist"),
     ]
 }
 

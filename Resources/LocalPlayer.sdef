@@ -156,5 +156,14 @@
         <command name="check for updates" code="LPlrChkU" description="Check for a newer version, as the Check for Updates menu item does.">
             <cocoa class="CheckForUpdatesCommand"/>
         </command>
+
+        <command name="sync playlist" code="LPlrSynP" description="Turn iCloud sync on for an open playlist, as the cloud button in its title bar does. A playlist outside iCloud is moved into the Playaway folder when the answer is move.">
+            <cocoa class="SyncPlaylistCommand"/>
+            <direct-parameter description="Name of an open playlist." type="text"/>
+            <parameter name="answering" code="LPan" type="text" optional="yes" description="The answer to the Playlist question: move, or don't sync.">
+                <cocoa key="playlistAnswer"/>
+            </parameter>
+            <result type="text" description="POSIX path of the playlist file afterwards."/>
+        </command>
     </suite>
 </dictionary>

@@ -22,6 +22,8 @@ struct StateSnapshot: Equatable {
     var savedShuffle: Bool?
     var savedRepeat: String?
     var fileNames: [String]
+    /// Which open playlists have iCloud sync on (story 18).
+    var synced: [String: Bool] = [:]
 }
 
 @MainActor
@@ -346,8 +348,8 @@ final class SdefAndParityTests: XCTestCase {
     }
 
     func testNineteenActionsAndTheGatePasses() {                                                  // TC-63 / TC-68
-        XCTAssertEqual(ActionManifest.actions.count, 19)
-        XCTAssertEqual(Set(ActionManifest.actions.map(\.id)).count, 19)
+        XCTAssertEqual(ActionManifest.actions.count, 20)
+        XCTAssertEqual(Set(ActionManifest.actions.map(\.id)).count, 20)
         let entries = ParityGate.dictionaryEntries(sdef: sdefData)
         let result = ParityGate.checkParity(manifest: ActionManifest.actions, dictionaryEntries: entries, excluded: ExcludedSystemItems.ids)
         XCTAssertTrue(result.passed, "\(result)")

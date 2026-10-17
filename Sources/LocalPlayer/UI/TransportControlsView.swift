@@ -22,6 +22,9 @@ enum ElementID {
     static let emptyHint = "playlist.empty"
     static let trackPosition = "playback.track_position"
     static let count = "playlist.count"
+    /// The playlist's iCloud sync switch in the title bar, and the one-line reason shown when it is disabled.
+    static let sync = "playlist.sync"
+    static let syncReason = "playlist.sync_reason"
 }
 
 /// The top area of a playlist window: what is playing and the controls for it, sized by how often each is used.

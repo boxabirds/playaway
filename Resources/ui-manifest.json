@@ -18,7 +18,8 @@
       { "element": "playlist.empty", "job": "manage_playlists" },
       { "element": "playlist.add", "job": "manage_playlists" },
       { "element": "playlist.remove", "job": "manage_playlists" },
-      { "element": "playlist.count", "job": "manage_playlists" }
+      { "element": "playlist.count", "job": "manage_playlists" },
+      { "element": "playlist.sync", "job": "manage_playlists" }
     ]
   }
 }

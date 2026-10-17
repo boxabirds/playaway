@@ -11,6 +11,10 @@ enum ScriptError {
     static let noSuchTrack = 1006
     static let locateFailed = 1007
     static let notReady = 1008
+    /// Owner decision 2026-10-13: a command that needs iCloud while iCloud is unavailable.
+    static let iCloudUnavailable = 1009
+    /// Proposal: turning sync on could not move the playlist (nothing changed).
+    static let syncFailed = 1010
 }
 
 /// A refused command: a number and a plain-language message. A refused command changes nothing.
@@ -38,6 +42,9 @@ struct ScriptFailure: Error, Equatable {
         ScriptFailure(number: ScriptError.locateFailed, message: message)
     }
     static let notReady = ScriptFailure(number: ScriptError.notReady, message: "The app is not ready yet.")
+    static let iCloudUnavailable = ScriptFailure(number: ScriptError.iCloudUnavailable,
+                                                 message: "iCloud unavailable: \(ICloudAvailability.unavailableReason)")
+    static func syncFailed(_ message: String) -> ScriptFailure { ScriptFailure(number: ScriptError.syncFailed, message: message) }
 }
 
 extension NSScriptCommand {

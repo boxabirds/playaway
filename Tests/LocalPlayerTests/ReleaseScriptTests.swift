@@ -287,7 +287,7 @@ final class BuildScriptTests: XCTestCase {
         let w = try ScriptWorkspace()
         try w.stageBuildProducts()
         _ = try build(w, extra: ["SIGNING_IDENTITY": adHocIdentity])
-        XCTAssertEqual(w.logLines("swift"), ["build -c release --arch arm64 --arch x86_64"], "BUILD_DIR is preset, so the bin path is not asked for")
+        XCTAssertEqual(w.logLines("swift"), ["build -c release --arch arm64 --arch x86_64 --product LocalPlayer"], "BUILD_DIR is preset, so the bin path is not asked for; only the Mac product is built")
     }
 
     private func isMachO(_ url: URL) -> Bool {

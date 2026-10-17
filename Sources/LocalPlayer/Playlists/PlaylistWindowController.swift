@@ -34,6 +34,14 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     let removeButton = NSButton()
     let countLabel = NSTextField(labelWithString: "")
     let emptyHint = NSTextField(wrappingLabelWithString: PlaylistWindowController.emptyHintText)
+    /// The playlist's iCloud sync switch, to the right of the name in the title bar, and the reason it is disabled.
+    let syncButton = NSButton()
+    let syncReason = NSTextField(labelWithString: "")
+    private let syncRow = NSStackView()
+    /// Test seam: the Playlist dialog is a sheet, so tests answer it here instead.
+    var askPlaylistChoice: (() async -> PlaylistChoice)?
+    /// The symbol the switch shows (symbol images carry no name of their own).
+    private(set) var syncSymbolName = ""
     let transport: TransportControlsView
     let modes: PlayModeControls
 
@@ -56,8 +64,61 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         super.init(window: window)
         shouldCascadeWindows = true
         buildContent(in: window)
+        installSyncSwitch(in: window)
         bind()
         reload()
+    }
+
+    // MARK: iCloud sync switch (story 18)
+
+    private func installSyncSwitch(in window: NSWindow) {
+        syncButton.title = ""
+        syncButton.imagePosition = .imageOnly
+        syncButton.isBordered = false
+        syncButton.target = self
+        syncButton.action = #selector(syncPressed(_:))
+        syncButton.setAccessibilityIdentifier(ElementID.sync)
+        syncReason.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        syncReason.textColor = .secondaryLabelColor
+        syncReason.setAccessibilityIdentifier(ElementID.syncReason)
+        let row = syncRow
+        row.addArrangedSubview(syncReason)
+        row.addArrangedSubview(syncButton)
+        row.orientation = .horizontal
+        row.spacing = Self.rowSpacing
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: Self.rowSpacing)
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = row
+        accessory.layoutAttribute = .trailing
+        window.addTitlebarAccessoryViewController(accessory)
+        services.cloud.changes.receive(on: DispatchQueue.main).sink { [weak self] in self?.refreshSync() }.store(in: &cancellables)
+        refreshSync()
+    }
+
+    /// The switch follows where the file is and whether iCloud can be reached; the mapping is the shared one.
+    func refreshSync() {
+        let presentation = playlistDocument.sync.presentation
+        syncSymbolName = presentation.symbolName
+        syncButton.image = NSImage(systemSymbolName: presentation.symbolName, accessibilityDescription: presentation.accessibilityLabel)
+        syncButton.contentTintColor = playlistDocument.sync.state == .on ? .controlAccentColor : .secondaryLabelColor
+        syncButton.isEnabled = presentation.isEnabled
+        syncButton.toolTip = presentation.reason ?? presentation.accessibilityLabel
+        syncButton.setAccessibilityLabel(presentation.accessibilityLabel)
+        syncButton.setAccessibilityValue(presentation.accessibilityValue)
+        syncReason.stringValue = presentation.reason ?? ""
+        syncReason.isHidden = presentation.reason == nil
+        syncRow.frame.size = syncRow.fittingSize          // an accessory view has no size until shown; the element walk needs one
+    }
+
+    /// Pressing the crossed-out cloud turns sync on; pressing the activated cloud, or a disabled switch, does nothing.
+    @objc func syncPressed(_ sender: Any?) {
+        guard playlistDocument.sync.state == .off, playlistDocument.sync.presentation.isEnabled else { return }
+        let presenter: PlaylistPromptPresenting = askPlaylistChoice.map { ClosurePlaylistPresenter($0) } ?? MacPlaylistPresenter(window: window)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await playlistDocument.sync.turnOn(presenter: presenter)
+            refreshSync()
+        }
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
@@ -219,6 +280,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         countLabel.isHidden = count == 0
         removeButton.isEnabled = !tableView.selectedRowIndexes.isEmpty
         services.transport.refresh()      // "Track 2 of 5" follows edits
+        refreshSync()
     }
 
     // MARK: Table data

@@ -194,6 +194,13 @@ package final class PlaylistLibrary {
         }
     }
 
+    /// Where a playlist lives in the shared iCloud folder: its own folder, named after it, with the file inside. One
+    /// rule for both apps, so a playlist the Mac moves in is found by the phone and the other way round.
+    package static func cloudPlaylistLocation(in root: URL, name: String) -> (directory: URL, file: URL) {
+        let directory = root.appendingPathComponent(name, isDirectory: true)
+        return (directory, directory.appendingPathComponent(name).appendingPathExtension(playlistFileExtension))
+    }
+
     /// Moves a playlist file from this phone into the shared iCloud folder, as `Name/Name.lplaylist`. This is the one
     /// operation that changes where files live; it moves the file, it does not copy it, and it refuses a name that is
     /// already taken, leaving the source untouched.
@@ -202,8 +209,7 @@ package final class PlaylistLibrary {
         guard layout == .folderPerPlaylist else { throw LibraryError.notAPlaylist }
         guard source.pathExtension == playlistFileExtension else { throw LibraryError.notAPlaylist }
         let name = source.deletingPathExtension().lastPathComponent
-        let directory = folder.appendingPathComponent(name)
-        let destination = directory.appendingPathComponent(name).appendingPathExtension(playlistFileExtension)
+        let (directory, destination) = Self.cloudPlaylistLocation(in: folder, name: name)
         guard fileManager.fileExists(atPath: source.path) else { throw LibraryError.writeFailed("The playlist file is no longer there.") }
         guard !fileManager.fileExists(atPath: directory.path) else { throw LibraryError.alreadyExists }
         do { try fileManager.createDirectory(at: directory, withIntermediateDirectories: true) }

@@ -25,6 +25,8 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         registry: services.registry, reporter: self)
 
     lazy var relinker = MissingTrackRelinker(statuses: statuses, marks: services.marks)
+    /// iCloud sync for this playlist: on when its file is in the Playaway folder (story 18).
+    lazy var sync = PlaylistSyncController(document: self, services: services)
 
     /// Where the playlist's file is, nil before its first save. A song another device stored is looked for here by name.
     var folder: URL? { fileURL?.deletingLastPathComponent() }
