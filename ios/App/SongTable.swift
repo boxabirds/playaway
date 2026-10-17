@@ -73,7 +73,7 @@ struct SongTable: UIViewRepresentable {
             let cell = tableView.dequeueReusableCell(withIdentifier: Self.cellID, for: indexPath)
             let track = session.playlist.tracks[indexPath.row]
             let playing = track.id == currentID
-            let display = model?.cloudDisplay(for: track)
+            let display = model?.cloudDisplay(for: track, in: session)
             let name = track.reference.fileName.fileNameWithoutExtension
             cell.contentConfiguration = UIHostingConfiguration {
                 HStack {

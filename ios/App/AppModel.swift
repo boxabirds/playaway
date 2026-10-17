@@ -22,14 +22,16 @@ final class PlaylistSession: ObservableObject {
         var provider: () -> Playlist = { playlist }
         let box = Box()
         provider = { box.session?.playlist ?? playlist }
-        player = PlaylistPlayer(playlist: provider, settings: model.settings, engine: model.engine,
-                                marks: model.marks, registry: model.registry)
+        player = PlaylistPlayer(playlist: provider, playlistFolder: { box.session?.folder }, settings: model.settings,
+                                resolver: model.resolver, engine: model.engine, marks: model.marks, registry: model.registry)
         box.session = self
         player.changes.sink { [weak self] in self?.objectWillChange.send() }.store(in: &cancellables)
     }
     private final class Box { weak var session: PlaylistSession? }
 
     var name: String { url.deletingPathExtension().lastPathComponent }
+    /// Where the playlist's file is; a song another device stored is looked for here by name.
+    var folder: URL { url.deletingLastPathComponent() }
 
     /// The playlist now lives at a new place, for example after its unsaved songs were saved to a file.
     func rebase(to newURL: URL) {
@@ -83,6 +85,16 @@ final class OpenAdapter: PlaylistOpening, NoticePresenting {
     func show(_ notice: Notice) { MainActor.assumeIsolated { model?.failureMessage = notice.title } }
 }
 
+/// The resolver every session shares. Its iCloud folder is filled in once the system says where the Playaway folder
+/// is, so a song another device stored can be found at the same place here.
+final class LiveResolver: TrackResolving {
+    var current = TrackResolver(cloudDocuments: nil)
+    func resolve(_ ref: TrackReference) -> (TrackStatus, TrackReference) { current.resolve(ref) }
+    func resolve(_ ref: TrackReference, besidePlaylistAt folder: URL?) -> (TrackStatus, TrackReference) {
+        current.resolve(ref, besidePlaylistAt: folder)
+    }
+}
+
 /// Lets the shared Files flow ask its question and show its messages through the app's screens.
 final class FilesPresenterAdapter: FilesPromptPresenting {
     weak var model: AppModel?
@@ -98,7 +110,9 @@ final class AppModel: ObservableObject {
     private let cloudMover: CloudMoving
     @Published var syncTarget: PlaylistEntry?
     private static let cloudFolderKey = "cloudFolderPath"
-    private static let cloudContainer = "iCloud.software.away.play"
+    private static let cloudContainer = CloudFolder.containerIdentifier
+    /// Finds a song's file for every session; learns where the iCloud Playaway folder is once the system says.
+    let resolver = LiveResolver()
     let settings = PlayModeSettings()
     let engine = AVPlaybackEngine()
     let registry = ActiveSessionRegistry()
@@ -160,9 +174,11 @@ final class AppModel: ObservableObject {
             try? FileManager.default.createDirectory(at: fake, withIntermediateDirectories: true)
             cloudLibrary = PlaylistLibrary(folder: fake, layout: .folderPerPlaylist)
             fakeCloudRoot = fake
+            resolver.current = TrackResolver(cloudDocuments: fake)
         } else if let cached = UserDefaults.standard.string(forKey: Self.cloudFolderKey),
                   FileManager.default.fileExists(atPath: cached) {
             cloudLibrary = PlaylistLibrary(folder: URL(fileURLWithPath: cached), layout: .folderPerPlaylist)
+            resolver.current = TrackResolver(cloudDocuments: URL(fileURLWithPath: cached))
         }
         let now = Date()
         if let start = LaunchFacts.processStart(), let boot = LaunchFacts.deviceBoot() {
@@ -186,6 +202,8 @@ final class AppModel: ObservableObject {
             if !arguments.contains("-PlayawayKeepMemory") { memoryStore.save(.empty); lyrics.resetForTests() }
             seedDemoPlaylist(in: documents, keepExisting: arguments.contains("-PlayawayKeepMemory"))
         }
+        // Test aid: a playlist another device (a Mac) wrote into the Playaway folder, its references the Mac's.
+        if arguments.contains("-PlayawaySeedForeignPlaylist"), let fake = fakeCloudRoot { seedForeignPlaylist(in: fake) }
         // Test aid: the lyrics experiment on, with a ready-made sheet for "Demo One", so the panel needs no model.
         if arguments.contains("-PlayawayFakeLyrics"),
            let demoOne = (try? FileManager.default.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil))?
@@ -250,7 +268,7 @@ final class AppModel: ObservableObject {
         // waited for: it is not restored.
         guard let session = session(for: url) else { report += " · STOPPED: playlist file did not open"; return }
         guard let track = session.playlist.track(withID: point.trackID) else { report += " · STOPPED: song not in playlist"; return }
-        guard case .resolved(let file) = TrackResolver().resolve(track.reference).0 else { report += " · STOPPED: song file not found from its bookmark"; return }
+        guard case .resolved(let file) = resolver.resolve(track.reference, besidePlaylistAt: session.folder).0 else { report += " · STOPPED: song file not found from its bookmark"; return }
         session.model = self
         guard cloud.presence(of: file).isOnDevice else {
             // Evicted from the phone since: fetch it, and load it paused at its place when it arrives.
@@ -282,24 +300,45 @@ final class AppModel: ObservableObject {
 
     #if DEBUG
     /// Test aid: a playlist of two short generated tones, so UI tests can play real files.
-    private func seedDemoPlaylist(in folder: URL, keepExisting: Bool) {
-        func tone(_ seconds: Int, hz: Double) -> Data {
-            let rate = 8000, samples = rate * seconds
-            var d = Data()
-            func u32(_ v: Int) { var x = UInt32(v).littleEndian; d.append(Data(bytes: &x, count: 4)) }
-            func u16(_ v: Int) { var x = UInt16(v).littleEndian; d.append(Data(bytes: &x, count: 2)) }
-            d.append("RIFF".data(using: .ascii)!); u32(36 + samples * 2); d.append("WAVEfmt ".data(using: .ascii)!)
-            u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
-            d.append("data".data(using: .ascii)!); u32(samples * 2)
-            // Silent: the tests never listen, and a simulator plays through the Mac's speakers while someone is working.
-            let amplitude = 0.0
-            for i in 0..<samples { var v = Int16(sin(2 * .pi * hz * Double(i) / Double(rate)) * amplitude).littleEndian; d.append(Data(bytes: &v, count: 2)) }
-            return d
+    /// A WAV of the given length. Silent: the tests never listen, and a simulator plays through the Mac's speakers
+    /// while someone is working.
+    private static func tone(_ seconds: Int, hz: Double) -> Data {
+        let rate = 8000, samples = rate * seconds
+        var d = Data()
+        func u32(_ v: Int) { var x = UInt32(v).littleEndian; d.append(Data(bytes: &x, count: 4)) }
+        func u16(_ v: Int) { var x = UInt16(v).littleEndian; d.append(Data(bytes: &x, count: 2)) }
+        d.append("RIFF".data(using: .ascii)!); u32(36 + samples * 2); d.append("WAVEfmt ".data(using: .ascii)!)
+        u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
+        d.append("data".data(using: .ascii)!); u32(samples * 2)
+        let amplitude = 0.0
+        for i in 0..<samples { var v = Int16(sin(2 * .pi * hz * Double(i) / Double(rate)) * amplitude).littleEndian; d.append(Data(bytes: &v, count: 2)) }
+        return d
+    }
+
+    /// A playlist as a Mac writes it into the Playaway folder: its own folder, the songs beside it, and every
+    /// reference an alias and a path made on the Mac, which this phone can follow by neither.
+    private func seedForeignPlaylist(in cloudRoot: URL) {
+        let name = "From Mac"
+        let folder = cloudRoot.appendingPathComponent(name)
+        let file = folder.appendingPathComponent(name).appendingPathExtension(playlistFileExtension)
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let macRoot = "/Users/someone/Library/Mobile Documents/\(CloudFolder.containerFolderName)/Documents/\(name)"
+        var tracks: [Track] = []
+        for (song, hz) in [("Mac One", 330.0), ("Mac Two", 390.0)] {
+            let songFile = "\(song).wav"
+            try? Self.tone(60, hz: hz).write(to: folder.appendingPathComponent(songFile))
+            tracks.append(Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "\(macRoot)/\(songFile)", fileName: songFile)))
         }
+        _ = PlaylistStore().save(Playlist(tracks: tracks), to: file)
+    }
+
+    private func seedDemoPlaylist(in folder: URL, keepExisting: Bool) {
+
         var urls: [URL] = []
         for (name, hz) in [("Demo One", 440.0), ("Demo Two", 520.0), ("Demo Three", 600.0), ("Demo Four", 680.0), ("Demo Five", 760.0)] {
             let url = folder.appendingPathComponent("\(name).wav")
-            if !FileManager.default.fileExists(atPath: url.path) { try? tone(60, hz: hz).write(to: url) }
+            if !FileManager.default.fileExists(atPath: url.path) { try? Self.tone(60, hz: hz).write(to: url) }
             urls.append(url)
         }
         // Start every seeded launch from the same playlist, whatever earlier tests changed, unless a test is checking
@@ -315,7 +354,7 @@ final class AppModel: ObservableObject {
         // Test aid: a song whose file is gone, as when an old playlist's songs were moved or deleted since it was made.
         let goneSong = folder.appendingPathComponent("Gone Song.wav")
         if ProcessInfo.processInfo.arguments.contains("-PlayawaySeedGoneSong") {
-            try? tone(5, hz: 300).write(to: goneSong)
+            try? Self.tone(5, hz: 300).write(to: goneSong)
             songs.append(goneSong)
         }
         let result = adding(songs, to: Playlist(), classifier: FormatClassifier())
@@ -416,8 +455,9 @@ final class AppModel: ObservableObject {
     func songsEntered(_ tracks: [Track], in session: PlaylistSession, source: IntakeSource) {
         guard let cloudLibrary, library(for: session.url) === cloudLibrary else { return }
         let fakeRoot = cloud.fakeRoot
+        let resolver = self.resolver, folder = session.folder
         let flow = SongIntakeFlow(root: cloudLibrary.folder, isUbiquitous: { CloudSongs.isUbiquitous($0, fakeRoot: fakeRoot) }, resolve: { track in
-            guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return nil }
+            guard case .resolved(let url) = resolver.resolve(track.reference, besidePlaylistAt: folder).0 else { return nil }
             _ = url.startAccessingSecurityScopedResource()
             return url
         }, fileSystem: SystemTransferFileSystem(), presenter: filesPresenter)
@@ -523,6 +563,8 @@ final class AppModel: ObservableObject {
         let documents = base.appendingPathComponent("Documents")
         try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
         UserDefaults.standard.set(documents.path, forKey: Self.cloudFolderKey)
+        resolver.current = TrackResolver(cloudDocuments: documents)
+        songURLs = [:]                                 // a song another device stored may be findable now
         guard cloudLibrary?.folder.path != documents.path else { return }
         cloudLibrary = PlaylistLibrary(folder: documents, layout: .folderPerPlaylist)
         cloudRevision += 1     // where the Playaway folder is decides which songs count as in iCloud
@@ -545,7 +587,7 @@ final class AppModel: ObservableObject {
     /// A song was chosen. If its file is in iCloud and not on this device it is downloaded first and plays when it
     /// has arrived; otherwise it plays at once.
     func requestPlay(_ track: Track, in session: PlaylistSession) {
-        guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else {
+        guard case .resolved(let url) = resolver.resolve(track.reference, besidePlaylistAt: session.folder).0 else {
             playExplainingFailure(track, in: session); return
         }
         let song = cloud.id(for: url)
@@ -572,7 +614,7 @@ final class AppModel: ObservableObject {
         session.player.play(track: track)
         guard session.player.current?.id != track.id || engine.state == .idle else { return }
         let name = track.reference.fileName
-        switch TrackResolver().resolve(track.reference).0 {
+        switch resolver.resolve(track.reference, besidePlaylistAt: session.folder).0 {
         case .resolved:
             failureMessage = "“\(name)” could not be played. The file may be damaged or in a format Playaway can't play."
         default:
@@ -584,22 +626,22 @@ final class AppModel: ObservableObject {
     /// A song's file address, found once and remembered: resolving a bookmark touches the file system, and doing it for
     /// every row on every update made scrolling jerky.
     private var songURLs: [UUID: URL] = [:]
-    private func songURL(for track: Track) -> URL? {
+    private func songURL(for track: Track, in session: PlaylistSession) -> URL? {
         if let cached = songURLs[track.id] { return cached }
-        guard case .resolved(let url) = TrackResolver().resolve(track.reference).0 else { return nil }
+        guard case .resolved(let url) = resolver.resolve(track.reference, besidePlaylistAt: session.folder).0 else { return nil }
         songURLs[track.id] = url
         return url
     }
 
-    func cloudDisplay(for track: Track) -> SongRowCloudDisplay? {
-        guard let url = songURL(for: track) else { return nil }
+    func cloudDisplay(for track: Track, in session: PlaylistSession) -> SongRowCloudDisplay? {
+        guard let url = songURL(for: track, in: session) else { return nil }
         let song = cloud.id(for: url)
         let tracked = downloads.state(of: song)
         return SongRowCloudDisplay(presence: cloud.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
     }
 
     func cloudIconTapped(_ track: Track, session: PlaylistSession) {
-        guard let display = cloudDisplay(for: track), let url = songURL(for: track) else { return }
+        guard let display = cloudDisplay(for: track, in: session), let url = songURL(for: track, in: session) else { return }
         let song = cloud.id(for: url)
         pendingPlays[song] = (session, track)
         switch cloudIconTapAction(state: display.icon, kind: .song) {

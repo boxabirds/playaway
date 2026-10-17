@@ -217,6 +217,37 @@ import UIKit
         app.tables["song-table"].cells[row].buttons["cloud-icon"]
     }
 
+    /// Story 37, TC-21: a playlist a Mac wrote into the Playaway folder (every reference the Mac's) lists its songs as
+    /// in iCloud and plays them, on this launch and the next. Nothing on the phone writes a reference back: there is
+    /// no reporter on the phone and the resolver returns such a reference unchanged (CrossDevicePlaylistTests TC-19),
+    /// so the file's bytes are checked at that level, not here.
+    func testAPlaylistTheMacWroteOpensWithItsSongsInICloudAndPlays() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud", "-PlayawaySeedForeignPlaylist"]; app.launch()
+        XCTAssertTrue(app.staticTexts["From Mac"].waitForExistence(timeout: 15), "the Mac's playlist is listed")
+        app.staticTexts["From Mac"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        XCTAssertTrue(table.cells["Mac One"].waitForExistence(timeout: 5))
+        XCTAssertEqual(icon(app, row: "Mac One").label, "In iCloud", "found beside the playlist, in the Playaway folder")
+        table.cells["Mac One"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "the Mac's song plays")
+        XCTAssertFalse(app.alerts["Playlist"].exists, "no 'can't be found'")
+
+        app.terminate()
+        let again = XCUIApplication()
+        again.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud", "-PlayawaySeedForeignPlaylist", "-PlayawayKeepMemory"]
+        again.launch()
+        if !again.tables["song-table"].cells["Mac Two"].waitForExistence(timeout: 10) {
+            XCTAssertTrue(again.staticTexts["From Mac"].waitForExistence(timeout: 15))
+            again.staticTexts["From Mac"].tap()
+        }
+        XCTAssertTrue(again.tables["song-table"].cells["Mac Two"].waitForExistence(timeout: 15))
+        XCTAssertEqual(icon(again, row: "Mac Two").label, "In iCloud")
+        again.tables["song-table"].cells["Mac Two"].tap()
+        XCTAssertTrue(again.buttons["Pause"].waitForExistence(timeout: 10), "still playable on the next launch")
+    }
+
     func testASongNotOnThisDeviceDownloadsThenPlaysAndAFailureCanBeRetriedOrCancelled() {
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; app.launch()
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))

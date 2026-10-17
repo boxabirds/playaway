@@ -11,7 +11,7 @@ package enum CloudFolder {
     private static let documentsSegment = "/" + containerFolderName + "/Documents/"
 
     /// This device's copy of the Playaway folder under the given home, nil when iCloud Drive has not made one here.
-    package static func documentsOnThisDevice(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+    package static func documentsOnThisDevice(home: URL = URL(fileURLWithPath: NSHomeDirectory())) -> URL? {
         let url = home.appendingPathComponent("Library/Mobile Documents/\(containerFolderName)/Documents", isDirectory: true)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
