@@ -38,6 +38,15 @@ final class PlaylistSyncController {
     /// The turn-on adapter of the shared flow: the playlist's songs, in order, handed to SongIntakeFlow once; the
     /// question, the transfer, the report and the messages are all the flow's. The document takes the re-pointed rows.
     @MainActor private func bringSongs(presenter: FilesPromptPresenting) async {
+        await bringSongs(document.playlist.tracks, source: .turnOnSync, presenter: presenter)
+    }
+
+    /// A click on a song's crossed-out cloud (story 20): that one song through the same shared flow, as a drop is.
+    @MainActor func bringSong(_ track: Track, presenter: FilesPromptPresenting) async {
+        await bringSongs([track], source: .drop, presenter: presenter)
+    }
+
+    @MainActor private func bringSongs(_ tracks: [Track], source: IntakeSource, presenter: FilesPromptPresenting) async {
         let resolver = services.resolver
         let folder = document.folder
         let flow = SongIntakeFlow(root: services.cloud.root, isUbiquitous: services.cloud.isUbiquitous, resolve: { track in
@@ -45,7 +54,7 @@ final class PlaylistSyncController {
         }, presenter: presenter)
         let playlist = document.playlist
         let name = document.displayName ?? ""
-        let outcome = await flow.run(playlist: playlist, playlistName: name, tracks: playlist.tracks, source: .turnOnSync)
+        let outcome = await flow.run(playlist: playlist, playlistName: name, tracks: tracks, source: source)
         if outcome.playlist != playlist { document.acceptTransferred(outcome.playlist) }
     }
 

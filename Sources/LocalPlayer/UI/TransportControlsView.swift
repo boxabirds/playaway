@@ -25,6 +25,8 @@ enum ElementID {
     /// The playlist's iCloud sync switch in the title bar, and the one-line reason shown when it is disabled.
     static let sync = "playlist.sync"
     static let syncReason = "playlist.sync_reason"
+    /// The cloud icon at the right-hand end of a song row of a synced playlist (story 20).
+    static let songCloud = "playlist.song_cloud"
 }
 
 /// The top area of a playlist window: what is playing and the controls for it, sized by how often each is used.

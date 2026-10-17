@@ -96,7 +96,11 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         accessory.view = row
         accessory.layoutAttribute = .trailing
         window.addTitlebarAccessoryViewController(accessory)
-        services.cloud.changes.receive(on: DispatchQueue.main).sink { [weak self] in self?.refreshSync() }.store(in: &cancellables)
+        services.cloud.changes.receive(on: DispatchQueue.main).sink { [weak self] in
+            self?.refreshSync()
+            self?.refreshRows()
+        }.store(in: &cancellables)
+        services.downloadChanges.sink { [weak self] in self?.refreshRows() }.store(in: &cancellables)
         refreshSync()
     }
 
@@ -119,16 +123,66 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     @objc func syncPressed(_ sender: Any?) {
         guard playlistDocument.sync.state == .off, playlistDocument.sync.presentation.isEnabled else { return }
         let presenter: PlaylistPromptPresenting = askPlaylistChoice.map { ClosurePlaylistPresenter($0) } ?? MacPlaylistPresenter(window: window)
-        let filesPresenter: FilesPromptPresenting = askFilesChoice.map { ask in
-            ClosureFilesPresenter(ask: { [weak self] in self?.filesAsked += 1; return await ask() },
-                                  shown: { [weak self] in self?.filesMessages.append($0) })
-        } ?? MacFilesPresenter(window: window)
+        let filesPresenter = makeFilesPresenter()
         intakeFinished = false
         Task { @MainActor [weak self] in
             guard let self else { return }
             await playlistDocument.sync.turnOn(presenter: presenter, filesPresenter: filesPresenter)
             refreshSync()
             intakeFinished = true
+        }
+    }
+
+    /// The 'Sync with iCloud: Files' sheet, or the test seam standing in for it.
+    private func makeFilesPresenter() -> FilesPromptPresenting {
+        askFilesChoice.map { ask in
+            ClosureFilesPresenter(ask: { [weak self] in self?.filesAsked += 1; return await ask() },
+                                  shown: { [weak self] in self?.filesMessages.append($0) })
+        } ?? MacFilesPresenter(window: window)
+    }
+
+    // MARK: Song rows in iCloud (story 20)
+
+    /// Where the row's song file is, resolved the way the player resolves it (cloud-relative, then beside the playlist).
+    private func songURL(for track: Track) -> URL? {
+        services.resolver.resolve(track.reference, besidePlaylistAt: playlistDocument.folder).0.resolvedURL
+    }
+
+    /// What a row's cloud icon shows: the shared row rule over this Mac's answer about the file and the download
+    /// coordinator's. Only a synced playlist shows cloud state (an unsynced one shows nothing, as on the iPhone).
+    func cloudDisplay(for track: Track) -> SongRowCloudDisplay? {
+        guard playlistDocument.sync.state == .on, let url = songURL(for: track) else { return nil }
+        let tracked = services.downloads.state(of: MacSongs.id(for: url))
+        return SongRowCloudDisplay(presence: services.cloudSongs.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
+    }
+
+    /// A click on a row's cloud icon follows the shared rule (story 31): crossed-out asks the Files question for that
+    /// song only, the pie cancels, the exclamation mark retries, the outline does nothing. No click plays the row.
+    func cloudIconClicked(_ track: Track) {
+        guard let display = cloudDisplay(for: track), let url = songURL(for: track) else { return }
+        switch cloudIconTapAction(state: display.icon, kind: .song) {
+        case .openSyncDialog:
+            let presenter = makeFilesPresenter()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await playlistDocument.sync.bringSong(track, presenter: presenter)
+                refreshRows()
+            }
+        case .cancelDownload, .cancelSync:
+            services.cancelDownload(of: MacSongs.id(for: url))
+        case .retryDownload:
+            services.retryDownload(of: track, at: url, in: playlistDocument)
+        case .none:
+            break
+        }
+    }
+
+    /// Updates the cloud icons and dimming of the rows on screen without reloading the table.
+    private func refreshRows() {
+        let tracks = playlistDocument.playlist.tracks
+        let visible = tableView.rows(in: tableView.visibleRect)
+        for row in visible.location..<(visible.location + visible.length) where tracks.indices.contains(row) {
+            (tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? TrackCellView)?.cloud = cloudDisplay(for: tracks[row])
         }
     }
 
@@ -305,7 +359,9 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
         cell.identifier = Self.cellIdentifier
         let missing = playlistDocument.statuses.isMissing(track.id)
         cell.configure(name: TransportControlsView.displayTitle(forFileName: track.reference.fileName), missing: missing,
-                       hazard: services.marks.mark(of: track) == .unreadable, marker: marker(for: track))
+                       hazard: services.marks.mark(of: track) == .unreadable, marker: marker(for: track),
+                       cloud: cloudDisplay(for: track))
+        cell.cloudClicked = { [weak self] in self?.cloudIconClicked(track) }
         return cell
     }
 
@@ -445,24 +501,37 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     }
 }
 
-/// A row: a leading glyph slot and the name. The slot shows the hazard icon for a track that could not be played,
-/// or the playing or paused marker for the current track. The name is greyed when the file is missing, and
-/// accent-coloured and semibold while it is the current track.
+/// A row: a leading glyph slot, the name, and at the right-hand end the cloud icon of a synced playlist's song
+/// (story 20). The slot shows the hazard icon for a track that could not be played, or the playing or paused marker
+/// for the current track. The name is greyed when the file is missing or not on this Mac, and accent-coloured and
+/// semibold while it is the current track.
 final class TrackCellView: NSTableCellView {
     enum Marker { case none, playing, paused }
 
     private static let glyphSize: CGFloat = 16
     private static let spacing: CGFloat = 6
     private static let nameSize: CGFloat = 14
+    /// The cloud icons are quiet: half opacity, like the phone's secondary colour. A download in progress and a
+    /// failure are full strength so they are seen.
+    private static let quietCloudOpacity: CGFloat = 0.5
     private let glyphView = NSImageView()
     private let nameField = NSTextField(labelWithString: "")
+    /// The cloud icon, a control with story 31's click rules; hidden for an unsynced playlist.
+    let cloudButton = NSButton()
+    private let pie = PieIndicator()
     private var name = ""
     private var missing = false
     private var hazard = false
     private(set) var titleWeight: NSFont.Weight = .regular
+    var cloudClicked: (() -> Void)?
 
     var marker: Marker = .none {
         didSet { if marker != oldValue { refresh() } }
+    }
+
+    /// What the cloud icon shows, nil for a song of an unsynced playlist.
+    var cloud: SongRowCloudDisplay? {
+        didSet { if cloud != oldValue { refresh() } }
     }
 
     override var backgroundStyle: NSView.BackgroundStyle {
@@ -476,23 +545,44 @@ final class TrackCellView: NSTableCellView {
         stack.spacing = Self.spacing
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
+        cloudButton.title = ""
+        cloudButton.imagePosition = .imageOnly
+        cloudButton.isBordered = false
+        cloudButton.target = self
+        cloudButton.action = #selector(cloudPressed(_:))
+        cloudButton.setAccessibilityIdentifier(ElementID.songCloud)
+        cloudButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(cloudButton)
+        pie.translatesAutoresizingMaskIntoConstraints = false
+        cloudButton.addSubview(pie)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.spacing),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Self.spacing),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: cloudButton.leadingAnchor, constant: -Self.spacing),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             glyphView.widthAnchor.constraint(equalToConstant: Self.glyphSize),
+            cloudButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.spacing),
+            cloudButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            cloudButton.widthAnchor.constraint(equalToConstant: cloudIconDrawnSize.width),
+            cloudButton.heightAnchor.constraint(equalToConstant: cloudIconDrawnSize.height),
+            pie.leadingAnchor.constraint(equalTo: cloudButton.leadingAnchor),
+            pie.trailingAnchor.constraint(equalTo: cloudButton.trailingAnchor),
+            pie.topAnchor.constraint(equalTo: cloudButton.topAnchor),
+            pie.bottomAnchor.constraint(equalTo: cloudButton.bottomAnchor),
         ])
         textField = nameField
         imageView = glyphView
     }
 
+    @objc private func cloudPressed(_ sender: Any?) { cloudClicked?() }
+
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
 
-    func configure(name: String, missing: Bool, hazard: Bool, marker: Marker = .none) {
+    func configure(name: String, missing: Bool, hazard: Bool, marker: Marker = .none, cloud: SongRowCloudDisplay? = nil) {
         self.name = name
         self.missing = missing
         self.hazard = hazard
         self.marker = marker
+        self.cloud = cloud
         refresh()
     }
 
@@ -507,8 +597,10 @@ final class TrackCellView: NSTableCellView {
         if emphasized {
             nameField.textColor = .alternateSelectedControlTextColor
         } else {
-            nameField.textColor = missing ? .disabledControlTextColor : (shownMarker == .none ? .labelColor : .controlAccentColor)
+            let dimmed = missing || cloud?.dimmed == true
+            nameField.textColor = dimmed ? .disabledControlTextColor : (shownMarker == .none ? .labelColor : .controlAccentColor)
         }
+        refreshCloud(emphasized: emphasized)
         let tint: NSColor = emphasized ? .alternateSelectedControlTextColor : .controlAccentColor
         switch (hazard, shownMarker) {
         case (true, _):
@@ -538,11 +630,100 @@ final class TrackCellView: NSTableCellView {
         case (_, _, true): state = ", file not found"
         default: state = ""
         }
-        setAccessibilityLabel(name + state)
+        setAccessibilityLabel(name + state + cloudSpoken)
     }
+
+    /// The cloud icon: outline, crossed-out, exclamation mark, or the pie of a download (a spinner while the system
+    /// has not said how far it is). Hidden for an unsynced playlist.
+    private func refreshCloud(emphasized: Bool) {
+        guard let cloud else { cloudButton.isHidden = true; return }
+        cloudButton.isHidden = false
+        let quiet: NSColor = emphasized ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        var symbol: String?, tint = quiet, opacity = Self.quietCloudOpacity
+        switch cloud.icon {
+        case .crossedOut: symbol = "icloud.slash"
+        case .outline: symbol = "icloud"
+        case .exclamation: symbol = "exclamationmark.icloud"; tint = emphasized ? quiet : .systemRed; opacity = 1
+        case .pieDownload, .pieSync: opacity = 1
+        }
+        cloudButton.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: cloudLabel) }
+        cloudButton.contentTintColor = tint
+        cloudButton.alphaValue = opacity
+        pie.isHidden = symbol != nil
+        pie.fraction = cloud.fraction
+        cloudButton.toolTip = cloudLabel
+        cloudButton.setAccessibilityLabel(cloudLabel)
+        cloudButton.setAccessibilityValue(cloud.fraction.map { $0 > 0 ? "\(Int($0 * 100)) percent" : "" } ?? "")
+    }
+
+    private var cloudLabel: String {
+        guard let cloud else { return "" }
+        switch cloud.icon {
+        case .crossedOut: return "Not in iCloud"
+        case .outline: return cloud.dimmed ? "In iCloud, not on this Mac" : "In iCloud"
+        case .pieDownload, .pieSync: return "Downloading, click to cancel"
+        case .exclamation: return DownloadState.failedAccessibilityLabel
+        }
+    }
+
+    /// Said after the name so colour and a small icon never carry the state alone.
+    private var cloudSpoken: String {
+        guard let cloud else { return "" }
+        switch cloud.icon {
+        case .crossedOut: return ", not in iCloud"
+        case .outline: return cloud.dimmed ? ", not on this Mac" : ", in iCloud"
+        case .pieDownload, .pieSync: return ", downloading from iCloud"
+        case .exclamation: return ", " + DownloadState.failedAccessibilityLabel
+        }
+    }
+
+    var cloudKind: CloudIconState? { cloudButton.isHidden ? nil : cloud?.icon }
+    var cloudOpacity: CGFloat { cloudButton.alphaValue }
+    var pieFraction: Double? { pie.isHidden ? nil : pie.fraction }
 
     var showsHazard: Bool { hazard && !glyphView.isHidden }
     var glyphDescription: String? { glyphView.isHidden ? nil : glyphView.accessibilityLabel() }
     var isGreyedOut: Bool { nameField.textColor == .disabledControlTextColor }
     var title: String { nameField.stringValue }
+}
+
+/// The pie of a download in progress is the system's determinate circular progress indicator; with no fraction
+/// known it spins, as the phone does. Clicks pass through to the button underneath.
+final class PieIndicator: NSProgressIndicator {
+    private static let unknown: Double = 0
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        style = .spinning
+        controlSize = .small
+        minValue = 0
+        maxValue = 1
+        isDisplayedWhenStopped = true
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The done part, nil while the system has not said how far the download is.
+    var fraction: Double? {
+        get { isIndeterminate ? nil : doubleValue }
+        set {
+            if let newValue, newValue > Self.unknown {
+                stopAnimation(nil)
+                isIndeterminate = false
+                doubleValue = min(newValue, maxValue)
+            } else {
+                isIndeterminate = true
+                if !isHidden { startAnimation(nil) }
+            }
+        }
+    }
+
+    override var isHidden: Bool {
+        didSet {
+            guard isIndeterminate else { return }
+            if isHidden { stopAnimation(nil) } else { startAnimation(nil) }
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

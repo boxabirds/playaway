@@ -21,12 +21,22 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
     /// Where the first-save panel starts. Injectable so tests can check it without a real panel.
     var documentsDirectory: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 
-    lazy var player: PlaylistPlayer = PlaylistPlayer(
-        playlist: { [weak self] in self?.playlist ?? Playlist() },
-        playlistFolder: { [weak self] in self?.folder },
-        settings: services.settings, order: services.shuffleOrder, resolver: services.resolver, gate: services.gate,
-        classifier: services.classifier, engine: services.engine, marks: services.marks,
-        registry: services.registry, reporter: self)
+    lazy var player: PlaylistPlayer = {
+        let player = PlaylistPlayer(
+            playlist: { [weak self] in self?.playlist ?? Playlist() },
+            playlistFolder: { [weak self] in self?.folder },
+            settings: services.settings, order: services.shuffleOrder, resolver: services.resolver, gate: services.gate,
+            classifier: services.classifier, engine: services.engine, marks: services.marks,
+            registry: services.registry, reporter: self)
+        // A song in iCloud but not on this Mac is downloaded first and played when it arrives (stories 20 and 31).
+        let services = self.services
+        player.isOnDevice = { services.cloudSongs.presence(of: $0).isOnDevice }
+        player.wantsDownload = { [weak self] track, url in
+            guard let self else { return }
+            services.requestDownload(of: track, at: url, in: self)
+        }
+        return player
+    }()
 
     lazy var relinker = MissingTrackRelinker(statuses: statuses, marks: services.marks)
     /// iCloud sync for this playlist: on when its file is in the Playaway folder (story 18).

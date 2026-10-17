@@ -22,8 +22,8 @@ final class ICloudDecisionGuardTests: XCTestCase {
 
     func testTheSystemsICloudAnswerIsReadOnlyByThePlatformSeams() {                                 // 19.15
         XCTAssertEqual(files(containing: "isUbiquitousItemKey"),
-                       ["ios/App/CloudSongs.swift", "Sources/LocalPlayer/Sync/CloudFolderLocator.swift"],
-                       "the system is asked whether a file is in iCloud Drive in one place per platform")
+                       ["ios/App/CloudSongs.swift", "Sources/LocalPlayer/Sync/CloudFolderLocator.swift", "Sources/LocalPlayer/Sync/MacCloudSongs.swift"],
+                       "the system is asked whether a file is in iCloud Drive only by each platform's cloud seam")
     }
 
     func testTheLocationRuleIsSharedAndUsedOnlyByTheSyncCoreAndTheSeams() {                        // 19.15

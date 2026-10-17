@@ -5,7 +5,7 @@ import Combine
 /// There is one per open playlist document; the shared `ActiveSessionRegistry` keeps only one active.
 package final class PlaylistPlayer: SessionEnding {
     private enum Attempt { case started, refused, noOutputDevice }
-    private enum Prepared { case refused, ready(URL) }
+    private enum Prepared: Equatable { case refused, ready(URL), awaitingDownload }
 
     private let playlistProvider: () -> Playlist
     /// Where the playlist's file is (nil before it has one), so a song another device stored can be found beside it.
@@ -20,6 +20,11 @@ package final class PlaylistPlayer: SessionEnding {
     private let marks: ReadabilityMarkStoring
     private let registry: ActiveSessionRegistry
     private weak var reporter: TrackResolutionReporting?
+    /// Whether the file at a URL is on this device; an iCloud file may be only a placeholder. The adapter answers.
+    package var isOnDevice: (URL) -> Bool = { _ in true }
+    /// A playable track whose file is not on this device: the adapter downloads it and plays it when it arrives
+    /// (story 31's download-on-play, the same from every entry point). Until then nothing plays and nothing is marked.
+    package var wantsDownload: ((Track, URL) -> Void)?
 
     private var sessionActive = false {
         didSet { if oldValue != sessionActive { changesSubject.send() } }
@@ -98,8 +103,9 @@ package final class PlaylistPlayer: SessionEnding {
     /// the engine has actually started the file.
     package func play(track: Track) {
         guard playlistProvider().track(withID: track.id) != nil else { return }
-        guard case .ready(let url) = prepare(track) else {
-            marks.markUnreadable(track)
+        let prepared = prepare(track)
+        guard case .ready(let url) = prepared else {
+            if prepared == .refused { marks.markUnreadable(track) }
             return
         }
         switch engine.play(url) {
@@ -241,9 +247,10 @@ package final class PlaylistPlayer: SessionEnding {
     }
 
     private func attempt(_ track: Track) -> Attempt {
-        guard case .ready(let url) = prepare(track) else {
-            marks.markUnreadable(track)
-            return .refused
+        let prepared = prepare(track)
+        guard case .ready(let url) = prepared else {
+            if prepared == .refused { marks.markUnreadable(track) }
+            return .refused                                    // a download in progress is skipped like a missing track
         }
         switch engine.play(url) {
         case .playing:
@@ -264,6 +271,7 @@ package final class PlaylistPlayer: SessionEnding {
         case .refuse:
             return .refused
         case .play(let url):
+            guard isOnDevice(url) else { wantsDownload?(track, url); return .awaitingDownload }
             if case .unsupported = classifier.classify(url) { return .refused }
             return .ready(url)
         }
