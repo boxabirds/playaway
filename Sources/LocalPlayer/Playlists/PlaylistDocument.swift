@@ -89,6 +89,7 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
             // Saving in place: a newer file (the other device's) is taken in first, so nothing of theirs is lost.
             followed.edited(playlist)
             result = followed.save()
+            DebugTrace.log("document: write in place: \(result) tracks=\(playlist.tracks.count)")
             if followed.playlist != playlist { takeFromFollowed(cleared: false) }
         } else {
             result = services.store.save(playlist, to: url)
@@ -113,20 +114,42 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         followed = followed?.movedTo(url)
     }
 
+    /// A document made here starts following its file from its first save, as one opened from a file does from its
+    /// read: a playlist made with New Playlist, synced and left open must take in the other device's changes too.
+    override func save(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
+                       completionHandler: @escaping (Error?) -> Void) {
+        super.save(to: url, ofType: typeName, for: saveOperation) { [weak self] error in
+            if error == nil, let self, self.followed == nil, let fileURL = self.fileURL {
+                self.followed = self.makeFollowed(url: fileURL, playlist: self.playlist)
+            }
+            completionHandler(error)
+        }
+    }
+
     /// NSDocument is a file presenter; the system tells it here when something else wrote, moved or deleted its file.
     override func presentedItemDidChange() {
         DispatchQueue.main.async { [weak self] in self?.fileChangedUnderUs() }
     }
 
     private func fileChangedUnderUs() {
-        guard let followed else { return }
+        guard let followed else { DebugTrace.log("document: file changed under us, not followed"); return }
         followed.edited(playlist)
-        switch followed.fileChanged() {
+        let change = followed.fileChanged()
+        DebugTrace.log("document: file changed under us: \(change); edited=\(isDocumentEdited) tracks=\(followed.playlist.tracks.count)")
+        switch change {
         case .replaced: takeFromFollowed(cleared: true)
         case .merged: takeFromFollowed(cleared: false)
         case .unchanged, .gone, .unreadable: break
         }
         resolveConflictsIfAny()
+    }
+
+    override func autosave(withImplicitCancellability implicitlyCancellable: Bool, completionHandler: @escaping (Error?) -> Void) {
+        DebugTrace.log("document: autosave begins; edited=\(isDocumentEdited) fileDate=\(fileModificationDate.map { "\($0.timeIntervalSince1970)" } ?? "nil")")
+        super.autosave(withImplicitCancellability: implicitlyCancellable) { error in
+            DebugTrace.log("document: autosave ended: \(error.map { "\($0)" } ?? "ok")")
+            completionHandler(error)
+        }
     }
 
     private func resolveConflictsIfAny() {

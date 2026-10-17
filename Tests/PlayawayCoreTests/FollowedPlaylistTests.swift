@@ -50,6 +50,33 @@ final class FollowedPlaylistTests: XCTestCase {
 
     // MARK: Following the file
 
+    /// Task 39.9: a refreshed bookmark for the same file is not an edit; the other device's later version replaces
+    /// the list rather than being merged on top of it.
+    func testARefreshedBookmarkIsNotAnEditSoALaterFileReplacesTheList() throws {
+        let fixture = PlaylistFixture(trackNames: ["track1.mp3", "track2.mp3"])
+        let url = fixture.dir.path("Dinner.\(playlistFileExtension)")
+        let files = PlaylistStore()
+        XCTAssertEqual(files.save(fixture.playlist, to: url), .saved)
+        let followed = FollowedPlaylist(url: url, playlist: fixture.playlist, fingerprint: files.fingerprint(of: url), files: files, isInContainer: { _ in false })
+        var refreshed = fixture.playlist
+        let same = refreshed.tracks[0].reference
+        refreshed.tracks[0].reference = TrackReference(bookmark: Data([1, 2, 3]), lastKnownPath: same.lastKnownPath, fileName: same.fileName)   // other bookmark bytes, same file and path
+        XCTAssertNotEqual(refreshed, fixture.playlist, "the bytes differ")
+        followed.edited(refreshed)
+        XCTAssertFalse(followed.isEdited, "but nothing was edited")
+        var theirs = fixture.playlist
+        theirs.tracks.removeLast()
+        Thread.sleep(forTimeInterval: 1.1)                                               // a later modification date
+        XCTAssertEqual(files.save(theirs, to: url), .saved)
+        XCTAssertEqual(followed.fileChanged(), .replaced)
+        XCTAssertEqual(followed.playlist.tracks.map(\.id), theirs.tracks.map(\.id), "their removal stands")
+        // A real edit still counts.
+        var added = followed.playlist
+        added.tracks.append(fixture.playlist.tracks[1])
+        followed.edited(added)
+        XCTAssertTrue(followed.isEdited)
+    }
+
     func testACleanPlaylistTakesTheFilesNewContentsAndSaysSo() {                             // TC-20
         let a = track("a.mp3")
         write(Playlist(tracks: [a]))

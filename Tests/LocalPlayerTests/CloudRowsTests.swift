@@ -163,6 +163,36 @@ final class CloudRowsTests: XCTestCase {
         XCTAssertEqual(cell(doc, 0).cloudKind, .outline)
     }
 
+    /// Task 20.23: the song the person asked for plays when it arrives even though the song that was playing has
+    /// ended and the playlist ran out meanwhile; running out is not the person moving on.
+    func testTheAskedForSongStillPlaysWhenTheSongBeforeItEndedAndThePlaylistRanOut() {          // 20.23 (1)
+        let (doc, inside, _, absent) = openSynced(order: ["inside", "absent"])
+        let window = app.window(of: doc)
+        window.playRow(0)
+        XCTAssertEqual(app.services.engine.currentURL, inside)
+        window.playRow(1)                                                    // asked for while the first one plays
+        XCTAssertEqual(songs.started, [MacSongs.id(for: absent)])
+        app.backend.playing?.finish()                                        // the first song ends; the absent one is skipped; the playlist runs out
+        spin { !doc.player.isSessionActive }
+        XCTAssertFalse(doc.player.isSessionActive)
+        XCTAssertNil(doc.player.current)
+        songs.finish(absent)
+        XCTAssertEqual(app.services.engine.currentURL, absent, "it plays when it arrives: nothing else was asked for")
+        XCTAssertEqual(cell(doc, 1).cloudKind, .outline); XCTAssertFalse(cell(doc, 1).isGreyedOut)
+    }
+
+    /// Task 20.23: a playlist started on its first song, which is not on this Mac: the play-through asks for it, runs
+    /// out, and the song plays when it arrives.
+    func testAPlaylistStartedOnASongNotOnThisMacPlaysItWhenItArrives() {                       // 20.23 (2)
+        let (doc, _, _, absent) = openSynced(order: ["absent"])
+        doc.player.start()
+        XCTAssertEqual(songs.started, [MacSongs.id(for: absent)], "asked for by the play-through")
+        XCTAssertNil(app.services.engine.currentURL)
+        XCTAssertFalse(doc.player.isSessionActive, "nothing playable yet: the session ended")
+        songs.finish(absent)
+        XCTAssertEqual(app.services.engine.currentURL, absent, "it plays when it arrives")
+    }
+
     func testPlayingThroughSkipsASongNotOnThisMacAndAsksForItWithoutPlayingItLater() {          // TC-79 (start, next, auto-advance)
         let (doc, inside, outside, absent) = openSynced(order: ["inside", "absent", "outside"])
         doc.player.start()

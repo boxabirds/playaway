@@ -93,19 +93,21 @@ final class MacCloudSongs: CloudSongsProviding {
 }
 
 /// The player side of the shared coordinator on the Mac: when a download finishes, the song plays only if the person
-/// has not moved on since asking for it.
+/// has not asked for another song since (the player's last asked track is still this one). The current song is not
+/// the measure: it also changes when a song ends or the playlist runs out, which is not the person moving on.
 final class MacPlaybackStarter: SongPlaybackStarting {
     struct Pending {
         let document: PlaylistDocument
         let track: Track
-        /// What the document's player was on when the person asked, so a later choice is not undone.
-        let currentAtRequest: UUID?
     }
     var pending: [SongID: Pending] = [:]
 
     func startPlayback(of song: SongID) {
-        guard let request = pending.removeValue(forKey: song) else { return }
-        guard request.document.player.current?.id == request.currentAtRequest else { return }   // moved on: keep the file, do not play
+        guard let request = pending.removeValue(forKey: song) else { DebugTrace.log("starter: no pending request for \(song.raw)"); return }
+        guard request.document.player.lastAsked?.id == request.track.id else {         // another song was asked for: keep the file, do not play
+            DebugTrace.log("starter: another song was asked for since, not playing \(song.raw)"); return
+        }
         request.document.player.play(track: request.track)
+        DebugTrace.log("starter: played \(song.raw); session=\(request.document.player.isSessionActive) current=\(request.document.player.current?.reference.fileName ?? "nil")")
     }
 }

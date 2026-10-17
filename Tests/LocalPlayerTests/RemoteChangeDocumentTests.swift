@@ -51,6 +51,50 @@ final class RemoteChangeDocumentTests: XCTestCase {
         XCTAssertEqual(doc.statuses.status(of: doc.playlist.tracks[2].id), .resolved(extra), "the new row is resolved, so it plays")
     }
 
+    /// Task 39.9: an edit that was already autosaved is on disk, so a later version of the file is the other device's
+    /// answer to it, not a concurrent edit (those arrive as iCloud conflict versions and are merged by sync.conflicts):
+    /// the newer file replaces ours, nothing is written back, and the document is clean.
+    func testAnEditAlreadySavedIsNotMergedBackOverTheOtherDevicesLaterVersion() throws {       // 39.9
+        let (doc, fixture, url) = open(["track1.mp3", "track2.mp3"])
+        let mine = fixture.dir.copyFixture("track3.mp3")
+        XCTAssertEqual(doc.addFiles([mine]).added.count, 1)                 // my edit: track3 at the end
+        waitForAutosave(doc)
+        XCTAssertFalse(doc.isDocumentEdited)
+        guard case .loaded(let saved) = PlaylistStore().load(from: url) else { return XCTFail("unreadable") }
+        XCTAssertEqual(saved.tracks.map(\.reference.fileName), ["track1.mp3", "track2.mp3", "track3.mp3"], "my edit is on disk")
+        let theirs = fixture.dir.copyFixture("track4.mp3")
+        let later = Playlist(tracks: fixture.tracks + [Track(id: UUID(), reference: TrackReference.make(for: theirs)!)])
+        otherDeviceWrites(later, to: url)
+        spin { doc.playlist.tracks.count == 3 && doc.playlist.tracks.map(\.reference.fileName).contains("track4.mp3") }
+        XCTAssertEqual(names(doc), ["track1.mp3", "track2.mp3", "track4.mp3"], "their later version is taken as it is")
+        XCTAssertFalse(doc.isDocumentEdited, "nothing of ours is unsaved")
+        let fingerprintAfter = PlaylistStore().fingerprint(of: url)
+        waitForAutosave(doc)
+        XCTAssertEqual(PlaylistStore().fingerprint(of: url), fingerprintAfter, "and nothing is written back over it")
+        guard case .loaded(let onDisk) = PlaylistStore().load(from: url) else { return XCTFail("unreadable") }
+        XCTAssertEqual(onDisk, later)
+    }
+
+    /// Task 39.10: a playlist made here (New Playlist, then saved) follows its file from its first save; it does not
+    /// have to be closed and reopened for the other device's change to show.
+    func testAPlaylistMadeHereFollowsItsFileFromItsFirstSave() throws {                         // 39.10
+        let fixture = PlaylistFixture(trackNames: ["track1.mp3", "track2.mp3"])
+        fixtures.append(fixture)
+        let doc = app.newDocument()
+        XCTAssertEqual(doc.addFiles(fixture.urls).added.count, 2)
+        let url = dir.path("Made.\(playlistFileExtension)")
+        app.save(doc, to: url)
+        XCTAssertEqual(doc.fileURL?.canonicalPath, url.canonicalPath)
+        doc.player.start()
+        let playing = app.services.engine.currentURL
+        XCTAssertNotNil(playing)
+        let extra = fixture.dir.copyFixture("track3.mp3")
+        otherDeviceWrites(Playlist(tracks: doc.playlist.tracks + [Track(id: UUID(), reference: TrackReference.make(for: extra)!)]), to: url)
+        spin { doc.playlist.tracks.count == 3 }
+        XCTAssertEqual(names(doc), ["track1.mp3", "track2.mp3", "track3.mp3"], "the other device's song shows without a reopen")
+        XCTAssertEqual(app.services.engine.currentURL, playing, "the song plays on")
+    }
+
     func testAnUnsavedEditIsMergedOnTopOfTheChangeAndTheMergeIsWhatGetsSaved() throws {        // TC-41
         let (doc, fixture, url) = open(["track1.mp3", "track2.mp3", "track3.mp3"])
         let window = app.window(of: doc)

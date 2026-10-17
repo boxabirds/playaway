@@ -104,7 +104,9 @@ final class AppActions {
         try ready()
         let document = try document(named: name)
         let track = try track(at: position, in: document)
+        DebugTrace.log("script play: begin \(track.reference.fileName) session=\(document.player.isSessionActive) current=\(document.player.current?.reference.fileName ?? "nil")")
         document.player.play(track: track)
+        DebugTrace.log("script play: after play(track:) session=\(document.player.isSessionActive) current=\(document.player.current?.reference.fileName ?? "nil")")
         let playing = { document.player.isSessionActive && document.player.current == track }
         guard !playing() else { return }
         if let url = document.songURL(for: track) {
@@ -112,6 +114,7 @@ final class AppActions {
             if services.downloads.state(of: song).isDownloading {
                 waitUntil(seconds: Self.downloadWaitSeconds) { playing() || !self.services.downloads.state(of: song).isDownloading }
                 if playing() { return }
+                DebugTrace.log("script play: not playing after the wait; state=\(services.downloads.state(of: song)) mark=\(services.marks.mark(of: track)) session=\(document.player.isSessionActive) current=\(document.player.current?.reference.fileName ?? "nil")")
                 throw ScriptFailure.downloadFailed(track.reference.fileName)
             }
         }

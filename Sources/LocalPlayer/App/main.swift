@@ -13,7 +13,11 @@ let delegate = AppDelegate()
 application.delegate = delegate
 application.setActivationPolicy(.regular)
 
-let services = AppServices()
+// The end-to-end tests point a debug build at a stand-in iCloud folder; a release build always uses the real one.
+let cloudStandIn = CloudStandIn.setting()
+let services = AppServices(cloudRoot: CloudStandIn.cloudRoot(for: cloudStandIn) ?? { CloudFolder.documentsOnThisDevice() },
+                           cloudSongs: CloudStandIn.cloudSongs(for: cloudStandIn))
+if let isUbiquitous = CloudStandIn.isUbiquitous(for: cloudStandIn) { services.cloud.isUbiquitous = isUbiquitous }
 AppServices.shared = services
 services.connect(controller: PlaylistDocumentController.current)
 delegate.services = services

@@ -1,4 +1,5 @@
 import SwiftUI
+import CryptoKit
 import Combine
 import AVFoundation
 import MediaPlayer
@@ -400,6 +401,11 @@ final class AppModel: ObservableObject {
             tracks.append(Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "\(macRoot)/\(songFile)", fileName: songFile)))
         }
         _ = PlaylistStore().save(Playlist(tracks: tracks), to: file)
+        // The bytes as seeded, for the file-unchanged check made from outside the simulator (story 37 TC-21).
+        if let data = try? Data(contentsOf: file) {
+            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            try? digest.write(to: folder.appendingPathComponent("\(name).seed.sha256"), atomically: true, encoding: .utf8)
+        }
     }
 
     /// What the other device does: a coordinated write of the open playlist's file with a new song beside it, dated a

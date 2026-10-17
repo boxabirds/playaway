@@ -408,6 +408,27 @@ final class PlaylistPlayerTests: XCTestCase {
         XCTAssertTrue(rig.backend.log.isEmpty)
     }
 
+    /// Task 20.23: the last asked track follows every play attempt, so a song that arrives from iCloud is played
+    /// only while nothing else has been asked for since; it is not the current track, which also changes when a
+    /// song ends or the playlist runs out.
+    func testLastAskedFollowsEveryPlayAttemptNotTheCurrentTrack() {
+        let rig = PlayerRig()
+        XCTAssertNil(rig.player.lastAsked)
+        rig.player.start()
+        XCTAssertEqual(rig.player.lastAsked?.id, rig.playlist.tracks[0].id)
+        rig.player.play(track: rig.playlist.tracks[2])
+        XCTAssertEqual(rig.player.lastAsked?.id, rig.playlist.tracks[2].id)
+        rig.player.next()
+        XCTAssertEqual(rig.player.lastAsked?.id, rig.playlist.tracks[3].id, "Next asks for the next song")
+        rig.fixture.deleteFile(at: 4)
+        rig.finishCurrent()                                         // 4 ends; 5 is missing and skipped; the playlist runs out
+        XCTAssertFalse(rig.player.isSessionActive)
+        XCTAssertNil(rig.player.current)
+        XCTAssertEqual(rig.player.lastAsked?.id, rig.playlist.tracks[4].id, "the last song asked for, though it could not play")
+        XCTAssertTrue(rig.player.load(track: rig.playlist.tracks[1], atSeconds: 1))
+        XCTAssertEqual(rig.player.lastAsked?.id, rig.playlist.tracks[1].id, "a restore asks too")
+    }
+
     func testNextSkipsUnreadableTrack() {                           // TC-38
         let rig = PlayerRig()
         rig.backend.unreadableNames = ["track4.mp3"]

@@ -92,7 +92,16 @@ package final class FollowedPlaylist {
         self.isInContainer = isInContainer
     }
 
-    package var isEdited: Bool { playlist != onDisk }
+    /// An edit is a change to the list: which songs, in what order, at what paths. A refreshed bookmark for the same
+    /// file (the resolver re-points references as it finds them) is not an edit, or a remote change landing a moment
+    /// after a resolve would be merged on top of a list the person never touched.
+    package var isEdited: Bool { !Self.sameListing(playlist, onDisk) }
+
+    static func sameListing(_ a: Playlist, _ b: Playlist) -> Bool {
+        a.tracks.count == b.tracks.count && zip(a.tracks, b.tracks).allSatisfy {
+            $0.id == $1.id && $0.reference.lastKnownPath == $1.reference.lastKnownPath && $0.reference.fileName == $1.reference.fileName
+        }
+    }
 
     /// An edit made on this device, not yet saved.
     package func edited(_ updated: Playlist) { playlist = updated }

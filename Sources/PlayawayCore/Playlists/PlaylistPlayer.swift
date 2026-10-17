@@ -22,6 +22,11 @@ package final class PlaylistPlayer: SessionEnding {
     private weak var reporter: TrackResolutionReporting?
     /// Whether the file at a URL is on this device; an iCloud file may be only a placeholder. The adapter answers.
     package var isOnDevice: (URL) -> Bool = { _ in true }
+    /// The last track any play attempt was made for (a double-click, a script, Next, play-through, a restore), whether
+    /// or not it could start. A song that arrives from iCloud is played only while it is still this one: nothing else
+    /// has been asked for since. The current song is not the measure: it also changes when a song ends or the
+    /// playlist runs out, and that is not the person moving on.
+    package private(set) var lastAsked: Track?
     /// A playable track whose file is not on this device: the adapter downloads it and plays it when it arrives
     /// (story 31's download-on-play, the same from every entry point). Until then nothing plays and nothing is marked.
     package var wantsDownload: ((Track, URL) -> Void)?
@@ -265,6 +270,7 @@ package final class PlaylistPlayer: SessionEnding {
 
     /// Resolve, gate, classify, in that order, so a blocked track never touches the engine.
     private func prepare(_ track: Track) -> Prepared {
+        lastAsked = track
         let (status, reference) = resolver.resolve(track.reference, besidePlaylistAt: playlistFolder())
         reporter?.trackResolved(id: track.id, status: status, reference: reference)
         switch gate.decide(for: status) {

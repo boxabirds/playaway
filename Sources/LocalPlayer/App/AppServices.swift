@@ -73,7 +73,8 @@ final class AppServices {
     /// not moved on by then.
     func requestDownload(of track: Track, at url: URL, in document: PlaylistDocument) {
         let song = MacSongs.id(for: url)
-        starter.pending[song] = MacPlaybackStarter.Pending(document: document, track: track, currentAtRequest: document.player.current?.id)
+        DebugTrace.log("requestDownload \(url.lastPathComponent) state=\(downloads.state(of: song))")
+        starter.pending[song] = MacPlaybackStarter.Pending(document: document, track: track)
         downloads.request(song, source: .list, isOnDevice: false)
         downloadChanges.send()
     }
@@ -86,7 +87,7 @@ final class AppServices {
 
     func retryDownload(of track: Track, at url: URL, in document: PlaylistDocument) {
         let song = MacSongs.id(for: url)
-        starter.pending[song] = MacPlaybackStarter.Pending(document: document, track: track, currentAtRequest: document.player.current?.id)
+        starter.pending[song] = MacPlaybackStarter.Pending(document: document, track: track)
         downloads.retry(song)
         downloadChanges.send()
     }
