@@ -429,7 +429,9 @@ final class ReleaseScriptTests: XCTestCase {
     // MARK: failure ordering
 
     func testRepoPlaceholdersBlockTheReleaseBeforeAnything_TC86() throws {
-        let w = try ScriptWorkspace()   // plist still carries the repo's placeholders
+        let w = try ScriptWorkspace()
+        try w.setPlist("SUFeedURL", "https://PLACEHOLDER-FEED-HOST/appcast.xml")      // a repo that still carries placeholders
+        try w.setPlist("SUPublicEDKey", "PLACEHOLDER-PUBLIC-ED-KEY")
         let script = try release(w, [], extra: ["HOSTING_PROJECT": "PLACEHOLDER_HOSTING_PROJECT", "RELEASE_REPO": "PLACEHOLDER_RELEASE_REPO"])
         XCTAssertNotEqual(script.status, 0)
         XCTAssertTrue(script.output.contains("placeholder values remain"), script.output)

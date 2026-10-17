@@ -156,8 +156,10 @@ final class UpdateConfigurationTests: XCTestCase {
     // MARK: TC-85 / TC-86 style checks
 
     /// Values that belong to another product and must never appear in this repository's files, apart from the
-    /// deny-list entries that reject them.
-    private let foreignValues = [foreignProductKey, "cutaway-updates", "pages.dev", "boxabirds", "getcutaway", "screencap.sh"]
+    /// deny-list entries that reject them. The owner's own GitHub organisation and the Cloudflare Pages domain are
+    /// shared by every product of the owner and are not another product's values (owner decision 2026-10-17: host
+    /// Playaway's updates the way Cutaway's are hosted, on a Pages project of its own).
+    private let foreignValues = [foreignProductKey, "cutaway-updates", "getcutaway", "screencap.sh"]
     private let denyListFiles = ["Sources/LocalPlayer/Updates/UpdateConfiguration.swift", "scripts/release.sh"]
     private let selfFiles = ["Tests/LocalPlayerTests/UpdateConfigurationTests.swift"]
 

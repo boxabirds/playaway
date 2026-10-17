@@ -102,16 +102,21 @@ final class UpdaterControllerTests: XCTestCase {
         XCTAssertEqual(logged.count, 1)
     }
 
-    func testTheShippedConfigurationFailsAndNeverCreatesSparkle_TC33() throws {
+    /// The shipped Info.plist: a valid configuration starts Sparkle once the first window is up; an invalid one
+    /// (a placeholder left behind) fails, logs and never creates Sparkle.
+    func testTheShippedConfigurationStartsSparkleOnlyWhenItIsValid_TC33() throws {
         let configuration = UpdateConfiguration.from(info: try shippedInfo())
+        var created = 0
         let controller = UpdaterController(configuration: configuration, driverFactory: {
-            XCTFail("Sparkle must not be created for an invalid configuration")
+            created += 1
             return StubUpdaterDriver()
         }, log: { [unowned self] in logged.append($0) })
         controller.firstWindowPresented()
         if validate(configuration).isEmpty {
             XCTAssertEqual(controller.state, .idle)
+            XCTAssertEqual(created, 1, "the shipped configuration is valid, so Sparkle is created once")
         } else {
+            XCTAssertEqual(created, 0, "Sparkle must not be created for an invalid configuration")
             XCTAssertEqual(controller.state, .failed)
             XCTAssertFalse(logged.isEmpty)
         }

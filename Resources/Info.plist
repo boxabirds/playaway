@@ -82,9 +82,9 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://PLACEHOLDER-FEED-HOST/appcast.xml</string>
+	<string>https://playaway-updates.pages.dev/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>PLACEHOLDER-PUBLIC-ED-KEY</string>
+	<string>uYSmIbNmBKJP6JFpByV279CHvvtu/+in5zExIEokvw0=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

@@ -13,10 +13,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# --- Open items: PLACEHOLDER until decided. Do not invent values. ---
-HOSTING_PROJECT="${HOSTING_PROJECT:-PLACEHOLDER_HOSTING_PROJECT}"     # hosting project that serves the appcast
-RELEASE_REPO="${RELEASE_REPO:-PLACEHOLDER_RELEASE_REPO}"              # <owner>/<repo> that hosts release downloads
-# ---------------------------------------------------------------------
+# --- Hosting, the same shape as Cutaway's: the appcast on a Cloudflare Pages project, the DMG on a GitHub release. ---
+HOSTING_PROJECT="${HOSTING_PROJECT:-playaway-updates}"                # Cloudflare Pages project serving https://playaway-updates.pages.dev/appcast.xml
+RELEASE_REPO="${RELEASE_REPO:-boxabirds/playaway}"                    # <owner>/<repo> that hosts release downloads
+SPARKLE_KEY_ACCOUNT="${SPARKLE_KEY_ACCOUNT:-playaway}"               # Playaway's own EdDSA key in the keychain (generate_keys --account playaway), never Cutaway's
+# ------------------------------------------------------------------------------------------------------------------
 
 HOSTING_BRANCH="${HOSTING_BRANCH:-main}"
 PLACEHOLDER_MARKER="PLACEHOLDER"
