@@ -10,6 +10,10 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
     private let changeSubject = PassthroughSubject<Void, Never>()
     private var autosavePending = false
     private var resolutionStarted = false
+    /// The file-following state (story 39): reloads, rebases and conflict merges are decided in the shared core.
+    private(set) var followed: FollowedPlaylist?
+    /// When iCloud conflict versions were last merged into this playlist, for the sync window to show.
+    private(set) var lastMerge: Date?
 
     var services: AppServices { AppServices.shared }
     var changes: AnyPublisher<Void, Never> { changeSubject.eraseToAnyPublisher() }
@@ -56,7 +60,10 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
 
     override func read(from url: URL, ofType typeName: String) throws {
         switch services.store.load(from: url) {
-        case .loaded(let loaded): playlist = loaded
+        case .loaded(let loaded):
+            playlist = loaded
+            followed = makeFollowed(url: url, playlist: loaded)
+            resolveConflictsIfAny()
         case .notFound: throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoSuchFileError)
         case .corrupt: throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadCorruptFileError)
         case .unsupportedVersion: throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError,
@@ -67,10 +74,74 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
     /// The store does the atomic write. A failed save tells the person and keeps the change in memory, so the
     /// next autosave tries again; the last good version on disk is never touched.
     override func write(to url: URL, ofType typeName: String) throws {
-        if case .writeFailed(let reason) = services.store.save(playlist, to: url) {
+        let result: SaveResult
+        if let followed, url.canonicalPath == fileURL?.canonicalPath {
+            // Saving in place: a newer file (the other device's) is taken in first, so nothing of theirs is lost.
+            followed.edited(playlist)
+            result = followed.save()
+            if followed.playlist != playlist { takeFromFollowed(cleared: false) }
+        } else {
+            result = services.store.save(playlist, to: url)
+        }
+        if case .writeFailed(let reason) = result {
             services.notices.show(.saveFailed(reason))
             throw NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)
         }
+    }
+
+    // MARK: Following the file (story 39)
+
+    private func makeFollowed(url: URL, playlist: Playlist) -> FollowedPlaylist? {
+        guard let files = services.store as? PlaylistFileReading else { return nil }   // a test store that cannot fingerprint
+        return FollowedPlaylist(url: url, playlist: playlist, fingerprint: files.fingerprint(of: url), files: files,
+                                conflicts: services.conflictVersions,
+                                isInContainer: { CloudFolder.relativePath(inContainer: $0.lastKnownPath) != nil })
+    }
+
+    /// The file was moved by this app (turning sync on): same contents, new place.
+    func fileMoved(to url: URL) {
+        followed = followed?.movedTo(url)
+    }
+
+    /// NSDocument is a file presenter; the system tells it here when something else wrote, moved or deleted its file.
+    override func presentedItemDidChange() {
+        DispatchQueue.main.async { [weak self] in self?.fileChangedUnderUs() }
+    }
+
+    private func fileChangedUnderUs() {
+        guard let followed else { return }
+        followed.edited(playlist)
+        switch followed.fileChanged() {
+        case .replaced: takeFromFollowed(cleared: true)
+        case .merged: takeFromFollowed(cleared: false)
+        case .unchanged, .gone, .unreadable: break
+        }
+        resolveConflictsIfAny()
+    }
+
+    private func resolveConflictsIfAny() {
+        guard let followed else { return }
+        followed.edited(playlist)
+        if followed.resolveConflicts() == .merged {
+            lastMerge = Date()
+            takeFromFollowed(cleared: true)
+        }
+    }
+
+    /// Shows what the followed playlist now holds. `cleared` means the file and the screen agree (nothing of ours is
+    /// unsaved); otherwise our edit sits on top and the next autosave writes the merge.
+    private func takeFromFollowed(cleared: Bool) {
+        guard let followed else { return }
+        if cleared {
+            playlist = followed.playlist
+            updateChangeCount(.changeCleared)
+            changeSubject.send()
+        } else {
+            replacePlaylist(followed.playlist)
+        }
+        if let modified = followed.fingerprint?.modified { fileModificationDate = modified }
+        statuses.setAll([:])
+        resolveStatuses()
     }
 
     override func prepareSavePanel(_ savePanel: NSSavePanel) -> Bool {

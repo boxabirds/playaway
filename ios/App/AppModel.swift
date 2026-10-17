@@ -15,10 +15,16 @@ final class PlaylistSession: ObservableObject {
     private let library: PlaylistLibrary
     private var cancellables = Set<AnyCancellable>()
 
-    init(url: URL, playlist: Playlist, library: PlaylistLibrary, model: AppModel) {
+    /// The file-following state (story 39): reloads and rebases are decided in the shared core.
+    private var followed: FollowedPlaylist
+    private var presenter: SessionPresenter?
+
+    /// `followsFile` is true for a playlist in the iCloud folder, where another device may change its file.
+    init(url: URL, playlist: Playlist, library: PlaylistLibrary, model: AppModel, followsFile: Bool = false) {
         self.url = url
         self.playlist = playlist
         self.library = library
+        followed = Self.makeFollowed(url: url, playlist: playlist, library: library)
         var provider: () -> Playlist = { playlist }
         let box = Box()
         provider = { box.session?.playlist ?? playlist }
@@ -26,8 +32,51 @@ final class PlaylistSession: ObservableObject {
                                 resolver: model.resolver, engine: model.engine, marks: model.marks, registry: model.registry)
         box.session = self
         player.changes.sink { [weak self] in self?.objectWillChange.send() }.store(in: &cancellables)
+        if followsFile { followFile() }
     }
     private final class Box { weak var session: PlaylistSession? }
+
+    private static func makeFollowed(url: URL, playlist: Playlist, library: PlaylistLibrary) -> FollowedPlaylist {
+        FollowedPlaylist(url: url, playlist: playlist, fingerprint: PlaylistStore().fingerprint(of: url), files: LibraryFiles(library: library),
+                         isInContainer: { CloudFolder.relativePath(inContainer: $0.lastKnownPath) != nil })
+    }
+
+    /// The library's own load and save, with the store's fingerprint, so following the file changes no write path.
+    private struct LibraryFiles: PlaylistFileReading {
+        let library: PlaylistLibrary
+        func fingerprint(of url: URL) -> FileFingerprint? { PlaylistStore().fingerprint(of: url) }
+        func load(from url: URL) -> LoadResult { library.load(url) }
+        func save(_ playlist: Playlist, to url: URL) -> SaveResult { library.save(playlist, to: url) }
+    }
+
+    /// Registers this session as the file's presenter, so the system says when something else wrote it.
+    private func followFile() {
+        guard presenter == nil else { return }
+        let presenter = SessionPresenter(url: url) { [weak self] in self?.fileChangedUnderUs() }
+        NSFileCoordinator.addFilePresenter(presenter)
+        self.presenter = presenter
+    }
+
+    /// Called when the session is dropped or its file moves; a presenter left registered would outlive the session.
+    func stopFollowing() {
+        if let presenter { NSFileCoordinator.removeFilePresenter(presenter) }
+        presenter = nil
+    }
+
+    /// Whether another device's change to the file is being watched for (iCloud playlists only).
+    var isFollowingFile: Bool { presenter != nil }
+
+    private func fileChangedUnderUs() {
+        followed.edited(playlist)
+        switch followed.fileChanged() {
+        case .replaced, .merged:
+            playlist = followed.playlist
+            if followed.isEdited, case .writeFailed = followed.save() { notice = "The playlist could not be saved." }
+            model?.playlistChangedUnderUs(self)
+        case .unchanged, .gone, .unreadable:
+            break
+        }
+    }
 
     var name: String { url.deletingPathExtension().lastPathComponent }
     /// Where the playlist's file is; a song another device stored is looked for here by name.
@@ -37,6 +86,10 @@ final class PlaylistSession: ObservableObject {
     func rebase(to newURL: URL) {
         _ = newURL.startAccessingSecurityScopedResource()
         url = newURL
+        followed = followed.movedTo(newURL)
+        let wasFollowing = presenter != nil
+        stopFollowing()
+        if wasFollowing { followFile() }
         objectWillChange.send()
     }
 
@@ -71,8 +124,20 @@ final class PlaylistSession: ObservableObject {
 
     private func replace(_ updated: Playlist) {
         playlist = updated
-        if case .writeFailed = library.save(updated, to: url) { notice = "The playlist could not be saved." }
+        followed.edited(updated)
+        let result = followed.save()                       // a newer file (the other device's) is taken in first
+        if followed.playlist != updated { playlist = followed.playlist }
+        if case .writeFailed = result { notice = "The playlist could not be saved." }
     }
+}
+
+/// The system's way of telling a session that something else wrote its file. Callbacks arrive on the main queue.
+final class SessionPresenter: NSObject, NSFilePresenter {
+    let presentedItemURL: URL?
+    let presentedItemOperationQueue = OperationQueue.main
+    private let onChange: () -> Void
+    init(url: URL, onChange: @escaping () -> Void) { presentedItemURL = url; self.onChange = onChange }
+    func presentedItemDidChange() { MainActor.assumeIsolated { onChange() } }
 }
 
 /// Lets the shared open path (the same one the Mac uses) hand playlists to the app and show its notices. Calls come
@@ -204,6 +269,10 @@ final class AppModel: ObservableObject {
         }
         // Test aid: a playlist another device (a Mac) wrote into the Playaway folder, its references the Mac's.
         if arguments.contains("-PlayawaySeedForeignPlaylist"), let fake = fakeCloudRoot { seedForeignPlaylist(in: fake) }
+        // Test aid: after the given seconds, "another device" rewrites the open playlist's file with one more song.
+        if let at = arguments.firstIndex(of: "-PlayawayRewriteOpenPlaylist"), at + 1 < arguments.count, let seconds = Double(arguments[at + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.rewriteOpenPlaylistAsAnotherDevice() }
+        }
         // Test aid: the lyrics experiment on, with a ready-made sheet for "Demo One", so the panel needs no model.
         if arguments.contains("-PlayawayFakeLyrics"),
            let demoOne = (try? FileManager.default.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil))?
@@ -331,6 +400,22 @@ final class AppModel: ObservableObject {
             tracks.append(Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "\(macRoot)/\(songFile)", fileName: songFile)))
         }
         _ = PlaylistStore().save(Playlist(tracks: tracks), to: file)
+    }
+
+    /// What the other device does: a coordinated write of the open playlist's file with a new song beside it, dated a
+    /// moment later, from off the main thread, as iCloud's arrival would be.
+    private func rewriteOpenPlaylistAsAnotherDevice() {
+        guard let url = path.last else { return }
+        let folder = url.deletingLastPathComponent()
+        let song = folder.appendingPathComponent("Added Elsewhere.wav")
+        try? Self.tone(30, hz: 300).write(to: song)
+        DispatchQueue.global().async {
+            let store = PlaylistStore()
+            guard case .loaded(var playlist) = store.load(from: url), let reference = TrackReference.make(for: song) else { return }
+            playlist.tracks.append(Track(id: UUID(), reference: reference))
+            _ = store.save(playlist, to: url)
+            try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(2)], ofItemAtPath: url.path)
+        }
     }
 
     private func seedDemoPlaylist(in folder: URL, keepExisting: Bool) {
@@ -471,6 +556,14 @@ final class AppModel: ObservableObject {
             self.cloudRevision += 1
             self.pendingPlays.removeAll()
         }
+    }
+
+    /// Another device changed an open playlist's file (story 39): everything drawn from it is read again.
+    func playlistChangedUnderUs(_ session: PlaylistSession) {
+        songURLs.removeAll()
+        cloudRevision += 1
+        objectWillChange.send()
+        refresh()
     }
 
     func availability(of session: PlaylistSession) -> PlaylistAvailability {
@@ -769,6 +862,7 @@ final class AppModel: ObservableObject {
             return
         }
         let wasPlaying = activeSession?.url == entry.url
+        sessions[entry.url]?.stopFollowing()
         sessions[entry.url] = nil
         path.removeAll { $0 == entry.url }
         if wasPlaying {
@@ -798,7 +892,8 @@ final class AppModel: ObservableObject {
         if let existing = sessions[url] { return existing }
         let owner = library(for: url)
         guard case .loaded(let playlist) = owner.load(url) else { return nil }
-        let session = PlaylistSession(url: url, playlist: playlist, library: owner, model: self)
+        let session = PlaylistSession(url: url, playlist: playlist, library: owner, model: self,
+                                      followsFile: cloudLibrary != nil && owner === cloudLibrary)
         session.model = self
         sessions[url] = session
         session.objectWillChange.sink { [weak self] in self?.objectWillChange.send(); self?.refresh() }.store(in: &cancellables)

@@ -69,6 +69,7 @@ final class PlaylistSyncController {
             if let thrown { throw thrown }
             document.fileURL = destination
             document.fileModificationDate = try? destination.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            document.fileMoved(to: destination)
         }
     }
 }

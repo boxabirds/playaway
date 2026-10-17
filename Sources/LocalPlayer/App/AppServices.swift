@@ -20,6 +20,8 @@ final class AppServices {
     let transport: TransportViewModel
     /// The Playaway folder in iCloud Drive on this Mac, when there is one.
     let cloud: CloudFolderLocator
+    /// iCloud's conflict versions of a playlist file (story 39).
+    let conflictVersions: ConflictVersionReading
     private(set) var openCoordinator: OpenCoordinator!
     private(set) var playlistRouter: PlaylistOpenRouter!
     private(set) var lastSingleFile: URL?
@@ -33,7 +35,8 @@ final class AppServices {
          store: PlaylistStoring = PlaylistStore(),
          shuffleOrder: ShuffleOrdering = ShuffleOrder(),
          runsTimer: Bool = true,
-         cloudRoot: @escaping () -> URL? = { CloudFolder.documentsOnThisDevice() }) {
+         cloudRoot: @escaping () -> URL? = { CloudFolder.documentsOnThisDevice() },
+         conflictVersions: ConflictVersionReading = MacConflictVersions()) {
         self.defaults = defaults
         self.engine = engine ?? AVPlaybackEngine(settings: VolumeSettingsStore(defaults: defaults))
         self.settings = PlayModeSettings(store: PlayModeStore(defaults: defaults))
@@ -41,6 +44,7 @@ final class AppServices {
         self.classifier = classifier
         let cloud = CloudFolderLocator(find: cloudRoot)
         self.cloud = cloud
+        self.conflictVersions = conflictVersions
         self.resolver = resolver ?? TrackResolver(cloudDocuments: cloud.root)
         self.gate = gate
         self.store = store

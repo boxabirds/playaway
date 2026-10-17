@@ -958,6 +958,42 @@ import UIKit
         let card = openCard(app)
         XCTAssertTrue(app.buttons["lyrics-make"].waitForExistence(timeout: 5), "a song with no sheet offers to make one")
     }
+
+    /// The lyrics section has a disclosure header, as the system's own folding sections do: a "Lyrics" row with a
+    /// chevron. Tapping it folds the words away and the card shrinks to fit with the controls where they were; the
+    /// choice is kept across launches; tapping again brings the words back.
+    func testTheLyricsSectionFoldsFromItsHeaderStaysFoldedAcrossLaunchesAndUnfolds() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeLyrics"]; app.launch()
+        let card = openCard(app)
+        let header = app.buttons["lyrics-disclosure"]
+        XCTAssertTrue(header.waitForExistence(timeout: 5), "the section has a header")
+        XCTAssertTrue(app.staticTexts["lyrics-line-0"].waitForExistence(timeout: 5))
+        XCTAssertEqual(header.value as? String, "Expanded")
+        let pauseBefore = app.buttons.matching(identifier: "Pause").allElementsBoundByIndex.first { $0.isHittable }?.frame
+        XCTAssertNotNil(pauseBefore)
+        let openHeight = card.frame.height
+
+        header.tap()
+        XCTAssertTrue(app.staticTexts["lyrics-line-0"].waitForNonExistence(timeout: 5), "the words fold away")
+        XCTAssertEqual(header.value as? String, "Collapsed")
+        sleep(1)                                                    // the card's resize finishes
+        XCTAssertLessThan(card.frame.height, openHeight - 100, "the card shrinks to fit (was \(openHeight))")
+        let pauseAfter = app.buttons.matching(identifier: "Pause").allElementsBoundByIndex.first { $0.isHittable }?.frame
+        XCTAssertEqual(pauseAfter?.midY ?? -1, pauseBefore?.midY ?? -2, accuracy: 2, "the controls stay where they were")
+
+        app.terminate()
+        let again = XCUIApplication()
+        again.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeLyrics", "-PlayawayKeepMemory"]
+        again.launch()
+        _ = openCard(again)
+        let headerAgain = again.buttons["lyrics-disclosure"]
+        XCTAssertTrue(headerAgain.waitForExistence(timeout: 5))
+        XCTAssertEqual(headerAgain.value as? String, "Collapsed", "the choice is kept across launches")
+        XCTAssertFalse(again.staticTexts["lyrics-line-0"].exists)
+        headerAgain.tap()
+        XCTAssertTrue(again.staticTexts["lyrics-line-0"].waitForExistence(timeout: 5), "the words come back")
+        XCTAssertEqual(headerAgain.value as? String, "Expanded")
+    }
 }
 
 @MainActor final class PlaybackStateUITests: XCTestCase {
@@ -1128,5 +1164,53 @@ import UIKit
 
         drag(table, "Demo Two", toward: "Demo Five", below: true)              // middle down to the end
         XCTAssertEqual(order(table), ["Demo One", "Demo Four", "Demo Three", "Demo Five", "Demo Two"])
+    }
+}
+
+/// Story 39 on the iPhone: an open iCloud playlist follows its file. "Another device" (the -PlayawayRewriteOpenPlaylist
+/// hook, a coordinated write from inside the app after a delay) adds a song; the open list shows it while the song
+/// keeps playing (TC-50). A playlist that is only on this phone is not watched: the change shows when it is reopened
+/// (TC-51). The file-unchanged half lives in the core tests (FollowedPlaylistTests), where the file can be read.
+@MainActor final class RemoteChangeUITests: XCTestCase {
+    func testAnOpenICloudPlaylistShowsTheOtherDevicesNewSongWhilePlaying() {                     // TC-50
+        let app = XCUIApplication()
+        app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud", "-PlayawaySeedForeignPlaylist", "-PlayawayRewriteOpenPlaylist", "14"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["From Mac"].waitForExistence(timeout: 15))
+        app.staticTexts["From Mac"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        XCTAssertTrue(table.cells["Mac One"].waitForExistence(timeout: 5))
+        table.cells["Mac One"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10))
+        XCTAssertFalse(table.cells["Added Elsewhere"].exists, "not there yet")
+        XCTAssertTrue(table.cells["Added Elsewhere"].waitForExistence(timeout: 20), "the other device's song appears without a reopen")
+        XCTAssertTrue(app.buttons["Pause"].exists, "still playing")
+        XCTAssertTrue(table.cells["Mac One"].exists && table.cells["Mac Two"].exists, "nothing of ours is lost")
+    }
+
+    func testAPlaylistOnlyOnThisPhoneIsNotWatchedAndShowsTheChangeWhenReopened() {               // TC-51
+        let app = XCUIApplication()
+        app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayRewriteOpenPlaylist", "4"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+        sleep(10)
+        XCTAssertFalse(table.cells["Added Elsewhere"].exists, "a phone-only playlist is not watched")
+        // A phone-only playlist is read from its file at launch; the next launch shows what the file holds.
+        app.terminate()
+        let again = XCUIApplication()
+        again.launchArguments = ["-PlayawaySeedDemo", "-PlayawayKeepMemory"]
+        again.launch()
+        let list = again.tables["song-table"]
+        if !list.waitForExistence(timeout: 10) {
+            XCTAssertTrue(again.staticTexts["Demo"].waitForExistence(timeout: 15))
+            again.staticTexts["Demo"].tap()
+            XCTAssertTrue(list.waitForExistence(timeout: 15))
+        }
+        if !list.cells["Added Elsewhere"].exists { list.swipeUp() }
+        XCTAssertTrue(list.cells["Added Elsewhere"].waitForExistence(timeout: 10), "the next launch reads the file again")
     }
 }

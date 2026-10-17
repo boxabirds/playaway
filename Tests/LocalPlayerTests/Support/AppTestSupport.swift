@@ -15,7 +15,7 @@ final class TestApp {
 
     /// `cloudRoot` stands in for the Playaway folder in iCloud Drive (nil: iCloud unavailable); by default no iCloud.
     init(hasDevice: Bool = true, store: PlaylistStoring = PlaylistStore(), resolver: TrackResolving? = nil,
-         cloudRoot: @escaping () -> URL? = { nil }) {
+         cloudRoot: @escaping () -> URL? = { nil }, conflictVersions: ConflictVersionReading = NoConflictVersions()) {
         if !Self.bootstrapped {
             _ = PlaylistDocumentController()      // the first controller created becomes the shared one
             _ = NSApplication.shared
@@ -29,7 +29,7 @@ final class TestApp {
         let engine = AVPlaybackEngine(backend: backend, devices: StubOutputDevices(hasOutputDevice: hasDevice),
                                       settings: VolumeSettingsStore(defaults: defaults))
         services = AppServices(defaults: defaults, engine: engine, notices: notices, resolver: resolver, store: store,
-                               shuffleOrder: seededShuffler(), runsTimer: false, cloudRoot: cloudRoot)
+                               shuffleOrder: seededShuffler(), runsTimer: false, cloudRoot: cloudRoot, conflictVersions: conflictVersions)
         services.cloud.isUbiquitous = { url in isStrictlyInside(url, folder: cloudRoot()) }   // in the stand-in, "in iCloud" is inside the root
         AppServices.shared = services
         services.connect(controller: controller)
