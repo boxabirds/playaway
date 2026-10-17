@@ -50,3 +50,23 @@ by the fake-seam tests of task 39.2; it has not run against a real conflict.
   metadata query returns nothing for an unentitled process), so the Mac's pie has no fraction.
 - A download started right after an evict stalled silently for the full 120 s once; the 30 s stall timeout is the
   only signal the app gets.
+
+## The story 31 spike in full (task 31.1, run 2026-10-17 on this Mac, real container)
+
+Setting: macOS 26.6.2 (build 25G83), Xcode 27.1, the Playaway container `iCloud~software~away~play` of the signed-in
+account, a scratch program outside the repo (not committed) writing one 120,389-byte fixture into a folder of its own,
+removed at the end. No product source was changed by the spike.
+
+| Field | Seen |
+|---|---|
+| Status values (`ubiquitousItemDownloadingStatus`) | `Current` and `NotDownloaded` only; `Downloaded` never observed (NotDownloaded went straight to Current, with `isDownloading` true on the same read for this small file) |
+| Percent downloaded | None on the Mac: the URL keys carry no percent; `NSMetadataQuery` over the ubiquitous documents and data scopes returned zero results for the container from this unentitled process; range and units stay UNVERIFIED (only an entitled iPhone process can read them) |
+| Legacy `NSURLUbiquitousItemPercentDownloadedKey` | Absent (nil) |
+| Upload | `isUploading` true at 0.6 s, `isUploaded` true at 13.1 s |
+| Evict (`evictUbiquitousItem`) | Status `NotDownloaded` within 0.6 s; the file still exists by name with its full size and 0 allocated bytes (dataless); no `.name.icloud` placeholder |
+| Download (`startDownloadingUbiquitousItem`) | Returned without error; `Current` after 0.57 s |
+| Outside the container | A plain local file: `isUbiquitousItem` nil; `startDownloadingUbiquitousItem` on it throws NSCocoaErrorDomain 512 with NSFileProviderInternalErrorDomain underneath. The account's iCloud Drive root answers ubiquitous and Current; the query returns nothing for it either |
+| Cancel | No API. An evict issued while `isDownloading` was true was ignored for 30 s; an evict after the download completed worked in 1 s. Cancelling an in-flight download could not be shown |
+| Retry after an evict | `startDownloadingUbiquitousItem` returned without error, then the status stayed `NotDownloaded` with `isDownloading` false and no error for the full 120 s: a silent stall, which the app's 30 s stall timeout turns into the failed state. Whether a later start recovers was not seen |
+| Offline, a provoked failure | NOT tested (needs the network or a system setting changed) |
+| What counts as a failure (PRD open question 1) | Not decided here |
