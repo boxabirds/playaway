@@ -159,6 +159,9 @@ final class LiveResolver: TrackResolving {
     func resolve(_ ref: TrackReference, besidePlaylistAt folder: URL?) -> (TrackStatus, TrackReference) {
         current.resolve(ref, besidePlaylistAt: folder)
     }
+    func accessNeeded(for ref: TrackReference, besidePlaylistAt folder: URL?) -> String? {
+        current.accessNeeded(for: ref, besidePlaylistAt: folder)
+    }
 }
 
 /// Lets the shared Files flow ask its question and show its messages through the app's screens.
@@ -179,6 +182,16 @@ final class AppModel: ObservableObject {
     private static let cloudContainer = CloudFolder.containerIdentifier
     /// Finds a song's file for every session; learns where the iCloud Playaway folder is once the system says.
     let resolver = LiveResolver()
+    /// Where a song's portable location is on this device (story 40): the Playaway folder, and the iCloud Drive folders
+    /// the person has allowed this device to read.
+    let roots: GrantedCloudRoots
+    private static let grantsFileName = "FolderGrants.json"
+    /// Test aid: a folder standing in for the iCloud Drive root, so the grant flow runs without an account.
+    private var fakeDriveRoot: URL?
+    /// The folder picker for a grant, and the playlist that asked for it.
+    @Published var folderPickerShown = false
+    private var accessSession: PlaylistSession?
+    private var accessNeededCache: [URL: (revision: Int, folder: String?)] = [:]
     let settings = PlayModeSettings()
     let engine = AVPlaybackEngine()
     let registry = ActiveSessionRegistry()
@@ -235,6 +248,30 @@ final class AppModel: ObservableObject {
         let fakeCloud = false
         #endif
         cloudMover = fakeCloud ? PlainFileMover() : UbiquitousMover()
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let grantStore = FolderGrantFileStore(url: support.appendingPathComponent(Self.grantsFileName))
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-PlayawayFakeDrive") {
+            let drive = documents.appendingPathComponent("FakeDrive", isDirectory: true)
+            if ProcessInfo.processInfo.arguments.contains("-PlayawaySeedDrivePlaylist"),
+               !ProcessInfo.processInfo.arguments.contains("-PlayawayKeepMemory") {
+                try? FileManager.default.removeItem(at: drive)
+                try? FileManager.default.removeItem(at: support.appendingPathComponent(Self.grantsFileName))
+            }
+            try? FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
+            fakeDriveRoot = drive
+            let prefix = drive.canonicalPath + "/"
+            roots = GrantedCloudRoots(playawayDocuments: nil, store: grantStore, drivePath: { url in
+                let path = url.canonicalPath
+                return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : nil
+            })
+        } else {
+            roots = GrantedCloudRoots(playawayDocuments: nil, store: grantStore)
+        }
+        #else
+        roots = GrantedCloudRoots(playawayDocuments: nil, store: grantStore)
+        #endif
+        resolver.current = TrackResolver(roots: roots)
         if fakeCloud {
             let fake = documents.appendingPathComponent("FakeICloud")
             if ProcessInfo.processInfo.arguments.contains("-PlayawaySeedDemo"),
@@ -242,11 +279,11 @@ final class AppModel: ObservableObject {
             try? FileManager.default.createDirectory(at: fake, withIntermediateDirectories: true)
             cloudLibrary = PlaylistLibrary(folder: fake, layout: .folderPerPlaylist)
             fakeCloudRoot = fake
-            resolver.current = TrackResolver(cloudDocuments: fake)
+            roots.playawayDocuments = fake
         } else if let cached = UserDefaults.standard.string(forKey: Self.cloudFolderKey),
                   FileManager.default.fileExists(atPath: cached) {
             cloudLibrary = PlaylistLibrary(folder: URL(fileURLWithPath: cached), layout: .folderPerPlaylist)
-            resolver.current = TrackResolver(cloudDocuments: URL(fileURLWithPath: cached))
+            roots.playawayDocuments = URL(fileURLWithPath: cached)
         }
         let now = Date()
         if let start = LaunchFacts.processStart(), let boot = LaunchFacts.deviceBoot() {
@@ -272,6 +309,8 @@ final class AppModel: ObservableObject {
         }
         // Test aid: a playlist another device (a Mac) wrote into the Playaway folder, its references the Mac's.
         if arguments.contains("-PlayawaySeedForeignPlaylist"), let fake = fakeCloudRoot { seedForeignPlaylist(in: fake) }
+        // Test aid: a playlist the iPhone wrote whose songs live in iCloud Drive/Mixdowns, in build-22 form (no cloud path).
+        if arguments.contains("-PlayawaySeedDrivePlaylist"), let fake = fakeCloudRoot, let drive = fakeDriveRoot { seedDrivePlaylist(in: fake, drive: drive) }
         // Test aid: after the given seconds, "another device" rewrites the open playlist's file with one more song.
         if let at = arguments.firstIndex(of: "-PlayawayRewriteOpenPlaylist"), at + 1 < arguments.count, let seconds = Double(arguments[at + 1]) {
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.rewriteOpenPlaylistAsAnotherDevice() }
@@ -409,6 +448,26 @@ final class AppModel: ObservableObject {
             let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             try? digest.write(to: folder.appendingPathComponent("\(name).seed.sha256"), atomically: true, encoding: .utf8)
         }
+    }
+
+    /// Test aid (story 40): what the owner's library looks like. The song is in iCloud Drive/Mixdowns (the fake drive
+    /// stands in), the playlist is in the Playaway folder, and its reference is in build-22 form: a bookmark that resolves
+    /// nowhere, the iPhone's absolute path, the file name, no cloud path. The migration derives the location.
+    private func seedDrivePlaylist(in cloudRoot: URL, drive: URL) {
+        let name = "Mixdowns Picks"
+        let folder = cloudRoot.appendingPathComponent(name)
+        let file = folder.appendingPathComponent(name).appendingPathExtension(playlistFileExtension)
+        let mixdowns = drive.appendingPathComponent("Mixdowns", isDirectory: true)
+        let songFile = "Demo Drive.wav"
+        try? FileManager.default.createDirectory(at: mixdowns, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: mixdowns.appendingPathComponent(songFile).path) {
+            try? Self.tone(60, hz: 350).write(to: mixdowns.appendingPathComponent(songFile))
+        }
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let iPhonePath = "/private/var/mobile/Library/Mobile Documents/\(CloudFolder.driveFolderName)/Mixdowns/\(songFile)"
+        let track = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: iPhonePath, fileName: songFile))
+        _ = PlaylistStore().save(Playlist(tracks: [track]), to: file)
     }
 
     /// What the other device does: a coordinated write of the open playlist's file with a new song beside it, dated a
@@ -693,7 +752,7 @@ final class AppModel: ObservableObject {
         let documents = base.appendingPathComponent("Documents")
         try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
         UserDefaults.standard.set(documents.path, forKey: Self.cloudFolderKey)
-        resolver.current = TrackResolver(cloudDocuments: documents)
+        roots.playawayDocuments = documents
         songURLs = [:]                                 // a song another device stored may be findable now
         guard cloudLibrary?.folder.path != documents.path else { return }
         cloudLibrary = PlaylistLibrary(folder: documents, layout: .folderPerPlaylist)
@@ -710,6 +769,57 @@ final class AppModel: ObservableObject {
         launchStore.add(report)
         Logger(subsystem: "software.away.play", category: "launch")
             .info("launch \(report.kind.rawValue) \(report.seconds, format: .fixed(precision: 3)) s")
+    }
+
+    // MARK: Folder access (story 40)
+
+    /// The iCloud Drive folder this device must be allowed to read before the playlist's songs can play; nil when none.
+    /// Resolving every row touches the file system, so the answer is kept until something about the songs changes.
+    func accessNeeded(for session: PlaylistSession) -> String? {
+        if let cached = accessNeededCache[session.url], cached.revision == cloudRevision { return cached.folder }
+        let folder = session.folder
+        let needing = session.playlist.tracks.compactMap { track -> CloudPath? in
+            guard resolver.accessNeeded(for: track.reference, besidePlaylistAt: folder) != nil else { return nil }
+            return track.reference.portableLocation
+        }
+        let answer = GrantedCloudRoots.folderToAsk(for: needing)
+        accessNeededCache[session.url] = (cloudRevision, answer)
+        return answer
+    }
+
+    /// Allow: the system's folder chooser (or, in the fake drive, the folder itself, since the chooser cannot be driven
+    /// by a test). The grant is recorded when the chosen folder holds at least one of the songs that needed it.
+    func allowAccess(for session: PlaylistSession) {
+        accessSession = session
+        #if DEBUG
+        if let fakeDriveRoot, let folder = accessNeeded(for: session) {
+            folderPicked(fakeDriveRoot.appendingPathComponent(folder, isDirectory: true))
+            return
+        }
+        #endif
+        folderPickerShown = true
+    }
+
+    /// The chooser's answer; nil when the person cancelled, which changes nothing. A folder that holds none of the
+    /// songs that needed it is not kept.
+    func folderPicked(_ url: URL?) {
+        folderPickerShown = false
+        guard let url, let session = accessSession else { return }
+        let folder = session.folder
+        let needed = session.playlist.tracks.compactMap { track -> CloudPath? in
+            guard resolver.accessNeeded(for: track.reference, besidePlaylistAt: folder) != nil else { return nil }
+            return track.reference.portableLocation
+        }
+        _ = url.startAccessingSecurityScopedResource()
+        let grant = roots.grant(pickedFolder: url)
+        if grant != nil, needed.contains(where: roots.covers) {
+            songURLs.removeAll()
+            pendingPlays.removeAll()
+            cloudRevision += 1          // rows resolve again: the notice goes, the cloud icons appear
+            return
+        }
+        if let grant { roots.revoke(drivePath: grant.drivePath) }
+        enqueueMessage("The songs are not in that folder. Choose the folder that holds them, or a folder above it.")
     }
 
     // MARK: Download on play

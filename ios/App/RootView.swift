@@ -215,6 +215,30 @@ struct PlaylistsView: View {
     }
 }
 
+/// The notice above a playlist's songs while this device needs permission for their iCloud Drive folder (story 40).
+struct AccessNotice: View {
+    let folder: String
+    let allow: () -> Void
+    private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("These songs are in your iCloud Drive folder “\(folder)”. Allow Playaway to read that folder on this \(device)?")
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Allow", action: allow)
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("access-allow")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(.regularMaterial)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("access-notice")
+        .accessibilityLabel("Needs access to \(folder)")
+    }
+}
+
 struct PlaylistView: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var session: PlaylistSession
@@ -249,6 +273,16 @@ struct PlaylistView: View {
                 let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
                 session.add(urls)
                 scoped.forEach { $0.stopAccessingSecurityScopedResource() }
+            }
+            // Story 40: songs in an iCloud Drive folder this device has not been allowed to read. One tap opens the
+            // system's folder chooser; the grant covers the folder and everything in it from then on.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let folder = model.accessNeeded(for: session) {
+                    AccessNotice(folder: folder) { model.allowAccess(for: session) }
+                }
+            }
+            .fileImporter(isPresented: $model.folderPickerShown, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
+                model.folderPicked(try? result.get().first)
             }
             .alert("Playlist", isPresented: Binding(get: { session.notice != nil }, set: { if !$0 { session.dismissNotice() } })) {
                 Button("OK", role: .cancel) {}

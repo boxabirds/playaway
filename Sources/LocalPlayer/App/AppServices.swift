@@ -44,6 +44,7 @@ final class AppServices {
          shuffleOrder: ShuffleOrdering = ShuffleOrder(),
          runsTimer: Bool = true,
          cloudRoot: @escaping () -> URL? = { CloudFolder.documentsOnThisDevice() },
+         driveRoot: @escaping () -> URL? = { CloudFolder.driveRootOnThisDevice() },
          conflictVersions: ConflictVersionReading = MacConflictVersions(),
          cloudSongs: CloudSongsProviding? = nil) {
         self.defaults = defaults
@@ -55,7 +56,8 @@ final class AppServices {
         self.cloud = cloud
         self.conflictVersions = conflictVersions
         self.cloudSongs = cloudSongs ?? MacCloudSongs()
-        self.resolver = resolver ?? TrackResolver(cloudDocuments: cloud.root)
+        // The Mac reads both iCloud roots directly (story 40): the Playaway folder and iCloud Drive itself.
+        self.resolver = resolver ?? TrackResolver(roots: DirectCloudRoots(playawayDocuments: cloud.root, driveRoot: driveRoot()))
         self.gate = gate
         self.store = store
         self.shuffleOrder = shuffleOrder

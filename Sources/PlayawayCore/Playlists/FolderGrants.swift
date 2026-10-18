@@ -1,0 +1,166 @@
+import Foundation
+
+/// One permission the person gave on this device: a folder under iCloud Drive, and the bookmark that reopens it on
+/// this device (Apple, "Providing access to directories": a folder picked in the document picker may be read
+/// recursively, new items included, and kept across launches as a bookmark). Grants are per device by Apple's design;
+/// the playlist carries the portable path, this carries the permission.
+package struct FolderGrant: Codable, Equatable {
+    /// Relative to the iCloud Drive root, "Mixdowns" or "Mixdowns/Live".
+    package var drivePath: String
+    package var bookmark: Data
+
+    package init(drivePath: String, bookmark: Data) {
+        self.drivePath = drivePath
+        self.bookmark = bookmark
+    }
+}
+
+package protocol FolderGrantStoring {
+    func load() -> [FolderGrant]
+    func save(_ grants: [FolderGrant])
+}
+
+/// The grants as a JSON file. An unreadable or absent file is an empty list.
+package final class FolderGrantFileStore: FolderGrantStoring {
+    private let url: URL
+    package init(url: URL) { self.url = url }
+
+    package func load() -> [FolderGrant] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        return (try? JSONDecoder().decode([FolderGrant].self, from: data)) ?? []
+    }
+
+    package func save(_ grants: [FolderGrant]) {
+        guard let data = try? JSONEncoder().encode(grants) else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+package final class InMemoryFolderGrantStore: FolderGrantStoring {
+    package private(set) var grants: [FolderGrant]
+    package init(_ grants: [FolderGrant] = []) { self.grants = grants }
+    package func load() -> [FolderGrant] { grants }
+    package func save(_ grants: [FolderGrant]) { self.grants = grants }
+}
+
+/// The iPhone's and iPad's roots: the Playaway container directly, iCloud Drive through the folders the person allowed.
+/// A grant's URL, once resolved, is kept open for the app's life: the grant is the app's standing permission to read
+/// that folder, not a one-read lease.
+package final class GrantedCloudRoots: CloudRoots {
+    package var playawayDocuments: URL?
+    private let store: FolderGrantStoring
+    private let drivePath: (URL) -> String?
+    private let makeBookmark: (URL) -> Data?
+    private let resolveBookmark: (Data) -> URL?
+    private var grants: [FolderGrant]
+    private var opened: [String: URL] = [:]
+
+    /// `drivePath` reads a picked folder's place under iCloud Drive (nil outside it); `makeBookmark` and
+    /// `resolveBookmark` are Foundation's unless a test says otherwise. The default resolution starts security-scoped
+    /// access and keeps it.
+    package init(playawayDocuments: URL?, store: FolderGrantStoring,
+                 drivePath: @escaping (URL) -> String? = { CloudFolder.relativePath(inDrive: $0.path) },
+                 makeBookmark: @escaping (URL) -> Data? = { try? $0.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil) },
+                 resolveBookmark: @escaping (Data) -> URL? = GrantedCloudRoots.resolveKeepingAccess) {
+        self.playawayDocuments = playawayDocuments
+        self.store = store
+        self.drivePath = drivePath
+        self.makeBookmark = makeBookmark
+        self.resolveBookmark = resolveBookmark
+        grants = store.load()
+    }
+
+    package static func resolveKeepingAccess(_ bookmark: Data) -> URL? {
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: bookmark, options: [.withoutUI, .withoutMounting], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
+        _ = url.startAccessingSecurityScopedResource()
+        return url
+    }
+
+    package var granted: [FolderGrant] { grants }
+
+    /// Records a folder the person picked. Nil, and nothing recorded, for a folder that is not under iCloud Drive (or
+    /// is the root itself, which the picker cannot grant), or that cannot be bookmarked.
+    @discardableResult
+    package func grant(pickedFolder url: URL) -> FolderGrant? {
+        guard let path = drivePath(url).map(Self.normalized), !path.isEmpty, let bookmark = makeBookmark(url) else { return nil }
+        let grant = FolderGrant(drivePath: path, bookmark: bookmark)
+        grants.removeAll { $0.drivePath == path }
+        grants.append(grant)
+        opened[path] = url
+        store.save(grants)
+        return grant
+    }
+
+    /// Forgets a grant (one that turned out to cover none of the songs it was asked for).
+    package func revoke(drivePath: String) {
+        guard let grant = grants.first(where: { $0.drivePath == drivePath }) else { return }
+        drop(grant)
+    }
+
+    /// Whether a grant covers the path: the grant's folder is the file's folder or one above it, and its bookmark still
+    /// opens a folder on this device.
+    package func covers(_ path: CloudPath) -> Bool { grantURL(covering: path) != nil }
+
+    package func url(for path: CloudPath) -> URL? {
+        switch path {
+        case .playawayFolder(let rest):
+            return playawayDocuments.flatMap { appending(rest, to: $0) }
+        case .iCloudDrive(let rest):
+            guard let (grant, folder) = grantURL(covering: path) else { return nil }
+            let remainder = String(rest.dropFirst(grant.drivePath.count))
+            return appending(remainder, to: folder)
+        }
+    }
+
+    package func accessNeeded(for path: CloudPath) -> String? {
+        guard path.isInDrive, !covers(path) else { return nil }
+        return path.topFolder
+    }
+
+    /// The one folder to ask for next, for a playlist's unresolved paths: the top folder most of them share.
+    package static func folderToAsk(for paths: [CloudPath]) -> String? {
+        var counts: [String: Int] = [:]
+        for path in paths { if let top = path.topFolder { counts[top, default: 0] += 1 } }
+        return counts.max { a, b in a.value == b.value ? a.key > b.key : a.value < b.value }?.key
+    }
+
+    private func grantURL(covering path: CloudPath) -> (FolderGrant, URL)? {
+        guard case .iCloudDrive(let rest) = path else { return nil }
+        let normalized = Self.normalized(rest)
+        let candidates = grants.filter { normalized == $0.drivePath || normalized.hasPrefix($0.drivePath + "/") }
+            .sorted { $0.drivePath.count > $1.drivePath.count }        // the nearest folder first
+        for grant in candidates {
+            if let folder = openedFolder(for: grant) { return (grant, folder) }
+        }
+        return nil
+    }
+
+    private func openedFolder(for grant: FolderGrant) -> URL? {
+        if let url = opened[grant.drivePath], Self.isDirectory(url) { return url }
+        guard let url = resolveBookmark(grant.bookmark), Self.isDirectory(url) else {
+            drop(grant)
+            return nil
+        }
+        opened[grant.drivePath] = url
+        return url
+    }
+
+    /// A grant whose bookmark no longer opens a folder (permission withdrawn, folder gone) is forgotten, so the
+    /// notice asks for it again.
+    private func drop(_ grant: FolderGrant) {
+        grants.removeAll { $0.drivePath == grant.drivePath }
+        opened[grant.drivePath] = nil
+        store.save(grants)
+    }
+
+    private static func isDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    private static func normalized(_ path: String) -> String {
+        path.split(separator: "/", omittingEmptySubsequences: true).joined(separator: "/")
+    }
+}
