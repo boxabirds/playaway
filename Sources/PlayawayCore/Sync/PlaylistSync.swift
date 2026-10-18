@@ -22,6 +22,7 @@ package enum PlaylistPrompt {
     package static let dontSyncLabel = "Don't Sync"
 }
 
+@MainActor
 package protocol PlaylistPromptPresenting: AnyObject {
     func askPlaylistChoice() async -> PlaylistChoice
 }
@@ -88,10 +89,12 @@ package enum PlaylistSyncOutcome: Equatable {
 }
 
 /// Moves the playlist file. The Mac moves it through its open document; the iPhone hands it to the system.
+@MainActor
 package protocol PlaylistMoving {
     func movePlaylist(from source: URL, to destination: URL) async throws
 }
 
+@MainActor
 package struct PlaylistSyncCore {
     private let availability: ICloudAvailability
     private let mover: PlaylistMoving

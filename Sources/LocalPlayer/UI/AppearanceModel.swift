@@ -3,6 +3,7 @@ import AppKit
 
 /// Reads the system appearance and accessibility display settings. There are no setters: the app never changes
 /// them, overrides them, or offers a setting of its own that contradicts them.
+@MainActor
 final class AppearanceModel {
     private let appearance: () -> NSAppearance
     private let workspace: NSWorkspace

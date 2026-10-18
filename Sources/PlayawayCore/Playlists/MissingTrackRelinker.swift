@@ -9,12 +9,14 @@ package enum RelinkResult: Equatable {
     case editRefused
 }
 
+@MainActor
 package protocol MissingTrackRelinking {
     func relink(trackID: UUID, to url: URL, in document: PlaylistDocumentEditing) -> RelinkResult
 }
 
 /// Locate: points one missing track at a chosen file, then reconnects every other missing track of the same
 /// playlist whose file name is in that file's folder. Only that folder is looked at, by file name only.
+@MainActor
 package final class MissingTrackRelinker: MissingTrackRelinking {
     private let statuses: TrackStatusStore
     private let marks: ReadabilityMarkStoring

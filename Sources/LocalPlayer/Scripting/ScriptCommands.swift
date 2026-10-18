@@ -13,6 +13,17 @@ class LocalPlayerCommand: NSScriptCommand {
         }
     }
 
+    /// Cocoa calls `performDefaultImplementation` on the main thread, but the override is not declared main-actor, so it
+    /// states what is already true and runs the command there.
+    nonisolated func runOnMain(_ body: (AppActions) throws -> Any?) -> Any? {
+        withoutActuallyEscaping(body) { escapable in
+            nonisolated(unsafe) let command = self, commandBody = escapable
+            nonisolated(unsafe) var result: Any?
+            MainActor.assumeIsolated { result = command.run(commandBody) }
+            return result
+        }
+    }
+
     var stringArgument: String? { directParameter as? String }
     var intDirect: Int? { (directParameter as? NSNumber)?.intValue }
     func string(_ key: String) -> String? { evaluatedArguments?[key] as? String }
@@ -21,25 +32,25 @@ class LocalPlayerCommand: NSScriptCommand {
 
 @objc(OpenAudioFileCommand) final class OpenAudioFileCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { try $0.openFile(path: stringArgument ?? ""); return nil }
+        runOnMain { try $0.openFile(path: stringArgument ?? ""); return nil }
     }
 }
 
 @objc(PlayCommand) final class PlayCommand: LocalPlayerCommand {
-    override func performDefaultImplementation() -> Any? { run { try $0.play(); return nil } }
+    override func performDefaultImplementation() -> Any? { runOnMain { try $0.play(); return nil } }
 }
 
 @objc(PauseCommand) final class PauseCommand: LocalPlayerCommand {
-    override func performDefaultImplementation() -> Any? { run { try $0.pause(); return nil } }
+    override func performDefaultImplementation() -> Any? { runOnMain { try $0.pause(); return nil } }
 }
 
 @objc(StopCommand) final class StopCommand: LocalPlayerCommand {
-    override func performDefaultImplementation() -> Any? { run { try $0.stop(); return nil } }
+    override func performDefaultImplementation() -> Any? { runOnMain { try $0.stop(); return nil } }
 }
 
 @objc(SeekCommand) final class SeekCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { actions in
+        runOnMain { actions in
             guard let seconds = (evaluatedArguments?["seconds"] as? NSNumber)?.doubleValue else { throw ScriptFailure.invalid("Seek needs a time in seconds.") }
             try actions.seek(toSeconds: seconds)
             return nil
@@ -48,16 +59,16 @@ class LocalPlayerCommand: NSScriptCommand {
 }
 
 @objc(NextTrackCommand) final class NextTrackCommand: LocalPlayerCommand {
-    override func performDefaultImplementation() -> Any? { run { try $0.next(); return nil } }
+    override func performDefaultImplementation() -> Any? { runOnMain { try $0.next(); return nil } }
 }
 
 @objc(PreviousTrackCommand) final class PreviousTrackCommand: LocalPlayerCommand {
-    override func performDefaultImplementation() -> Any? { run { try $0.previous(); return nil } }
+    override func performDefaultImplementation() -> Any? { runOnMain { try $0.previous(); return nil } }
 }
 
 @objc(PlayTrackCommand) final class PlayTrackCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { actions in
+        runOnMain { actions in
             guard let position = intDirect, let playlist = string("playlist") else { throw ScriptFailure.invalid("Play track needs a position and a playlist.") }
             try actions.playTrack(position, inPlaylist: playlist)
             return nil
@@ -67,13 +78,13 @@ class LocalPlayerCommand: NSScriptCommand {
 
 @objc(NewPlaylistCommand) final class NewPlaylistCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { try $0.newPlaylist(named: string("name"), atPath: string("path")) }
+        runOnMain { try $0.newPlaylist(named: string("name"), atPath: string("path")) }
     }
 }
 
 @objc(SyncPlaylistCommand) final class SyncPlaylistCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { actions in
+        runOnMain { actions in
             guard let name = stringArgument else { throw ScriptFailure.invalid("Sync playlist needs the playlist's name.") }
             return try actions.syncPlaylist(name, answering: string("playlistAnswer"), files: string("filesAnswer")).record
         }
@@ -82,7 +93,7 @@ class LocalPlayerCommand: NSScriptCommand {
 
 @objc(RenamePlaylistCommand) final class RenamePlaylistCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { actions in
+        runOnMain { actions in
             guard let name = stringArgument, let newName = string("newName") else { throw ScriptFailure.invalid("Rename needs the playlist and a new name.") }
             try actions.renamePlaylist(name, to: newName)
             return nil
@@ -92,7 +103,7 @@ class LocalPlayerCommand: NSScriptCommand {
 
 @objc(AddTrackCommand) final class AddTrackCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { actions in
+        runOnMain { actions in
             guard let file = stringArgument, let playlist = string("playlist") else { throw ScriptFailure.invalid("Add track needs a file and a playlist.") }
             try actions.addTrack(path: file, toPlaylist: playlist, files: string("filesAnswer"))
             return nil
@@ -102,7 +113,7 @@ class LocalPlayerCommand: NSScriptCommand {
 
 @objc(RemoveTrackCommand) final class RemoveTrackCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { actions in
+        runOnMain { actions in
             guard let position = intDirect, let playlist = string("playlist") else { throw ScriptFailure.invalid("Remove track needs a position and a playlist.") }
             try actions.removeTrack(position, fromPlaylist: playlist)
             return nil
@@ -112,7 +123,7 @@ class LocalPlayerCommand: NSScriptCommand {
 
 @objc(MoveTrackCommand) final class MoveTrackCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { actions in
+        runOnMain { actions in
             guard let from = intDirect, let to = int("position"), let playlist = string("playlist") else {
                 throw ScriptFailure.invalid("Move track needs a position, a new position and a playlist.")
             }
@@ -124,7 +135,7 @@ class LocalPlayerCommand: NSScriptCommand {
 
 @objc(LocateTrackCommand) final class LocateTrackCommand: LocalPlayerCommand {
     override func performDefaultImplementation() -> Any? {
-        run { actions in
+        runOnMain { actions in
             guard let position = intDirect, let playlist = string("playlist"), let file = string("file") else {
                 throw ScriptFailure.invalid("Locate track needs a position, a playlist and a file.")
             }
@@ -135,5 +146,5 @@ class LocalPlayerCommand: NSScriptCommand {
 }
 
 @objc(CheckForUpdatesCommand) final class CheckForUpdatesCommand: LocalPlayerCommand {
-    override func performDefaultImplementation() -> Any? { run { try $0.checkForUpdates(); return nil } }
+    override func performDefaultImplementation() -> Any? { runOnMain { try $0.checkForUpdates(); return nil } }
 }

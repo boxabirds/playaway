@@ -1,6 +1,7 @@
 import Foundation
 
 /// Hand-over to the playlist stories. Absent by default so the audio-file path works alone.
+@MainActor
 package protocol PlaylistOpening: AnyObject {
     func canOpen(_ url: URL) -> Bool
     func open(_ url: URL)
@@ -8,6 +9,7 @@ package protocol PlaylistOpening: AnyObject {
 }
 
 /// The one path every open surface (Finder double-click, Dock drop, File > Open, script) goes through.
+@MainActor
 package final class OpenCoordinator {
     private let classifier: FormatClassifying
     private let engine: PlaybackEngine

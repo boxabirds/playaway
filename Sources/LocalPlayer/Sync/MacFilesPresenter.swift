@@ -33,6 +33,7 @@ final class MacFilesPresenter: FilesPromptPresenting {
 }
 
 /// A test seam's answers for the Files question and the messages that follow.
+@MainActor
 final class ClosureFilesPresenter: FilesPromptPresenting {
     private let ask: () async -> FilesChoice
     private let shown: (String) -> Void
@@ -43,6 +44,7 @@ final class ClosureFilesPresenter: FilesPromptPresenting {
 
 /// A script's Files answer, given in advance; without one the songs are added without syncing (story 22, open
 /// question 1: a script must never wait on a dialog). Messages go to the script's result through `messages`.
+@MainActor
 final class ScriptedFilesPresenter: FilesPromptPresenting {
     private let answer: FilesChoice
     private(set) var messages: [String] = []

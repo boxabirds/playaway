@@ -66,6 +66,7 @@ final class FailingObserver: FirstWindowObserver {
     func firstWindowPresented() { calls += 1 }   // models an offline updater: it does nothing and returns
 }
 
+@MainActor
 final class LaunchCoordinatorTests: XCTestCase {
     override func setUp() { LaunchState.firstWindowPresented = false }
     override func tearDown() { LaunchState.firstWindowPresented = false }

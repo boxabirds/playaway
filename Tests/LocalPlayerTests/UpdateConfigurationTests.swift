@@ -19,6 +19,7 @@ private func config(feed: String = wellFormedTestFeed, key: String = wellFormedT
     UpdateConfiguration(feedURL: feed, publicEDKey: key, automaticChecksEnabled: auto)
 }
 
+@MainActor
 final class UpdateConfigurationTests: XCTestCase {
     func testValidConfigurationHasNoIssues_TC28() {
         XCTAssertEqual(wellFormedTestKey.count, 44)

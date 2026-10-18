@@ -10,6 +10,7 @@ import Sparkle
 // summarises. The exit code is non-zero when any check failed.
 
 /// Collects check results and prints one line each.
+@MainActor
 final class SelfTestReport {
     private(set) var passed = 0
     private(set) var failed = 0
@@ -51,6 +52,7 @@ enum SelfTestExit {
 }
 
 /// `--test-sparkle-config`: proves from the app's own bundle that update checking and verification are set up.
+@MainActor
 func runSparkleConfigTest() -> Int32 {
     SparkleSelfTest.runConfig(info: Bundle.main.infoDictionary ?? [:], bundlePath: Bundle.main.bundlePath,
                               repoRoot: SparkleSelfTest.findRepoRoot(), output: { print($0) })
@@ -58,11 +60,13 @@ func runSparkleConfigTest() -> Int32 {
 
 /// `--test-sparkle-integration <feed>`: runs the real updater against a local fixture feed. The feed address is
 /// required; a missing address fails loudly instead of passing.
+@MainActor
 func runSparkleIntegrationTest(feed: String?) -> Int32 {
     SparkleSelfTest.runIntegration(feed: feed, tamperedFeed: ProcessInfo.processInfo.environment[SparkleSelfTest.tamperedFeedKey],
                                    hostBundle: .main, output: { print($0) })
 }
 
+@MainActor
 enum SparkleSelfTest {
     static let tamperedFeedKey = "LOCALPLAYER_TEST_TAMPERED_FEED_URL"
     static let repoRootKey = "LOCALPLAYER_REPO_ROOT"
@@ -253,6 +257,7 @@ struct FixtureResult {
 
 /// A user driver that shows nothing. It records what Sparkle asked for, answers "dismiss" (or "install" when
 /// told to) and never relaunches anything.
+@MainActor
 final class HeadlessUserDriver: NSObject, SPUUserDriver {
     var result = FixtureResult()
     let installOffered: Bool
@@ -330,6 +335,7 @@ final class HeadlessUserDriver: NSObject, SPUUserDriver {
 
 #if DEBUG
 /// Runs Sparkle's real updater against a fixture feed with a headless user driver.
+@MainActor
 enum FixtureCheck {
     final class Delegate: NSObject, SPUUpdaterDelegate {
         let feed: String

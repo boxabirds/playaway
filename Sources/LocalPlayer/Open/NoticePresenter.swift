@@ -3,6 +3,7 @@ import AppKit
 
 /// Presents a standard alert, as a sheet on the front playlist window when there is one.
 /// Holds at most one notice; showing a second replaces the first.
+@MainActor
 final class NoticePresenter: NoticePresenting {
     /// Tests turn alert animations off: tearing animated windows down in a headless test process has crashed.
     static var animatesAlerts = true

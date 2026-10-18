@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 /// The window of one playlist, with three areas top to bottom and nothing else: what is playing with its controls
 /// (including shuffle and repeat), the tracks, and a slim footer with add, the track count and remove. Standard
 /// AppKit controls only.
+@MainActor
 final class PlaylistWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
     private static let rowDragType = NSPasteboard.PasteboardType("com.localplayer.playlist.row")
     private static let initialSize = NSSize(width: 480, height: 620)
@@ -51,8 +52,8 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     let modes: PlayModeControls
 
     /// Test seams: the panels are modal, so tests replace them with stubs that return a chosen URL.
-    var chooseFilesToAdd: () -> [URL]? = PlaylistWindowController.runAddPanel
-    var chooseFileToLocate: () -> URL? = PlaylistWindowController.runLocatePanel
+    var chooseFilesToAdd: @MainActor () -> [URL]? = PlaylistWindowController.runAddPanel
+    var chooseFileToLocate: @MainActor () -> URL? = PlaylistWindowController.runLocatePanel
 
     init(document: PlaylistDocument) {
         playlistDocument = document
@@ -522,6 +523,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
 /// (story 20). The slot shows the hazard icon for a track that could not be played, or the playing or paused marker
 /// for the current track. The name is greyed when the file is missing or not on this Mac, and accent-coloured and
 /// semibold while it is the current track.
+@MainActor
 final class TrackCellView: NSTableCellView {
     enum Marker { case none, playing, paused }
 
@@ -727,6 +729,7 @@ final class TrackCellView: NSTableCellView {
 
 /// The pie of a download in progress is the system's determinate circular progress indicator; with no fraction
 /// known it spins, as the phone does. Clicks pass through to the button underneath.
+@MainActor
 final class PieIndicator: NSProgressIndicator {
     private static let unknown: Double = 0
 

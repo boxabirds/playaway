@@ -63,11 +63,13 @@ enum UpdateConfigurationRules {
     static let rejectedForeignPublicKey = "rqIy/mx4aHQfqlexNM0vv6B+tHhHrCJy2sijyrmn450="
 }
 
+@MainActor
 func containsPlaceholder(_ value: String) -> Bool {
     value.range(of: UpdateConfigurationRules.placeholderMarker, options: .caseInsensitive) != nil
 }
 
 /// Every problem with the configuration, in a stable order. Empty means the configuration is usable.
+@MainActor
 func validate(_ configuration: UpdateConfiguration) -> [ConfigIssue] {
     var issues: [ConfigIssue] = []
 

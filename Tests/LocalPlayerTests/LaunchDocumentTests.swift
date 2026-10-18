@@ -7,7 +7,7 @@ import AppKit
 /// and when it is, the work runs off the main thread (launch.window.first_paint TC-38 / TC-40 / TC-56).
 @MainActor
 final class LaunchDocumentTests: XCTestCase {
-    final class ThreadRecordingResolver: TrackResolving {
+    final class ThreadRecordingResolver: TrackResolving, @unchecked Sendable {
         let real = TrackResolver()
         private let lock = NSLock()
         private var calls: [Bool] = []

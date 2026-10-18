@@ -1,6 +1,6 @@
 import Foundation
 
-package protocol TrackResolving {
+package protocol TrackResolving: Sendable {
     func resolve(_ ref: TrackReference) -> (TrackStatus, TrackReference)
     /// The same, told where the playlist file lives, so a song the other device stored can be found beside it.
     func resolve(_ ref: TrackReference, besidePlaylistAt folder: URL?) -> (TrackStatus, TrackReference)

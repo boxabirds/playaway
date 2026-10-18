@@ -39,7 +39,8 @@ final class UpdaterControllerTests: XCTestCase {
     private var factoryCalls = 0
 
     private func makeController(_ configuration: UpdateConfiguration = validConfiguration(),
-                                driver: StubUpdaterDriver = StubUpdaterDriver()) -> (UpdaterController, StubUpdaterDriver) {
+                                driver suppliedDriver: StubUpdaterDriver? = nil) -> (UpdaterController, StubUpdaterDriver) {
+        let driver = suppliedDriver ?? StubUpdaterDriver()
         let controller = UpdaterController(configuration: configuration,
                                            driverFactory: { [unowned self] in factoryCalls += 1; return driver },
                                            log: { [unowned self] in logged.append($0) })

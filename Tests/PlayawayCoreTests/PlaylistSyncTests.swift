@@ -4,6 +4,7 @@ import XCTest
 /// Story 18: the playlist-level iCloud sync core shared by the Mac and the iPhone. "In iCloud" means the playlist
 /// file is strictly inside the Playaway folder (owner decision 2026-10-13). Turning sync on for a playlist outside it
 /// asks once, then moves the file to Playaway/<name>/<name>.lplaylist, the phone's layout; there is no way back.
+@MainActor
 final class PlaylistSyncTests: XCTestCase {
     private final class RecordingPresenter: PlaylistPromptPresenting {
         var answer: PlaylistChoice
@@ -30,10 +31,10 @@ final class PlaylistSyncTests: XCTestCase {
         return url
     }
 
-    private func core(root: URL?, answer: PlaylistChoice, mover: PlaylistMoving = PlainMover()) -> (PlaylistSyncCore, RecordingPresenter) {
+    private func core(root: URL?, answer: PlaylistChoice, mover: PlaylistMoving? = nil) -> (PlaylistSyncCore, RecordingPresenter) {
         let presenter = RecordingPresenter(answer)
         let availability: ICloudAvailability = root.map { .available(root: $0) } ?? .unavailable
-        return (PlaylistSyncCore(availability: availability, mover: mover, presenter: presenter), presenter)
+        return (PlaylistSyncCore(availability: availability, mover: mover ?? PlainMover(), presenter: presenter), presenter)
     }
 
     // MARK: State is where the file is

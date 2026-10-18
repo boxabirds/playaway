@@ -116,6 +116,7 @@ private final class SdefEntryParser: NSObject, XMLParserDelegate {
 
 /// `--check-script-parity <sdef>`: the release gate. Prints every action with no script entry, every script entry
 /// with no action, and every app-specific menu item that is neither; exits non-zero on any.
+@MainActor
 func runParityGateCheck(sdefPath: String) -> Int32 {
     guard let data = FileManager.default.contents(atPath: sdefPath), !data.isEmpty else {
         FileHandle.standardError.write(Data("parity gate: cannot read the scripting dictionary at \(sdefPath)\n".utf8))

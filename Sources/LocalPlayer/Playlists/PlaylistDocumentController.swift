@@ -3,6 +3,7 @@ import AppKit
 
 /// The app's document controller. It supplies the playlist document type from code, so documents work the same
 /// in the built app and in tests, and answers "is this playlist open, and is it playing?".
+@MainActor
 final class PlaylistDocumentController: NSDocumentController {
     static var current: PlaylistDocumentController {
         // The first controller created becomes the shared one; the app creates this one before AppKit asks.

@@ -4,6 +4,7 @@ import Combine
 
 /// One playlist: an ordinary document with its own window, saved where the person chose and autosaved in place.
 @objc(PlaylistDocument)
+@MainActor
 final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResolutionReporting {
     private(set) var playlist = Playlist()
     let statuses = TrackStatusStore()
@@ -70,7 +71,18 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
 
     // MARK: Reading and writing
 
+    /// NSDocument's reading and writing entry points are not declared main-actor, but this document never opts into
+    /// reading or writing off the main thread, so they run there; the work is done by the main-actor methods below.
+    nonisolated private func onMain<T: Sendable>(_ body: @MainActor (PlaylistDocument) throws -> T) rethrows -> T {
+        nonisolated(unsafe) let document = self
+        return try MainActor.assumeIsolated { try body(document) }
+    }
+
     override func read(from url: URL, ofType typeName: String) throws {
+        try onMain { try $0.readOnMain(from: url) }
+    }
+
+    private func readOnMain(from url: URL) throws {
         switch services.store.load(from: url) {
         case .loaded(let loaded):
             playlist = loaded
@@ -86,6 +98,10 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
     /// The store does the atomic write. A failed save tells the person and keeps the change in memory, so the
     /// next autosave tries again; the last good version on disk is never touched.
     override func write(to url: URL, ofType typeName: String) throws {
+        try onMain { try $0.writeOnMain(to: url) }
+    }
+
+    private func writeOnMain(to url: URL) throws {
         let result: SaveResult
         if let followed, url.canonicalPath == fileURL?.canonicalPath {
             // Saving in place: a newer file (the other device's) is taken in first, so nothing of theirs is lost.
@@ -333,15 +349,13 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         let snapshot = playlist.tracks
         let resolver = services.resolver
         let folder = self.folder
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let results = PlaylistResolution.resolve(snapshot, with: resolver, besidePlaylistAt: folder)
-            DispatchQueue.main.async {
-                guard let self else { return }
-                let current = PlaylistResolution.current(results, in: self.playlist)
-                self.statuses.setAll(Dictionary(uniqueKeysWithValues: current.map { ($0.trackID, $0.status) }))
-                for entry in current { self.apply(entry.refreshed, toTrack: entry.trackID) }
-                completion?()
-            }
+        Task { @MainActor [weak self] in
+            let results = await PlaylistResolution.resolveInBackground(snapshot, with: resolver, besidePlaylistAt: folder)
+            guard let self else { return }
+            let current = PlaylistResolution.current(results, in: self.playlist)
+            self.statuses.setAll(Dictionary(uniqueKeysWithValues: current.map { ($0.trackID, $0.status) }))
+            for entry in current { self.apply(entry.refreshed, toTrack: entry.trackID) }
+            completion?()
         }
     }
 
@@ -402,6 +416,7 @@ extension TrackStatus {
 }
 
 /// Process-wide launch facts the document needs without importing the coordinator.
+@MainActor
 enum LaunchState {
     static var firstWindowPresented = false
 }

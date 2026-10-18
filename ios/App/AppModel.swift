@@ -153,8 +153,13 @@ final class OpenAdapter: PlaylistOpening, NoticePresenting, @unchecked Sendable 
 
 /// The resolver every session shares. Its iCloud folder is filled in once the system says where the Playaway folder
 /// is, so a song another device stored can be found at the same place here.
-final class LiveResolver: TrackResolving {
-    var current = TrackResolver(cloudDocuments: nil)
+final class LiveResolver: TrackResolving, @unchecked Sendable {      // `current` is behind a lock: set on the main thread, read on any
+    private let lock = NSLock()
+    private var resolver = TrackResolver(cloudDocuments: nil)
+    var current: TrackResolver {
+        get { lock.lock(); defer { lock.unlock() }; return resolver }
+        set { lock.lock(); resolver = newValue; lock.unlock() }
+    }
     func resolve(_ ref: TrackReference) -> (TrackStatus, TrackReference) { current.resolve(ref) }
     func resolve(_ ref: TrackReference, besidePlaylistAt folder: URL?) -> (TrackStatus, TrackReference) {
         current.resolve(ref, besidePlaylistAt: folder)

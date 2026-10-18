@@ -1,6 +1,7 @@
 import XCTest
 @testable import PlayawayCore
 
+@MainActor
 final class CloudIconTapTests: XCTestCase {
     func testDecisionForEveryStateAndKind() {
         for kind in [SyncItemKind.song, .playlist] {

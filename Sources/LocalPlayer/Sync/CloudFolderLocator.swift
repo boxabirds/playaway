@@ -5,6 +5,7 @@ import Combine
 /// Where the Playaway folder of iCloud Drive is on this Mac, asked again whenever the app becomes active, so a
 /// sign-in or sign-out shows without a relaunch. The folder is the one the iPhone app's container puts in
 /// ~/Library/Mobile Documents; the app is not sandboxed and reads it directly. Tests supply a stand-in.
+@MainActor
 final class CloudFolderLocator {
     private let find: () -> URL?
     private(set) var root: URL?

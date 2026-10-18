@@ -4,6 +4,7 @@ import AppKit
 /// The Mac adapter of the shared playlist sync core, one per open playlist document: it reads the state from where
 /// the document's file is, moves the file through the document itself (so the window follows), and turns the
 /// outcome into the one notice the person may need. It holds no state machine, destination or dialog of its own.
+@MainActor
 final class PlaylistSyncController {
     private unowned let document: PlaylistDocument
     private let services: AppServices
@@ -117,6 +118,7 @@ final class MacPlaylistPresenter: PlaylistPromptPresenting {
 }
 
 /// A test seam's answer.
+@MainActor
 final class ClosurePlaylistPresenter: PlaylistPromptPresenting {
     private let ask: () async -> PlaylistChoice
     init(_ ask: @escaping () async -> PlaylistChoice) { self.ask = ask }
@@ -124,6 +126,7 @@ final class ClosurePlaylistPresenter: PlaylistPromptPresenting {
 }
 
 /// A script's answer, given in advance, so a script is never left waiting on a dialog.
+@MainActor
 final class ScriptedPlaylistPresenter: PlaylistPromptPresenting {
     private let answer: PlaylistChoice
     init(_ answer: PlaylistChoice) { self.answer = answer }

@@ -17,6 +17,7 @@ private let validInfo: [String: Any] = [
     "LSMinimumSystemVersion": "26.0",
 ]
 
+@MainActor
 final class SparkleSelfTestHarnessTests: XCTestCase {
     private func config(_ info: [String: Any], bundlePath: String = "/not/an/app", repoRoot: URL? = nil) -> (status: Int32, lines: [String]) {
         lines { SparkleSelfTest.runConfig(info: info, bundlePath: bundlePath, repoRoot: repoRoot, output: $0) }
@@ -115,6 +116,7 @@ final class SparkleSelfTestHarnessTests: XCTestCase {
 #if DEBUG
 /// The real Sparkle updater, headless, against a local fixture feed served by python's http.server.
 /// Keys are generated for the run; nothing touches the keychain and nothing is ever installed.
+@MainActor
 final class SparkleFixtureIntegrationTests: XCTestCase {
     private var root: URL!
     private var server: Process?

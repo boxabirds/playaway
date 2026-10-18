@@ -13,6 +13,7 @@ protocol WindowEnumerating {
 /// tree: a view with an identifier is recorded and not descended into; a visible accessibility element with no
 /// identifier is reported as unidentified, so nothing can hide by being unnamed. Hidden and zero-size views and
 /// everything inside them are left out. Reads only: nothing in the window, playback or any file is changed.
+@MainActor
 enum WindowElementWalker {
     static func elements(in window: NSWindow) -> [ObservedElement] {
         guard let content = window.contentView else { return [] }

@@ -4,6 +4,7 @@ import os
 import Sparkle
 
 /// What the controller needs from an updater. Sparkle is behind this so state logic needs no Sparkle runtime.
+@MainActor
 protocol UpdaterDriver: AnyObject {
     /// True while an update session (scheduled or manual) is running.
     var sessionInProgress: Bool { get }
@@ -13,11 +14,12 @@ protocol UpdaterDriver: AnyObject {
 
 /// Owns the updater lifecycle. Created at launch without starting anything; started only once the first window
 /// is on screen (`FirstWindowObserver`), so update checking never delays that window.
+@MainActor
 final class UpdaterController: FirstWindowObserver {
     enum State { case notStarted, idle, failed }
 
     /// The id the AppleScript story's action manifest uses for this action.
-    static let checkForUpdatesActionID = "checkForUpdates"
+    nonisolated static let checkForUpdatesActionID = "checkForUpdates"
 
     private(set) var state: State = .notStarted
     private(set) var issues: [ConfigIssue] = []
@@ -71,6 +73,7 @@ final class UpdaterController: FirstWindowObserver {
 }
 
 /// The real updater: Sparkle's standard controller, created without starting.
+@MainActor
 final class SparkleUpdaterDriver: NSObject, UpdaterDriver, SPUUpdaterDelegate {
     private var controller: SPUStandardUpdaterController!
 

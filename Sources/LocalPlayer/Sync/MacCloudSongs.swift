@@ -28,6 +28,7 @@ struct UbiquitousReading: Equatable {
     var hasError = false
 }
 
+@MainActor
 final class MacCloudSongs: CloudSongsProviding {
     var onEvent: ((DownloadEvent) -> Void)?
     /// Seams: the system's answers, the download request and the clock. Tests script them; the app uses the real ones.
@@ -37,7 +38,7 @@ final class MacCloudSongs: CloudSongsProviding {
     private var timers: [SongID: Timer] = [:]
     private var lastActivity: [SongID: Date] = [:]
 
-    static func systemReading(_ url: URL) -> UbiquitousReading {
+    nonisolated static func systemReading(_ url: URL) -> UbiquitousReading {
         let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
                                                        .ubiquitousItemIsDownloadingKey, .ubiquitousItemDownloadingErrorKey])
         return UbiquitousReading(isUbiquitous: values?.isUbiquitousItem ?? false,
@@ -95,6 +96,7 @@ final class MacCloudSongs: CloudSongsProviding {
 /// The player side of the shared coordinator on the Mac: when a download finishes, the song plays only if the person
 /// has not asked for another song since (the player's last asked track is still this one). The current song is not
 /// the measure: it also changes when a song ends or the playlist runs out, which is not the person moving on.
+@MainActor
 final class MacPlaybackStarter: SongPlaybackStarting {
     struct Pending {
         let document: PlaylistDocument

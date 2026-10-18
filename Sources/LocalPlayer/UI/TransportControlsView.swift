@@ -33,6 +33,7 @@ enum ElementID {
 /// Play/Pause is the largest and the only filled accent control; Previous and Next are medium; Shuffle, Repeat,
 /// volume and Stop are small and grey. Standard controls only. Self-contained, so any host window can embed it;
 /// when given the mode controls it places them in the control row, on the left.
+@MainActor
 final class TransportControlsView: NSStackView {
     private let viewModel: TransportViewModel
     private var cancellables = Set<AnyCancellable>()
@@ -292,6 +293,7 @@ final class TransportControlsView: NSStackView {
 
 /// Shuffle (on/off) and Repeat (off, all, one) as two small icon toggles. Grey when off, accent when on, and the
 /// on state also draws the pressed look, so the state is not carried by colour alone. Repeat one has its own glyph.
+@MainActor
 final class PlayModeControls: NSStackView {
     private enum Metric {
         static let side: CGFloat = 30

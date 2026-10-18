@@ -7,6 +7,7 @@ package protocol TrackStatusProviding: AnyObject {
 
 /// What an open playlist document must offer so references can be refreshed or relinked. `PlaylistDocument`
 /// is the only conforming document type.
+@MainActor
 package protocol PlaylistDocumentEditing: AnyObject {
     var playlist: Playlist { get }
     func apply(_ updatedReference: TrackReference, toTrack id: UUID)
@@ -14,6 +15,7 @@ package protocol PlaylistDocumentEditing: AnyObject {
 
 /// Told whenever a track is resolved, so the document can show it normal or greyed and take a refreshed
 /// reference through its normal editing path.
+@MainActor
 package protocol TrackResolutionReporting: AnyObject {
     func trackResolved(id: UUID, status: TrackStatus, reference: TrackReference)
 }

@@ -28,7 +28,7 @@ let package = Package(
             name: "LocalPlayer",
             dependencies: ["PlayawayCore", "Sparkle"],
             path: "Sources/LocalPlayer",
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         // The lyrics experiment's engines: Apple's speech model, WhisperKit and a Core ML vocal separator. Kept out of
         // PlayawayCore so the core stays free of machine-learning frameworks; the core only sees timed words.

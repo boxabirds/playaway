@@ -2,6 +2,7 @@ import XCTest
 @testable import LocalPlayer
 @testable import PlayawayCore
 
+@MainActor
 final class LaunchVerdictTests: XCTestCase {
     private let calculator = LaunchVerdictCalculator()
 
@@ -76,6 +77,7 @@ final class LaunchVerdictTests: XCTestCase {
     }
 }
 
+@MainActor
 final class LaunchTraceTests: XCTestCase {
     func testTC41NoPathVariableWritesNothing() throws {
         let dir = TempDir("trace")
@@ -125,6 +127,7 @@ final class LaunchTraceTests: XCTestCase {
 
 /// Runs scripts/launch-bench.sh with a stub launcher (a compiled stub that writes a windowShown trace line),
 /// so the script's own logic is tested without a GUI launch. Real-bundle runs are reported separately by hand.
+@MainActor
 final class LaunchBenchScriptTests: XCTestCase {
     private let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent()

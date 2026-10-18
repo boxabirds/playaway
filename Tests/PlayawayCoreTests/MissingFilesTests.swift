@@ -45,6 +45,7 @@ final class DiskImage {
     }
 }
 
+@MainActor
 final class TrackResolverTests: XCTestCase {
     let resolver = TrackResolver()
 
@@ -158,6 +159,7 @@ final class TrackResolverTests: XCTestCase {
     }
 }
 
+@MainActor
 final class PlaybackGateTests: XCTestCase {
     func testGateDecisions() {                                           // TC-38 / TC-37
         let url = Fixtures.url("track1.mp3")
@@ -166,6 +168,7 @@ final class PlaybackGateTests: XCTestCase {
     }
 }
 
+@MainActor
 final class FolderMatcherTests: XCTestCase {
     let matcher = FolderMatcher()
 
@@ -223,9 +226,10 @@ final class RecordingDocument: PlaylistDocumentEditing {
     }
 }
 
+@MainActor
 final class MissingTrackRelinkerTests: XCTestCase {
     /// Five tracks from one album folder; the listed ones are deleted so they are missing.
-    struct Rig {
+    @MainActor struct Rig {
         let fixture = PlaylistFixture()
         let statuses = TrackStatusStore()
         let marks = ReadabilityMarkStore()
@@ -360,7 +364,9 @@ extension MissingTrackRelinkerTests.Rig {
         let remove: UUID
         let document: RecordingDocument
         func match(missing: [(id: UUID, fileName: String)], in folder: URL) -> [(id: UUID, url: URL)] {
-            document.playlist.tracks.removeAll { $0.id == remove }
+            nonisolated(unsafe) let document = document          // the relinker calls the matcher on the main actor
+            let remove = remove
+            MainActor.assumeIsolated { document.playlist.tracks.removeAll { $0.id == remove } }
             return FolderMatcher().match(missing: missing, in: folder)
         }
     }

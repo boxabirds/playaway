@@ -7,16 +7,19 @@ let launchRunsPerBatch = 10
 
 enum LaunchPhase: String { case launching, windowShown, running }
 
+@MainActor
 protocol FirstWindowObserver: AnyObject {
     func firstWindowPresented()
 }
 
+@MainActor
 protocol LaunchTracing: AnyObject {
     func record(_ phase: LaunchPhase)
 }
 
 /// Writes the phase timestamps to a results file when `LOCALPLAYER_LAUNCH_TRACE` names one; does nothing otherwise.
 /// Timestamps use the monotonic raw clock so the harness can compare them with its own start time.
+@MainActor
 final class LaunchTrace: LaunchTracing {
     static let environmentKey = "LOCALPLAYER_LAUNCH_TRACE"
     private let resultsPath: String?
@@ -60,6 +63,7 @@ final class LaunchTrace: LaunchTracing {
     }
 }
 
+@MainActor
 protocol LaunchWindowProviding {
     /// Makes sure a playlist window is on screen (restored, or a new untitled one) and calls back once it is shown.
     func presentFirstWindow(completion: @escaping () -> Void)
@@ -67,6 +71,7 @@ protocol LaunchWindowProviding {
 
 /// Does only what is needed to put the first playlist window on screen, then tells the observers once.
 /// The updater, the audio engine, the network and track-reference resolution all wait for that signal.
+@MainActor
 final class LaunchCoordinator {
     private let trace: LaunchTracing
     private let observers: [FirstWindowObserver]
@@ -101,36 +106,65 @@ final class LaunchCoordinator {
 /// The real window provider. AppKit restores last session's windows asynchronously, so this waits for the first
 /// playlist window to appear instead of guessing. Only if none appeared within a short grace period (nothing to
 /// restore) does it open an untitled playlist, so a window is always shown and never doubled.
+@MainActor
 struct DocumentLaunchWindows: LaunchWindowProviding {
     static let fallbackSeconds: TimeInterval = 0.35
 
     func presentFirstWindow(completion: @escaping () -> Void) {
-        let controller = PlaylistDocumentController.current
-        func hasWindow() -> Bool {
-            controller.playlistDocuments.contains { document in document.windowControllers.contains { $0.window?.isVisible == true } }
+        FirstWindowWait(controller: PlaylistDocumentController.current, completion: completion).start(fallbackSeconds: Self.fallbackSeconds)
+    }
+}
+
+/// One wait for the first playlist window: ends when a playlist window becomes key, or, if none has appeared after the
+/// grace period, after opening an untitled playlist. Keeps itself alive until it has finished.
+@MainActor
+private final class FirstWindowWait {
+    private let controller: PlaylistDocumentController
+    private let completion: () -> Void
+    private var finished = false
+    private var observer: NSObjectProtocol?
+    private var keepAlive: FirstWindowWait?
+
+    init(controller: PlaylistDocumentController, completion: @escaping () -> Void) {
+        self.controller = controller
+        self.completion = completion
+    }
+
+    private func hasWindow() -> Bool {
+        controller.playlistDocuments.contains { document in document.windowControllers.contains { $0.window?.isVisible == true } }
+    }
+
+    private func finish() {
+        guard !finished else { return }
+        finished = true
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        // The window is ordered front in this turn of the run loop; observers hear about it in the next.
+        Task { @MainActor in
+            self.completion()
+            self.keepAlive = nil
         }
-        var finished = false
-        var observer: NSObjectProtocol?
-        func finish() {
-            guard !finished else { return }
-            finished = true
-            if let observer { NotificationCenter.default.removeObserver(observer) }
-            // The window is ordered front in this turn of the run loop; observers hear about it in the next.
-            DispatchQueue.main.async(execute: completion)
-        }
+    }
+
+    func start(fallbackSeconds: TimeInterval) {
+        keepAlive = self
         if hasWindow() { finish(); return }
-        observer = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
-            if (note.object as? NSWindow)?.windowController is PlaylistWindowController { finish() }
+        observer = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] note in
+            nonisolated(unsafe) let window = note.object                  // delivered on the main queue
+            MainActor.assumeIsolated {
+                if (window as? NSWindow)?.windowController is PlaylistWindowController { self?.finish() }
+            }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fallbackSeconds) {
-            guard !finished else { return }
-            if !hasWindow() { _ = try? controller.openUntitledDocumentAndDisplay(true) }
-            finish()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(fallbackSeconds))
+            guard !self.finished else { return }
+            if !self.hasWindow() { _ = try? self.controller.openUntitledDocumentAndDisplay(true) }
+            self.finish()
         }
     }
 }
 
 /// Track-reference resolution for documents restored at launch waits for the first window.
+@MainActor
 final class DocumentResolutionObserver: FirstWindowObserver {
     func firstWindowPresented() {
         PlaylistDocumentController.current.playlistDocuments.forEach { $0.firstWindowPresented() }
