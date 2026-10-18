@@ -223,7 +223,7 @@ struct AccessNotice: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("These songs are in your iCloud Drive folder “\(folder)”. Allow Playaway to read that folder on this \(device)?")
+            Text("These songs are in your iCloud Drive folder “\(folder)”, which Playaway is not yet allowed to read on this \(device). Tap Allow, then choose “\(folder)” in the chooser and tap Open.")
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Allow", action: allow)

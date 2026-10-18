@@ -48,6 +48,23 @@ final class FolderAccessUITests: XCTestCase {
         XCTAssertTrue(again.buttons["Pause"].waitForExistence(timeout: 10), "still playable on the next launch")
     }
 
+    /// TC-35: the phone that made the playlist. One song opens from its own stored path, one was renamed since: the
+    /// device can read the folder, so it is never asked; the renamed song is reported as gone when tapped.
+    func testTheDeviceThatCanReadTheFolderIsNeverAskedAndAGoneSongSaysSo() {
+        let app = XCUIApplication(); app.launchArguments = Self.arguments; app.launch()
+        XCTAssertTrue(app.staticTexts["Mixdowns Mixed"].waitForExistence(timeout: 15))
+        app.staticTexts["Mixdowns Mixed"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.cells["Demo Here"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.otherElements["access-notice"].waitForExistence(timeout: 2), "one song is found here, so the folder is readable: nothing to allow")
+        table.cells["Demo Renamed"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5), "the renamed song is gone, and says so")
+        XCTAssertTrue(app.alerts.firstMatch.staticTexts.allElementsBoundByIndex.contains { $0.label.contains("can't be found") }, app.alerts.firstMatch.debugDescription)
+        app.alerts.firstMatch.buttons.firstMatch.tap()
+        table.cells["Demo Here"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "the song the device can open plays")
+    }
+
     func testAPlaylistInThePlayawayFolderNeverAsks() {                       // TC-32
         let app = XCUIApplication(); app.launchArguments = Self.arguments; app.launch()
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))

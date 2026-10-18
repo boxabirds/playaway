@@ -93,6 +93,17 @@ final class FolderGrantsTests: XCTestCase {
         XCTAssertEqual(GrantedCloudRoots.folderToAsk(for: [.iCloudDrive("B/a.mp3"), .iCloudDrive("A/a.mp3")]), "A", "a tie goes to the first by name")
     }
 
+    /// The phone that made the playlist: its own bookmarks open most songs, one was renamed since. It can read the
+    /// folder, so nothing is asked; the renamed song is simply gone. Only a folder with no song found is asked for.
+    func testAFolderWithASongFoundOnThisDeviceIsNeverAskedFor() {                   // TC-34
+        let unfound: [CloudPath] = [.iCloudDrive("Mixdowns/Old Name.mp3"), .iCloudDrive("Mixdowns/b/Gone.mp3")]
+        XCTAssertNil(GrantedCloudRoots.folderToAsk(for: unfound, found: [.iCloudDrive("Mixdowns/c.mp3")]))
+        XCTAssertEqual(GrantedCloudRoots.folderToAsk(for: unfound, found: [.iCloudDrive("Other/x.mp3")]), "Mixdowns")
+        XCTAssertEqual(GrantedCloudRoots.folderToAsk(for: unfound + [.iCloudDrive("Live/y.mp3")], found: [.iCloudDrive("Mixdowns/c.mp3")]), "Live")
+        XCTAssertNil(GrantedCloudRoots.folderToAsk(for: unfound, found: [.iCloudDrive("Mixdowns/c.mp3"), .playawayFolder("Trip/z.mp3")]))
+        XCTAssertEqual(GrantedCloudRoots.folderToAsk(for: unfound, found: [.playawayFolder("Trip/z.mp3")]), "Mixdowns", "a song in the Playaway folder says nothing about iCloud Drive")
+    }
+
     func testTheFileStoreRoundTripsAndReadsGarbageAsNothing() throws {               // TC-27
         let file = dir.url.appendingPathComponent("Support/FolderGrants.json")
         let store = FolderGrantFileStore(url: file)

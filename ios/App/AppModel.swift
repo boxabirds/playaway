@@ -310,7 +310,10 @@ final class AppModel: ObservableObject {
         // Test aid: a playlist another device (a Mac) wrote into the Playaway folder, its references the Mac's.
         if arguments.contains("-PlayawaySeedForeignPlaylist"), let fake = fakeCloudRoot { seedForeignPlaylist(in: fake) }
         // Test aid: a playlist the iPhone wrote whose songs live in iCloud Drive/Mixdowns, in build-22 form (no cloud path).
-        if arguments.contains("-PlayawaySeedDrivePlaylist"), let fake = fakeCloudRoot, let drive = fakeDriveRoot { seedDrivePlaylist(in: fake, drive: drive) }
+        if arguments.contains("-PlayawaySeedDrivePlaylist"), let fake = fakeCloudRoot, let drive = fakeDriveRoot {
+            seedDrivePlaylist(in: fake, drive: drive)
+            seedMixedDrivePlaylist(in: fake, drive: drive)
+        }
         // Test aid: after the given seconds, "another device" rewrites the open playlist's file with one more song.
         if let at = arguments.firstIndex(of: "-PlayawayRewriteOpenPlaylist"), at + 1 < arguments.count, let seconds = Double(arguments[at + 1]) {
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.rewriteOpenPlaylistAsAnotherDevice() }
@@ -468,6 +471,26 @@ final class AppModel: ObservableObject {
         let iPhonePath = "/private/var/mobile/Library/Mobile Documents/\(CloudFolder.driveFolderName)/Mixdowns/\(songFile)"
         let track = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: iPhonePath, fileName: songFile))
         _ = PlaylistStore().save(Playlist(tracks: [track]), to: file)
+    }
+
+    /// Test aid (story 40, TC-35): the phone that made the playlist. One song resolves by its own path on this device
+    /// (its file is in the fake drive at the stored path), one was renamed since and is gone. The device can read the
+    /// folder, so no permission is asked; the gone song is reported as gone when tapped.
+    private func seedMixedDrivePlaylist(in cloudRoot: URL, drive: URL) {
+        let name = "Mixdowns Mixed"
+        let folder = cloudRoot.appendingPathComponent(name)
+        let file = folder.appendingPathComponent(name).appendingPathExtension(playlistFileExtension)
+        let mixdowns = drive.appendingPathComponent("Mixdowns", isDirectory: true)
+        try? FileManager.default.createDirectory(at: mixdowns, withIntermediateDirectories: true)
+        let here = mixdowns.appendingPathComponent("Demo Here.wav")
+        if !FileManager.default.fileExists(atPath: here.path) { try? Self.tone(60, hz: 370).write(to: here) }
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let gonePath = "/private/var/mobile/Library/Mobile Documents/\(CloudFolder.driveFolderName)/Mixdowns/Demo Renamed.wav"
+        let tracks = [Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: here.canonicalPath, fileName: "Demo Here.wav",
+                                                                   cloudPath: .iCloudDrive("Mixdowns/Demo Here.wav"))),
+                      Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: gonePath, fileName: "Demo Renamed.wav"))]
+        _ = PlaylistStore().save(Playlist(tracks: tracks), to: file)
     }
 
     /// What the other device does: a coordinated write of the open playlist's file with a new song beside it, dated a
@@ -778,11 +801,13 @@ final class AppModel: ObservableObject {
     func accessNeeded(for session: PlaylistSession) -> String? {
         if let cached = accessNeededCache[session.url], cached.revision == cloudRevision { return cached.folder }
         let folder = session.folder
-        let needing = session.playlist.tracks.compactMap { track -> CloudPath? in
-            guard resolver.accessNeeded(for: track.reference, besidePlaylistAt: folder) != nil else { return nil }
-            return track.reference.portableLocation
+        var unfound: [CloudPath] = [], found: [CloudPath] = []
+        for track in session.playlist.tracks {
+            guard let location = track.reference.portableLocation, location.isInDrive else { continue }
+            if resolver.accessNeeded(for: track.reference, besidePlaylistAt: folder) != nil { unfound.append(location) }
+            else if case .resolved = resolver.resolve(track.reference, besidePlaylistAt: folder).0 { found.append(location) }
         }
-        let answer = GrantedCloudRoots.folderToAsk(for: needing)
+        let answer = GrantedCloudRoots.folderToAsk(for: unfound, found: found)
         accessNeededCache[session.url] = (cloudRevision, answer)
         return answer
     }

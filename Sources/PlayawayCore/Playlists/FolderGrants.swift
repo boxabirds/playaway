@@ -119,10 +119,13 @@ package final class GrantedCloudRoots: CloudRoots {
         return path.topFolder
     }
 
-    /// The one folder to ask for next, for a playlist's unresolved paths: the top folder most of them share.
-    package static func folderToAsk(for paths: [CloudPath]) -> String? {
+    /// The one folder to ask for next: the top folder most of the unfound songs share. A folder in which some song of
+    /// the same playlist IS found on this device is never asked for: the device can read it, so its unfound songs are
+    /// gone or renamed, not out of reach (the phone that made the playlist must never be asked about its own folder).
+    package static func folderToAsk(for unfound: [CloudPath], found: [CloudPath] = []) -> String? {
+        let readable = Set(found.compactMap(\.topFolder))
         var counts: [String: Int] = [:]
-        for path in paths { if let top = path.topFolder { counts[top, default: 0] += 1 } }
+        for path in unfound { if let top = path.topFolder, !readable.contains(top) { counts[top, default: 0] += 1 } }
         return counts.max { a, b in a.value == b.value ? a.key > b.key : a.value < b.value }?.key
     }
 
