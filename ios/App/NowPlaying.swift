@@ -25,10 +25,12 @@ final class NowPlayingCenter {
         }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
-            MainActor.assumeIsolated { self?.interruption(n) }
+            nonisolated(unsafe) let note = n          // delivered on the main queue, which is the main actor
+            MainActor.assumeIsolated { self?.interruption(note) }
         })
         observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] n in
-            MainActor.assumeIsolated { self?.routeChange(n) }
+            nonisolated(unsafe) let note = n
+            MainActor.assumeIsolated { self?.routeChange(note) }
         })
     }
 

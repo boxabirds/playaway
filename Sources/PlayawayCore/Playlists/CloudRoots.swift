@@ -3,7 +3,7 @@ import Foundation
 /// Where a portable `CloudPath` is on this device, if anywhere. The Mac answers from folders it reads directly
 /// (`DirectCloudRoots`); the iPhone and iPad answer from the Playaway container and the folders the person has allowed
 /// (`GrantedCloudRoots`).
-package protocol CloudRoots {
+package protocol CloudRoots: Sendable {
     /// A URL on this device for the path, or nil when this device cannot reach it (no such root here, or no permission).
     func url(for path: CloudPath) -> URL?
     /// The folder a permission would be asked for when `url(for:)` is nil for want of one; nil where none would help

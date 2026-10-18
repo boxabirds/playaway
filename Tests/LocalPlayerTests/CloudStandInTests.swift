@@ -5,6 +5,7 @@ import XCTest
 /// The debug-only iCloud stand-in the end-to-end tests launch the built app with: how the setting is read, and that
 /// the stand-in answers like the system does over a plain folder (placeholder = not on this Mac, the file appearing
 /// = downloaded, the error marker = failed). A release build ignores the setting.
+@MainActor
 final class CloudStandInTests: XCTestCase {
     let dir = TempDir("standin")
 

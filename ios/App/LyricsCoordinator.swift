@@ -25,7 +25,7 @@ final class LyricsCoordinator: ObservableObject {
     @Published private(set) var downloads: [String: Double] = [:]
     @Published private(set) var benchmarkReport: URL?
 
-    static let lowConfidence = 0.5
+    nonisolated static let lowConfidence = 0.5
     static let userScrollHold: TimeInterval = 3
 
     private let store = LyricsExperimentStore()
@@ -84,10 +84,11 @@ final class LyricsCoordinator: ObservableObject {
         let began = Date()
         status = .generating(stage: "Starting", share: 0, since: began)
         job = Task.detached(priority: .utility) { [weak self] in
+            let owner = self                    // one weak read, shared by the progress reports below
             do {
                 let made = try await pipeline.makeSheet(for: url, songKey: key, language: nil) { stage, share in
-                    Task { @MainActor [weak self] in
-                        guard let self, case .generating = self.status else { return }
+                    Task { @MainActor in
+                        guard let self = owner, case .generating = self.status else { return }
                         self.status = .generating(stage: Self.name(of: stage), share: share, since: began)
                     }
                 }
@@ -143,8 +144,9 @@ final class LyricsCoordinator: ObservableObject {
         let download = ModelDownload.mdxVocals
         downloads[download.name] = 0
         Task { [weak self] in
+            let owner = self
             do {
-                try await download.install { share in Task { @MainActor [weak self] in self?.downloads[download.name] = share } }
+                try await download.install { share in Task { @MainActor in owner?.downloads[download.name] = share } }
             } catch { }
             await MainActor.run { [weak self] in self?.downloads[download.name] = nil; self?.objectWillChange.send() }
         }

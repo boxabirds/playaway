@@ -1,6 +1,7 @@
 import Foundation
 
 /// Provided by the Mac and iPhone adapters: start or cancel a platform download.
+@MainActor
 package protocol SongDownloading: AnyObject {
     func startDownload(of song: SongID)
     func cancelDownload(of song: SongID)

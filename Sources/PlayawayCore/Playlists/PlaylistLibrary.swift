@@ -34,7 +34,7 @@ package enum PlaylistLayout: Equatable {
 }
 
 /// Puts a file into iCloud. The iPhone's version hands the file to the system; tests use a plain move.
-package protocol CloudMoving {
+package protocol CloudMoving: Sendable {
     func moveIntoCloud(_ source: URL, to destination: URL) throws
 }
 
@@ -54,7 +54,7 @@ package enum LibraryError: Error, Equatable {
 }
 
 /// The playlists in one folder. Each playlist is one ordinary file; the file name is the playlist's name.
-package final class PlaylistLibrary {
+package final class PlaylistLibrary: @unchecked Sendable {      // immutable after init; its file system access is thread-safe
     package let folder: URL
     package let layout: PlaylistLayout
     private let store: PlaylistStoring

@@ -82,7 +82,7 @@ package final class InMemoryDeviceMatchStore: DeviceMatchStoring {
 /// The iPhone's and iPad's roots: the Playaway container directly, iCloud Drive through the folders the person allowed.
 /// A grant's URL, once resolved, is kept open for the app's life: the grant is the app's standing permission to read
 /// that folder, not a one-read lease.
-package final class GrantedCloudRoots: CloudRoots {
+package final class GrantedCloudRoots: CloudRoots, @unchecked Sendable {   // its state is guarded by one lock
     package var playawayDocuments: URL?
     /// The roots are read by the rows on the main thread while a restore, on another thread, grants and remembers.
     private let lock = NSRecursiveLock()

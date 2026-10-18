@@ -27,7 +27,7 @@ package func repointing(_ playlist: Playlist, to newLocations: [UUID: URL]) -> P
 /// The single flow for songs entering an iCloud playlist, whichever way they arrive: sort the songs, ask the Files
 /// question only if some need to move, transfer them, re-point the playlist and report. Adapters call this and hold no
 /// branch of their own.
-package struct SongIntakeFlow {
+package struct SongIntakeFlow: @unchecked Sendable {      // run once, on a background task, with closures that are safe there by construction
     private let root: URL?
     private let isUbiquitous: (URL) -> Bool?
     private let resolve: (Track) -> URL?

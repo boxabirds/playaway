@@ -133,7 +133,7 @@ final class PlaylistSession: ObservableObject {
 }
 
 /// The system's way of telling a session that something else wrote its file. Callbacks arrive on the main queue.
-final class SessionPresenter: NSObject, NSFilePresenter {
+final class SessionPresenter: NSObject, NSFilePresenter, @unchecked Sendable {   // calls back on the main queue only
     let presentedItemURL: URL?
     let presentedItemOperationQueue = OperationQueue.main
     private let onChange: () -> Void
@@ -143,7 +143,7 @@ final class SessionPresenter: NSObject, NSFilePresenter {
 
 /// Lets the shared open path (the same one the Mac uses) hand playlists to the app and show its notices. Calls come
 /// from the system's open-URL event on the main thread.
-final class OpenAdapter: PlaylistOpening, NoticePresenting {
+final class OpenAdapter: PlaylistOpening, NoticePresenting, @unchecked Sendable {   // touches the model only on the main actor
     weak var model: AppModel?
     func canOpen(_ url: URL) -> Bool { url.pathExtension == playlistFileExtension }
     func open(_ url: URL) { MainActor.assumeIsolated { model?.openExternal(url) } }
@@ -165,7 +165,7 @@ final class LiveResolver: TrackResolving {
 }
 
 /// Lets the shared Files flow ask its question and show its messages through the app's screens.
-final class FilesPresenterAdapter: FilesPromptPresenting {
+final class FilesPresenterAdapter: FilesPromptPresenting, @unchecked Sendable {   // touches the model only on the main actor
     weak var model: AppModel?
     func askFilesChoice() async -> FilesChoice { await model?.presentFilesChoice() ?? FilesPrompt.dismissalChoice }
     func show(message: String) async { await MainActor.run { model?.enqueueMessage(message) } }
@@ -179,7 +179,7 @@ final class AppModel: ObservableObject {
     private let cloudMover: CloudMoving
     @Published var syncTarget: PlaylistEntry?
     private static let cloudFolderKey = "cloudFolderPath"
-    private static let cloudContainer = CloudFolder.containerIdentifier
+    nonisolated private static let cloudContainer = CloudFolder.containerIdentifier
     /// Finds a song's file for every session; learns where the iCloud Playaway folder is once the system says.
     let resolver = LiveResolver()
     /// Where a song's portable location is on this device (story 40): the Playaway folder, and the iCloud Drive folders

@@ -19,7 +19,7 @@ package struct TreeEntry: Equatable {
 }
 
 /// Reads a folder's whole tree in one pass, so restoring a 300-song playlist lists the folder once, not once per song.
-package protocol FolderListing {
+package protocol FolderListing: Sendable {
     /// `progress` is told how many items have been looked at (every fifty, and at the end); `isCancelled` is asked as it goes,
     /// and a cancelled listing returns what it has.
     func entries(under folder: URL, progress: (Int) -> Void, isCancelled: () -> Bool) -> [TreeEntry]

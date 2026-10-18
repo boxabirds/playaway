@@ -55,7 +55,7 @@ enum CloudStandIn {
     }
 
     /// The Mac's cloud songs over the stand-in folder: nil for the real ones.
-    static func cloudSongs(for setting: Setting) -> CloudSongsProviding? {
+    @MainActor static func cloudSongs(for setting: Setting) -> CloudSongsProviding? {
         guard case .folder(let root) = setting else { return nil }
         let songs = MacCloudSongs()
         songs.read = { url in reading(of: url, root: root) }

@@ -7,7 +7,7 @@ packages:
     path: ..
 settings:
   base:
-    SWIFT_VERSION: "5.0"
+    SWIFT_VERSION: "6.0"
     CODE_SIGNING_ALLOWED: NO
     GENERATE_INFOPLIST_FILE: YES
 targets:

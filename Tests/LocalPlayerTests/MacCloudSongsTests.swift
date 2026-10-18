@@ -4,6 +4,7 @@ import XCTest
 
 /// Story 20, the Mac download source: the system's answers about a file (scripted here, no real iCloud) become the
 /// shared presence and the shared download events, with no play, mapping or dimming logic of its own.
+@MainActor
 final class MacCloudSongsTests: XCTestCase {
     private var sut: MacCloudSongs!
     private var events: [DownloadEvent] = []
