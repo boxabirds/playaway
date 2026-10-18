@@ -193,6 +193,9 @@ final class AppModel: ObservableObject {
     enum RestorePhase { case explain, pick }
     @Published var restoreSession: PlaylistSession?
     @Published var restorePhase: RestorePhase = .explain
+    /// The playlist whose folder the system chooser is open for. The chooser closes its sheet when Open is tapped and only
+    /// then reports the folder, so the answer must not depend on the sheet still being up (the bug: Open did nothing).
+    private var pickingSession: PlaylistSession?
     /// Choosing a file for one song (Locate), and the offer of a whole folder after a song was added.
     @Published var locateShown = false
     private var locateTarget: (session: PlaylistSession, track: Track)?
@@ -886,9 +889,17 @@ final class AppModel: ObservableObject {
         guard recoveryPlan(for: session) != nil else { return }
         restoreSession = session
         restorePhase = .explain
+        pickingSession = nil
     }
 
-    func cancelRestore() { restoreSession = nil }
+    func cancelRestore() { restoreSession = nil; pickingSession = nil }
+
+    /// The restore sheet went away. While the chooser is up that is how the system answers Open, so the pick stays
+    /// pending until the chooser reports; at any other moment it is the person dismissing the explanation.
+    func restoreSheetDismissed() {
+        if restorePhase == .pick, let session = restoreSession { pickingSession = session; restoreSession = nil }
+        else { cancelRestore() }
+    }
 
     /// Where the chooser opens: the folder being asked for, as an iPhone or iPad lays out iCloud Drive.
     var restoreHint: URL? {
@@ -900,15 +911,23 @@ final class AppModel: ObservableObject {
     func continueRestore() {
         guard let session = restoreSession, let folder = recoveryPlan(for: session)?.folders.first else { restoreSession = nil; return }
         #if DEBUG
-        if let fakeDriveRoot {
+        if let fakeDriveRoot, !Self.fakesTheChooserSheet {
             folderPicked(Self.fakePick(in: fakeDriveRoot, default: folder.drivePath))
             return
         }
         #endif
+        pickingSession = session
         restorePhase = .pick
     }
 
     #if DEBUG
+    /// Test aid: show a stand-in chooser inside the real sheet, which closes the sheet before it answers, as the system's does.
+    static var fakesTheChooserSheet: Bool { ProcessInfo.processInfo.arguments.contains("-PlayawayFakeSheetPicker") }
+    /// What the stand-in chooser answers with: the folder being asked for, in the fake drive.
+    func fakeChooserAnswer() -> URL? {
+        guard let fakeDriveRoot, let session = restoreSession, let folder = recoveryPlan(for: session)?.folders.first else { return nil }
+        return fakeDriveRoot.appendingPathComponent(folder.drivePath, isDirectory: true)
+    }
     /// Test aid: what the system chooser would return. `-PlayawayFakePick <path under the fake drive | cancel>`;
     /// by default the folder being asked for.
     private static func fakePick(in drive: URL, default folder: String) -> URL? {
@@ -923,7 +942,8 @@ final class AppModel: ObservableObject {
 
     /// The chooser's answer; nil when the person cancelled. States how many songs came back, or why nothing did.
     func folderPicked(_ url: URL?) {
-        guard let session = restoreSession else { return }
+        guard let session = pickingSession ?? restoreSession else { return }
+        pickingSession = nil
         restoreSession = nil
         let snapshot = accessSnapshot(for: session)
         _ = url?.startAccessingSecurityScopedResource()

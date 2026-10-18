@@ -8,6 +8,14 @@ package struct TreeEntry: Equatable {
     package init(relativePath: String, name: String, size: Int64) {
         self.relativePath = relativePath; self.name = name; self.size = size
     }
+
+    /// The size of a file that iCloud has not downloaded: its real length is not on this device.
+    package static let unknownSize: Int64 = -1
+    /// ".Aftershock s1.m4a.icloud" is the stand-in for "Aftershock s1.m4a"; nil for any other name.
+    package static func placeholderTarget(of name: String) -> String? {
+        guard name.hasPrefix("."), name.hasSuffix(".icloud"), name.count > ".x.icloud".count - 1 else { return nil }
+        return String(name.dropFirst().dropLast(".icloud".count))
+    }
 }
 
 /// Reads a folder's whole tree in one pass, so restoring a 300-song playlist lists the folder once, not once per song.
@@ -19,14 +27,20 @@ package struct SystemFolderListing: FolderListing {
     package init() {}
     package func entries(under folder: URL) -> [TreeEntry] {
         let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
-        guard let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { return [] }
+        guard let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys) else { return [] }
         let base = folder.canonicalPath + "/"
         var found: [TreeEntry] = []
         for case let url as URL in walker {
             guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
             let path = url.canonicalPath
             guard path.hasPrefix(base) else { continue }
-            found.append(TreeEntry(relativePath: String(path.dropFirst(base.count)), name: url.lastPathComponent, size: Int64(values.fileSize ?? 0)))
+            var relative = String(path.dropFirst(base.count)), name = url.lastPathComponent, size = Int64(values.fileSize ?? 0)
+            if let real = TreeEntry.placeholderTarget(of: name) {
+                // A song iCloud has not downloaded is listed as ".Name.icloud": it is Name, whose size is not known here.
+                relative = (relative as NSString).deletingLastPathComponent.isEmpty ? real : ((relative as NSString).deletingLastPathComponent as NSString).appendingPathComponent(real)
+                name = real; size = TreeEntry.unknownSize
+            } else if name.hasPrefix(".") { continue }
+            found.append(TreeEntry(relativePath: relative, name: name, size: size))
         }
         return found
     }
@@ -63,7 +77,7 @@ package func matchSongs(_ probes: [SongProbe], in entries: [TreeEntry]) -> [UUID
     for probe in probes {
         if let place = probe.savedPlace, let entry = byPath[place.lowercased()] { outcomes[probe.id] = .matched(entry.relativePath); continue }
         let sameName = byName[probe.fileName.lowercased()] ?? []
-        let candidates = probe.fileSize.map { size in sameName.filter { $0.size == size } } ?? sameName
+        let candidates = probe.fileSize.map { size in sameName.filter { $0.size == size || $0.size == TreeEntry.unknownSize } } ?? sameName
         switch candidates.count {
         case 0: outcomes[probe.id] = MatchOutcome.none     // explicit: a bare .none would remove the entry (Optional.none)
         case 1: outcomes[probe.id] = .matched(candidates[0].relativePath)

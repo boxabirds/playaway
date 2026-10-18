@@ -352,10 +352,15 @@ struct PlaylistView: View {
                     #endif
                 }
             }
-            .sheet(isPresented: Binding(get: { model.restoreSession === session }, set: { if !$0 { model.cancelRestore() } })) {
+            .sheet(isPresented: Binding(get: { model.restoreSession === session }, set: { if !$0 { model.restoreSheetDismissed() } })) {
                 switch model.restorePhase {
                 case .explain: RestoreExplainer().environmentObject(model)
-                case .pick: FolderPicker(hint: model.restoreHint) { model.folderPicked($0) }.ignoresSafeArea()
+                case .pick:
+                    #if DEBUG
+                    if AppModel.fakesTheChooserSheet { FakeSheetChooser() } else { FolderPicker(hint: model.restoreHint) { model.folderPicked($0) }.ignoresSafeArea() }
+                    #else
+                    FolderPicker(hint: model.restoreHint) { model.folderPicked($0) }.ignoresSafeArea()
+                    #endif
                 }
             }
             .fileImporter(isPresented: $model.locateShown, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
@@ -461,3 +466,20 @@ struct PlaylistCloudIcon: View {
         .accessibilityIdentifier("playlist-cloud-icon")
     }
 }
+
+#if DEBUG
+/// Test aid: stands in for the system's folder chooser inside the real sheet. The system closes the sheet when Open is
+/// tapped and then reports the folder; this does the same, in that order.
+struct FakeSheetChooser: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        Button("Open") {
+            let answer = model.fakeChooserAnswer()
+            dismiss()
+            DispatchQueue.main.async { model.folderPicked(answer) }
+        }
+        .accessibilityIdentifier("fake-chooser-open")
+    }
+}
+#endif

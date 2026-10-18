@@ -63,6 +63,18 @@ final class RestoreFlowUITests: XCTestCase {
         XCTAssertTrue(again.buttons["Pause"].waitForExistence(timeout: 10), "still playable on the next launch")
     }
 
+    /// The owner's bug on the real device: tapping Open in the system's chooser did nothing. The system closes the sheet
+    /// (which cancelled the restore) before it reports the folder, so the answer arrived with nothing to apply it to.
+    func testTheChooserClosingItsSheetBeforeAnsweringStillRestores() {
+        let app = launch(["-PlayawayFakeSheetPicker"]); openPicks(app)
+        restore(app)
+        XCTAssertTrue(app.buttons["fake-chooser-open"].waitForExistence(timeout: 5), "the stand-in chooser is up")
+        app.buttons["fake-chooser-open"].tap()
+        dismissAlert(app, containing: "Restored 2 of 2 songs")
+        XCTAssertTrue(app.otherElements["restore-banner"].waitForNonExistence(timeout: 5), "restored: the banner goes")
+        XCTAssertFalse(isLocked(app, "Demo Drive"))
+    }
+
     func testAPartialRestoreCountsTheRestThenLocateFindsTheLastSong() {       // TC-52, TC-77, TC-58, TC-78
         let app = launch(["-PlayawayFakePick", "Mixdowns/Live"]); openPicks(app)
         restore(app)

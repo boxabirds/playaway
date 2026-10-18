@@ -31,6 +31,25 @@ final class TreeMatcherTests: XCTestCase {
         XCTAssertEqual(outcome(probe(place: nil), copies), .ambiguous)
         XCTAssertEqual(outcome(probe(place: "y/a.mp3"), copies), .matched("y/a.mp3"))
     }
+    func testASongIcloudHasNotDownloadedIsMatchedByNameWhateverItsRecordedSize() {   // the owner's folders show download icons
+        XCTAssertEqual(outcome(probe(size: 4_000_000), [TreeEntry(relativePath: "x/a.mp3", name: "a.mp3", size: TreeEntry.unknownSize)]), .matched("x/a.mp3"))
+        XCTAssertEqual(TreeEntry.placeholderTarget(of: ".Aftershock s1.m4a.icloud"), "Aftershock s1.m4a")
+        XCTAssertNil(TreeEntry.placeholderTarget(of: "Aftershock s1.m4a"))
+        XCTAssertNil(TreeEntry.placeholderTarget(of: ".DS_Store"))
+    }
+
+    func testTheSystemListingNamesAPlaceholderByItsRealNameAndSkipsOtherHiddenFiles() throws {
+        let dir = TempDir("placeholders")
+        let sub = dir.url.appendingPathComponent("Live")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        try Data(count: 5).write(to: sub.appendingPathComponent(".Evicted.mp3.icloud"))
+        try Data(count: 7).write(to: sub.appendingPathComponent("Here.mp3"))
+        try Data(count: 1).write(to: sub.appendingPathComponent(".DS_Store"))
+        let entries = SystemFolderListing().entries(under: dir.url).sorted { $0.relativePath < $1.relativePath }
+        XCTAssertEqual(entries, [TreeEntry(relativePath: "Live/Evicted.mp3", name: "Evicted.mp3", size: TreeEntry.unknownSize),
+                                 TreeEntry(relativePath: "Live/Here.mp3", name: "Here.mp3", size: 7)])
+    }
+
     func testAnEmptyTreeMatchesNothing() {                                          // TC-17
         XCTAssertEqual(outcome(probe(), []), MatchOutcome.none)
     }
