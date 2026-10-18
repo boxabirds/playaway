@@ -1,5 +1,9 @@
 #!/bin/bash
 # Runs the Playaway iPhone UI tests on the simulator (headless) and fails if the app itself crashed.
+# PLAYAWAY_SIM_DEVICE picks the simulator (default "iPhone 17"); for the iPad forms use, say,
+#   PLAYAWAY_SIM_DEVICE="iPad Pro 13-inch (M5)" scripts/ios-ui-tests.sh
+# and to try the compact stack at a given width on any device, set the app's rig key before the run:
+#   xcrun simctl spawn "iPad Pro 13-inch (M5)" defaults write software.away.play PlayawayWindowWidth -int 320
 # Crash reports for other processes (Apple's own simulator apps) are counted and reported, not failed on.
 set -u
 cd "$(dirname "$0")/../ios" || exit 2

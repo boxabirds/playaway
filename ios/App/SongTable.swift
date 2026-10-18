@@ -8,7 +8,7 @@ struct SongTable: UIViewRepresentable {
     @ObservedObject var session: PlaylistSession
     @EnvironmentObject var model: AppModel
 
-    func makeCoordinator() -> Coordinator { Coordinator(session: session) }
+    func makeCoordinator() -> Coordinator { let coordinator = Coordinator(session: session); coordinator.model = model; return coordinator }
 
     func makeUIView(context: Context) -> UITableView {
         let table = UITableView(frame: .zero, style: .plain)
@@ -143,9 +143,15 @@ struct SongTable: UIViewRepresentable {
             return UISwipeActionsConfiguration(actions: [remove])
         }
 
+        /// A row's drag carries the track id (for reordering within this list) and, when the file is found, its URL, so
+        /// a playlist in the iPad's sidebar can take the song (story 38).
         func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
-            let id = self.session.playlist.tracks[indexPath.row].id.uuidString
-            return [UIDragItem(itemProvider: NSItemProvider(object: id as NSString))]
+            let track = self.session.playlist.tracks[indexPath.row]
+            let provider = NSItemProvider(object: track.id.uuidString as NSString)
+            if let model, case .resolved(let url) = model.resolver.resolve(track.reference, besidePlaylistAt: self.session.folder).0 {
+                provider.registerObject(url as NSURL, visibility: .all)
+            }
+            return [UIDragItem(itemProvider: provider)]
         }
 
         func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) { isDragging = true }

@@ -5,15 +5,59 @@ import PlayawayCore
 struct RootView: View {
     @EnvironmentObject var model: AppModel
 
+    /// Test rig (story 38): `-PlayawayWindowWidth <points>` (or that key in the app's defaults) fixes the root's width,
+    /// so the compact and two-column forms can be tried on any simulator without multitasking gestures.
+    static let windowWidthKey = "PlayawayWindowWidth"
+    private var fixedWidth: CGFloat? {
+        #if DEBUG
+        let width = UserDefaults.standard.integer(forKey: Self.windowWidthKey)
+        return width > 0 ? CGFloat(width) : nil
+        #else
+        return nil
+        #endif
+    }
+
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    @State private var windowWidth: CGFloat = 0
+
+    /// The size class the forms follow: the system's, or the rig's reading of its fixed width (a frame alone does not
+    /// change the size class, and a 320-point window is compact).
+    private var effectiveSizeClass: UserInterfaceSizeClass? {
+        if let fixedWidth { return Double(fixedWidth) < IPadLayout.rigCompactMaximumWidth ? .compact : .regular }
+        return sizeClass
+    }
+
+    /// Which columns this window shows (story 38): the size class and type size, and the measured width.
+    var plan: ColumnPlan {
+        let width: WidthClass? = effectiveSizeClass.map { $0 == .compact ? .compact : .regular }
+        return IPadLayout.columnPlan(width: width, isAccessibilityTypeSize: typeSize.isAccessibilitySize, windowWidth: Double(windowWidth))
+    }
+
     var body: some View {
-        NavigationStack(path: $model.path) {
-            PlaylistsView()
-                .navigationDestination(for: URL.self) { url in
-                    if let session = model.session(for: url) { PlaylistView(session: session) }
-                    else { ContentUnavailableView("Playlist unavailable", systemImage: "exclamationmark.triangle") }
-                }
+        if let fixedWidth {
+            content
+                .environment(\.horizontalSizeClass, effectiveSizeClass)
+                .frame(width: fixedWidth).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            content
         }
-        .overlay { PlayerChrome() }
+    }
+
+    private var content: some View {
+        Group {
+            switch plan {
+            case .stack: stack
+            case .two, .three: columns
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        .onChange(of: plan, initial: true) { _, plan in
+            columnVisibility = plan == .three ? .all : .doubleColumn
+            if plan != .stack { model.cardOpen = false }
+        }
+        .modifier(ModelAlerts())
         .sheet(isPresented: $model.renameShown) { RenameSheet() }
         .alert("Sync with iCloud", isPresented: Binding(get: { model.syncTarget != nil }, set: { if !$0 { model.syncTarget = nil } })) {
             Button("Move to iCloud") { model.confirmSync() }
@@ -43,10 +87,41 @@ struct RootView: View {
             model.openCoordinator.open(url)
         }
     }
+
+    /// The iPhone's form, unchanged: Playlists pushes Playlist, the floating controller and the card over it.
+    private var stack: some View {
+        NavigationStack(path: $model.path) {
+            PlaylistsView()
+                .navigationDestination(for: URL.self) { url in
+                    if let session = model.session(for: url) { PlaylistView(session: session) }
+                    else { ContentUnavailableView("Playlist unavailable", systemImage: "exclamationmark.triangle") }
+                }
+        }
+        .overlay { PlayerChrome() }
+    }
+
+    /// The iPad's form: Playlists in the sidebar, the chosen playlist's songs in the middle, Now Playing at the right.
+    private var columns: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            PlaylistsView(selection: Binding(get: { model.selectedPlaylist }, set: { model.select($0, in: plan) }))
+        } content: {
+            if let url = model.selectedPlaylist, let session = model.session(for: url) {
+                PlaylistView(session: session)
+            } else {
+                ContentUnavailableView("No playlist chosen", systemImage: "music.note.list", description: Text("Choose a playlist"))
+                    .accessibilityIdentifier("songs-empty")
+            }
+        } detail: {
+            NowPlayingColumn()
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
 }
 
 struct PlaylistsView: View {
     @EnvironmentObject var model: AppModel
+    /// In columns the list is a selection; in the stack (nil) its rows navigate.
+    var selection: Binding<URL?>? = nil
     @State private var creating = false
     @State private var newName = ""
     @State private var errorText: String?
@@ -56,6 +131,27 @@ struct PlaylistsView: View {
             if model.entries.isEmpty {
                 ContentUnavailableView("No Playlists", systemImage: "music.note.list",
                                        description: Text("Tap + to make your first playlist."))
+            } else if let selection {
+                List(model.entries, selection: selection) { entry in
+                    row(entry)
+                        .frame(maxWidth: .infinity, alignment: .leading)      // the whole row, so the icon sits at its end
+                        .contentShape(Rectangle())
+                        .tag(entry.url)
+                        .dropDestination(for: URL.self) { urls, _ in model.add(urls, toPlaylistAt: entry.url) }
+                        .overlay(alignment: .trailing) {
+                            PlaylistCloudIcon(entry: entry) { model.beginSync(entry) }.padding(.trailing, 28)
+                        }
+                        .contextMenu {
+                            if case .ok = entry.status {
+                                Button { model.beginRename(entry.url) } label: { Label("Rename", systemImage: "pencil") }
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { model.deleteTarget = entry } label: { Label("Delete", systemImage: "trash") }
+                        }
+                        .accessibilityAction(named: "Delete") { model.deleteTarget = entry }
+                        .accessibilityAction(named: "Rename") { if case .ok = entry.status { model.beginRename(entry.url) } }
+                }
             } else {
                 List(model.entries) { entry in
                     NavigationLink(value: entry.url) { row(entry) }
@@ -86,6 +182,7 @@ struct PlaylistsView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { newName = ""; creating = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("New Playlist")
+                    .keyboardShortcut("n", modifiers: .command)
             }
         }
         .sheet(isPresented: $model.experimentsShown) { ExperimentsView() }
@@ -125,6 +222,13 @@ struct PlaylistView: View {
 
     var body: some View {
         SongTable(session: session)
+            // Files dropped on the songs (from Files, or another playlist's row) go the way Add Songs does.
+            .dropDestination(for: URL.self) { urls, _ in
+                let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
+                session.add(urls)
+                scoped.forEach { $0.stopAccessingSecurityScopedResource() }
+                return true
+            }
             // The title, the song count and the controls live in the navigation bar: back at the left, the name over the
             // song count in the middle, play or pause and Add Songs at the right.
             .navigationTitle(session.name)
@@ -137,6 +241,7 @@ struct PlaylistView: View {
                 ToolbarItemGroup(placement: .primaryAction) {
                     StartPlaylistButton(session: session)
                     Button { importing = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add Songs")
+                        .keyboardShortcut("o", modifiers: .command)
                 }
             }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in

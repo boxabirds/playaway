@@ -187,6 +187,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var entries: [PlaylistEntry] = []
     @Published var cardOpen = false
     @Published var path: [URL] = []
+    /// The playlist chosen in the iPad's sidebar (regular width); in the stack it mirrors the end of `path`.
+    @Published var selectedPlaylist: URL?
     private let memoryStore = ListeningMemoryStore()
     private let openAdapter = OpenAdapter()
     /// Test aid: in a fake cloud, files under this folder count as iCloud Drive files.
@@ -308,6 +310,7 @@ final class AppModel: ObservableObject {
         }
         #endif
         $path.dropFirst().sink { [weak self] _ in self?.saveMemory(force: true) }.store(in: &cancellables)
+        $path.sink { [weak self] trail in if let last = trail.last { self?.selectedPlaylist = last } }.store(in: &cancellables)
         // The place is saved about every five seconds while a song plays (the throttle is in saveMemory).
         Timer.publish(every: 1, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.saveMemory(force: false) }.store(in: &cancellables)
@@ -486,6 +489,34 @@ final class AppModel: ObservableObject {
         var history = NavigationHistory<URL>(playlists: path)
         history.navigate(to: .playlist(url))
         path = history.playlistTrail
+        selectedPlaylist = url
+    }
+
+    /// Songs dropped on a playlist in the sidebar (story 38): added as Add Songs would; a playlist whose file cannot be
+    /// read takes nothing and says so.
+    @discardableResult
+    func add(_ urls: [URL], toPlaylistAt playlist: URL) -> Bool {
+        guard let session = session(for: playlist) else {
+            failureMessage = "The playlist could not be read, so nothing was added to it."
+            return false
+        }
+        let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
+        session.add(urls)
+        scoped.forEach { $0.stopAccessingSecurityScopedResource() }
+        return true
+    }
+
+    /// Choosing a playlist, the one entry point for both forms (story 38): in the stack it is the path; in columns it
+    /// is the sidebar's selection, the path stays empty and the card is closed. Playback is untouched by a choice.
+    func select(_ url: URL?, in plan: ColumnPlan) {
+        let outcome = IPadLayout.selection(choosing: url, plan: plan, cardOpen: cardOpen)
+        selectedPlaylist = outcome.selected
+        if plan == .stack {
+            if let url { openPlaylist(url) } else { path = [] }
+        } else {
+            path = outcome.path
+            cardOpen = outcome.cardOpen
+        }
     }
 
     /// What the back control says: where it returns to.
@@ -804,6 +835,7 @@ final class AppModel: ObservableObject {
         songURLs.removeAll()
         if let session = sessions.removeValue(forKey: old) { session.rebase(to: new); sessions[new] = session }
         path = path.map { $0 == old ? new : $0 }
+        if selectedPlaylist == old { selectedPlaylist = new }
     }
 
     // MARK: Rename and delete
@@ -871,6 +903,7 @@ final class AppModel: ObservableObject {
         sessions[entry.url]?.stopFollowing()
         sessions[entry.url] = nil
         path.removeAll { $0 == entry.url }
+        if selectedPlaylist == entry.url { selectedPlaylist = nil }
         if wasPlaying {
             engine.stop()
             cardOpen = false

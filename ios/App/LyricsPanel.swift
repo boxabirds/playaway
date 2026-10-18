@@ -1,13 +1,47 @@
 import SwiftUI
 import PlayawayCore
 
-/// The lyrics above the controls when the card is pulled up. The current line is read from the engine's position on
-/// every frame; nothing here remembers where the song is.
+/// The lyrics section below the controls. A "Lyrics" disclosure row heads it, as the system's own folding sections
+/// are headed: the chevron points right when the section is folded and down when it is open, and the row is the
+/// button. The current line is read from the engine's position on every frame; nothing here remembers where the
+/// song is.
 struct LyricsPanel: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack {                                   // one element, so the identifier lands on the panel itself
+        VStack(spacing: 0) {                       // one element, so the identifier lands on the panel itself
+            if model.lyrics.status != .off { header }
+            if model.lyrics.status == .off || model.lyrics.settings.panelShown { section }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lyrics-panel")
+    }
+
+    private var header: some View {
+        let shown = model.lyrics.settings.panelShown
+        return Button { model.lyrics.settings.panelShown.toggle() } label: {
+            HStack {
+                Text("Lyrics").font(.headline).foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: "chevron.right").font(.body.weight(.semibold)).foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(shown ? 90 : 0))
+                    .animation(reduceMotion ? nil : .easeInOut(duration: Chrome.cardResizeDuration), value: shown)
+            }
+            .frame(minHeight: Chrome.lyricsHeaderHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Lyrics")
+        .accessibilityValue(shown ? "Expanded" : "Collapsed")
+        .accessibilityHint(shown ? "Hides the lyrics" : "Shows the lyrics")
+        .accessibilityIdentifier("lyrics-disclosure")
+        .keyboardShortcut("l", modifiers: .command)
+    }
+
+    private var section: some View {
+        VStack {
             switch model.lyrics.status {
             case .off:
                 message("Lyrics are an experiment.", detail: "Turn them on under Experiments on the Playlists screen.")
@@ -31,8 +65,6 @@ struct LyricsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("lyrics-panel")
     }
 
     private func message(_ title: String, detail: String) -> some View {

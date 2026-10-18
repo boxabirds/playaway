@@ -165,6 +165,19 @@ final class LyricsExperimentStoreTests: XCTestCase {
     func testDefaultsAreOffAppleSpeechAndSeparation() {
         let store = LyricsExperimentStore(defaults: isolatedDefaults())
         XCTAssertEqual(store.load(), LyricsExperimentSettings(enabled: false, engine: .speechAnalyzer, separateVocals: true))
+        XCTAssertTrue(store.load().panelShown, "the lyrics section starts open")
+    }
+
+    /// The person can fold the lyrics section away on the card; that choice outlives the song and the launch.
+    func testFoldingThePanelAwayIsRemembered() {
+        let defaults = isolatedDefaults()
+        let store = LyricsExperimentStore(defaults: defaults)
+        var settings = store.load()
+        settings.panelShown = false
+        store.save(settings)
+        XCTAssertFalse(LyricsExperimentStore(defaults: defaults).load().panelShown)
+        defaults.set("nonsense", forKey: lyricsPanelShownKey)
+        XCTAssertTrue(store.load().panelShown, "a bad value falls back to open")
     }
 
     func testSavedSettingsComeBackAndBadValuesFallBack() {

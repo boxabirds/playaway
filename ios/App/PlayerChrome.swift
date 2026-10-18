@@ -27,6 +27,8 @@ enum Chrome {
     static let lyricsNoteHeight: CGFloat = 72
     static let lyricsPanelHeight: CGFloat = 168
     static let lyricsPanelFraction: CGFloat = 0.75
+    /// The "Lyrics" disclosure row above the section: the system's minimum tap height.
+    static let lyricsHeaderHeight: CGFloat = 44
 }
 
 /// The floating controller at the bottom, and the player card, which opens in a standard system sheet: the system draws
@@ -55,6 +57,16 @@ struct PlayerChrome: View {
             .onChange(of: active) { _, isActive in if !isActive { model.cardOpen = false } }
         }
         .ignoresSafeArea(.keyboard)
+    }
+}
+
+/// The model's own alerts (an unsaved playlist, the Files question, a failure), attached once at the root so they
+/// show in the stack and in the columns alike.
+struct ModelAlerts: ViewModifier {
+    @EnvironmentObject var model: AppModel
+
+    func body(content: Content) -> some View {
+        content
         .alert("This playlist is no longer available", isPresented: $model.showUnsavedOffer) {
             Button("Save Playlist…") { model.saveUnsavedPlaylist() }
             Button("Cancel", role: .cancel) {}
@@ -120,7 +132,6 @@ struct PlayerCard: View {
     @EnvironmentObject private var resize: CardResize
     @Environment(\.reportCardContentHeight) private var reportContentHeight
     let screenHeight: CGFloat
-    @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
     var body: some View {
         ScrollView { column }
@@ -130,31 +141,74 @@ struct PlayerCard: View {
     }
 
     private var column: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            handle
-            playlistLink
-            if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
-                Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
-                    .frame(maxWidth: .infinity).accessibilityHidden(true)
+        PlayerColumn(layout: .stacked, showsHandle: true, screenHeight: screenHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportContentHeight($0) }
+            .offset(y: resize.shift)                       // during a resize only: keeps the controls still on screen
+    }
+}
+
+/// The player's body, shared by the card on the phone (stacked, with the handle) and the Now Playing column on the
+/// iPad (stacked in a narrow column, the words beside the controls in a wide one). It reads the transport live; it
+/// keeps nothing of its own.
+struct PlayerColumn: View {
+    @EnvironmentObject var model: AppModel
+    let layout: PlayerLayout
+    let showsHandle: Bool
+    let screenHeight: CGFloat
+    @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
+
+    var body: some View {
+        switch layout {
+        case .stacked:
+            VStack(alignment: .leading, spacing: 14) {
+                if showsHandle { handle }
+                playlistLink
+                artwork
+                title
+                scrubber
+                controls
+                LyricsPanel()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: lyricsPanelHeight)
             }
-            title
-            scrubber
-            controls
-            LyricsPanel()
-                .frame(maxWidth: .infinity)
-                .frame(height: lyricsPanelHeight)
+            .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
+        case .sideBySide:
+            HStack(alignment: .top, spacing: 24) {
+                // The controls sit at the bottom of the left half; artwork and title changes happen above them.
+                VStack(alignment: .leading, spacing: 14) {
+                    playlistLink
+                    artwork
+                    title
+                    Spacer(minLength: 0)
+                    scrubber
+                    controls
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("player-left-column")
+                LyricsPanel()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("player-lyrics-column")
+            }
+            .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
         }
-        .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
-        .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportContentHeight($0) }
-        .offset(y: resize.shift)                       // during a resize only: keeps the controls still on screen
     }
 
+    @ViewBuilder private var artwork: some View {
+        if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
+                .frame(maxWidth: .infinity).accessibilityHidden(true)
+        }
+    }
+
+    /// The note alone when the experiment is off; otherwise the header row, plus the section when it is open.
     private var lyricsPanelHeight: CGFloat {
         switch model.lyrics.status {
-        case .off: Chrome.lyricsNoteHeight
-        case .ready: screenHeight * Chrome.lyricsPanelFraction
-        case .none, .generating, .failed: Chrome.lyricsPanelHeight
+        case .off: return Chrome.lyricsNoteHeight
+        case .ready: return Chrome.lyricsHeaderHeight + (model.lyrics.settings.panelShown ? screenHeight * Chrome.lyricsPanelFraction : 0)
+        case .none, .generating, .failed: return Chrome.lyricsHeaderHeight + (model.lyrics.settings.panelShown ? Chrome.lyricsPanelHeight : 0)
         }
     }
 
@@ -226,6 +280,7 @@ struct PlayerCard: View {
                 .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height).contentShape(Rectangle())
         }
         .accessibilityLabel("Previous")
+        .keyboardShortcut(.upArrow, modifiers: [])
     }
 
     private var playButton: some View {
@@ -234,6 +289,7 @@ struct PlayerCard: View {
                 .resizable().frame(width: min(playButtonSide, Chrome.playButtonMaxSide), height: min(playButtonSide, Chrome.playButtonMaxSide))
         }
         .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
+        .keyboardShortcut(.space, modifiers: [])
     }
 
     private var nextButton: some View {
@@ -242,6 +298,7 @@ struct PlayerCard: View {
                 .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height).contentShape(Rectangle())
         }
         .accessibilityLabel("Next")
+        .keyboardShortcut(.downArrow, modifiers: [])
     }
 
     private var repeatButton: some View {
@@ -255,6 +312,52 @@ struct PlayerCard: View {
 
     private var repeatSpoken: String {
         switch model.settings.repeatMode { case .off: "Off"; case .all: "All"; case .one: "One" }
+    }
+}
+
+/// The iPad's detail column: the player when a song is under way or paused, otherwise a named empty state. The
+/// layout follows the column's own width (the words beside the controls from `IPadLayout.lyricsBesideMinimumWidth`).
+struct NowPlayingColumn: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        GeometryReader { geo in
+            if model.transport.state != .idle {
+                ScrollView {
+                    PlayerColumn(layout: IPadLayout.playerLayout(columnWidth: geo.size.width), showsHandle: false, screenHeight: geo.size.height)
+                        .frame(minHeight: geo.size.height)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .accessibilityIdentifier("now-playing-column")
+                .background { seekShortcuts }
+            } else {
+                EmptyNowPlaying()
+            }
+        }
+    }
+
+    /// Left and Right arrows seek by `Keys.seekStep`; the buttons are not drawn, the shortcuts are what they are for.
+    private var seekShortcuts: some View {
+        HStack {
+            Button("Back 5 seconds") { try? model.transport.seek(toSeconds: max(model.transport.position - Keys.seekStep, 0)) }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+            Button("Forward 5 seconds") { try? model.transport.seek(toSeconds: min(model.transport.position + Keys.seekStep, model.transport.duration)) }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+        }
+        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+    }
+}
+
+/// The keyboard on an iPad (story 38): what each key does, listed in the system's shortcut overlay by the buttons
+/// that carry them.
+enum Keys {
+    static let seekStep: Double = 5
+}
+
+struct EmptyNowPlaying: View {
+    var body: some View {
+        ContentUnavailableView("Nothing playing", systemImage: "music.note", description: Text("Choose a song"))
+            .accessibilityIdentifier("now-playing-empty")
     }
 }
 
