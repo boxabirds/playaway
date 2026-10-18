@@ -106,6 +106,14 @@ package final class FollowedPlaylist {
     /// An edit made on this device, not yet saved.
     package func edited(_ updated: Playlist) { playlist = updated }
 
+    /// The platform wrote `saved` to the file itself (the Mac's safe-save writes a temporary file and swaps it in, so `save()`
+    /// never sees it). The file now holds it. Without this, the next change of the file by another device finds our saved
+    /// edit still counted as unsaved, and merges it on top of their later version instead of replacing ours with theirs.
+    package func wrote(_ saved: Playlist) {
+        onDisk = saved
+        fingerprint = files.fingerprint(of: url)
+    }
+
     /// The file was moved by this device (turning sync on); the contents are the same, the place is new.
     package func movedTo(_ newURL: URL) -> FollowedPlaylist {
         let moved = FollowedPlaylist(url: newURL, playlist: playlist, fingerprint: files.fingerprint(of: newURL), files: files,

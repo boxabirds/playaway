@@ -7,6 +7,7 @@ import AppKit
 
 // MARK: - Player and decider level (no app needed)
 
+@MainActor
 final class ReviewFixPlayerTests: XCTestCase {
     final class CountingSession: SessionEnding { var ended = 0; func end() { ended += 1 } }
 
@@ -95,6 +96,7 @@ final class ReviewFixPlayerTests: XCTestCase {
     }
 }
 
+@MainActor
 final class ReviewFixOpenTests: XCTestCase {
     /// A single file that fails to play must leave the playlist session and its audio exactly as they were.
     func testOpeningAFileTheEngineRefusesLeavesThePlaylistSessionRunning() {
@@ -122,7 +124,7 @@ final class ReviewFixOpenTests: XCTestCase {
         XCTAssertEqual(rig.currentName, "tone.wav")
     }
 
-    final class SessionOnlyOpener: PlaylistOpening {
+    @MainActor final class SessionOnlyOpener: PlaylistOpening {
         let registry: ActiveSessionRegistry
         init(registry: ActiveSessionRegistry) { self.registry = registry }
         func canOpen(_ url: URL) -> Bool { false }

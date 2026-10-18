@@ -4,6 +4,7 @@ import XCTest
 /// Only one sound at a time, ever. The song and the scrub loop are two sound producers; the engine holds one lease on
 /// audio, and whatever takes it silences the holder first. These reproduce the report "the scrub loop played on its own
 /// while another song played": each presses something that starts the song while the loop is looping.
+@MainActor
 final class AudioExclusivityTests: XCTestCase {
     private struct Rig {
         let transport: TransportViewModel
@@ -146,6 +147,7 @@ final class AudioExclusivityTests: XCTestCase {
 }
 
 /// The lease itself: the one object that decides which sound may be heard.
+@MainActor
 final class AudioLeaseTests: XCTestCase {
     func testTakingTheLeaseSilencesTheHolderBeforeTheNewHolderIsRecorded() {
         let lease = AudioLease()
@@ -184,6 +186,7 @@ final class AudioLeaseTests: XCTestCase {
 
 /// A source-level guard: nothing outside the engine's own files may make or own a sound producer. If this fails, a new
 /// way of making a sound has appeared that the lease does not govern.
+@MainActor
 final class AudioExclusivitySourceTests: XCTestCase {
     private static let soundMakers = ["AVAudioPlayer(", "AVAudioEngine(", "AVAudioPlayerNode(", "AVPlayer(", "AVQueuePlayer(",
                                       "LoopingPreviewing", "AVLoopingPreview(", "AudioLease("]

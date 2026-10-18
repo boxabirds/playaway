@@ -32,14 +32,18 @@ package struct AVAudioPlayerBackend: AudioBackend {
 }
 
 /// Audio is rendered by AVFoundation's own thread; nothing here runs in a render callback.
-package final class AVAudioPlayerHandle: NSObject, AudioPlayerHandle, AVAudioPlayerDelegate {
+package final class AVAudioPlayerHandle: NSObject, AudioPlayerHandle {
     private let player: AVAudioPlayer
     package var onFinish: (() -> Void)?
+    /// The system's delegate callback arrives on the main actor; the handle itself is used from wherever the engine is, so
+    /// the callback is received by this small object and handed over, instead of the handle conforming to it directly.
+    private let finishedListener = FinishedListener()
 
     package init(url: URL) throws {
         player = try AVAudioPlayer(contentsOf: url)
         super.init()
-        player.delegate = self
+        finishedListener.owner = self
+        player.delegate = finishedListener
         player.prepareToPlay()
     }
 
@@ -65,7 +69,11 @@ package final class AVAudioPlayerHandle: NSObject, AudioPlayerHandle, AVAudioPla
         player.stop()
     }
 
-    package func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        onFinish?()
+    fileprivate func finished() { onFinish?() }
+
+    private final class FinishedListener: NSObject, AVAudioPlayerDelegate {
+        weak var owner: AVAudioPlayerHandle?
+        nonisolated override init() { super.init() }
+        nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { owner?.finished() }
     }
 }

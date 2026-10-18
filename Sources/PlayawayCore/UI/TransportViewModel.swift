@@ -3,6 +3,7 @@ import Combine
 
 /// The state the transport controls show, and every user action they offer. Windows and scripts call the same
 /// methods, so a click and its script give the same result by construction.
+@MainActor
 package final class TransportViewModel: ObservableObject {
     package static let positionUpdateInterval: TimeInterval = 0.25
 
@@ -24,7 +25,8 @@ package final class TransportViewModel: ObservableObject {
     private let engine: PlaybackEngine
     private let registry: ActiveSessionRegistry
     private var cancellables = Set<AnyCancellable>()
-    private var timer: Timer?
+    /// Invalidated in `deinit`, which is not on the main actor; the timer is only ever touched on the main thread before that.
+    private nonisolated(unsafe) var timer: Timer?
 
     /// Starts something when Play is pressed with nothing loaded: the front playlist, else the last single file.
     package var startHandler: (() -> Bool)?
@@ -51,8 +53,13 @@ package final class TransportViewModel: ObservableObject {
     /// Tells observers that something they show may have changed. The values themselves are read live from the engine.
     package func refresh() { objectWillChange.send() }
 
+    /// A timer whose body runs on the main actor. Timers fire on the run loop they were added to, which is the main one.
+    private static func mainTimer(interval: TimeInterval, repeats: Bool, _ body: @escaping @MainActor () -> Void) -> Timer {
+        Timer(timeInterval: interval, repeats: repeats) { _ in MainActor.assumeIsolated { body() } }
+    }
+
     private func startTimer() {
-        let timer = Timer(timeInterval: Self.positionUpdateInterval, repeats: true) { [weak self] _ in
+        let timer = Self.mainTimer(interval: Self.positionUpdateInterval, repeats: true) { [weak self] in
             guard let self, self.engine.state == .playing else { return }
             self.refresh()
         }
@@ -152,7 +159,7 @@ package final class TransportViewModel: ObservableObject {
     private func armHoldTimer() {
         holdTimer?.invalidate()
         guard scrubWasPlaying else { return }
-        let timer = Timer(timeInterval: scrubHoldDelay, repeats: false) { [weak self] _ in
+        let timer = Self.mainTimer(interval: scrubHoldDelay, repeats: false) { [weak self] in
             guard let self, self.isScrubbing, self.engine.state == .paused else { return }
             let place = self.scrubTarget ?? self.engine.position
             if self.engine.startPreviewLoop(at: place, length: self.scrubLoopLength) {
@@ -168,7 +175,7 @@ package final class TransportViewModel: ObservableObject {
 
     private func armScrubWatchdog(after interval: TimeInterval? = nil) {
         scrubWatchdog?.invalidate()
-        let watchdog = Timer(timeInterval: interval ?? scrubTimeout, repeats: false) { [weak self] _ in
+        let watchdog = Self.mainTimer(interval: interval ?? scrubTimeout, repeats: false) { [weak self] in
             guard let self, self.isScrubbing else { return }
             try? self.finishScrub(toSeconds: self.engine.position, how: .safetyTimer)
         }
@@ -209,10 +216,10 @@ package final class TransportViewModel: ObservableObject {
         guard scrubTrace.awaitingPlayhead else { return }
         let placeAtResume = engine.position
         let deadline = clock().addingTimeInterval(Self.playheadWatchLimit)
-        let watch = Timer(timeInterval: Self.playheadPollInterval, repeats: true) { [weak self] timer in
-            guard let self else { timer.invalidate(); return }
+        let watch = Self.mainTimer(interval: Self.playheadPollInterval, repeats: true) { [weak self] in
+            guard let self else { return }
             if self.engine.position > placeAtResume + Self.playheadMovedBy { self.scrubTrace.playheadSeenMoving(at: self.clock()) }
-            if !self.scrubTrace.awaitingPlayhead || self.clock() > deadline { timer.invalidate(); self.refresh() }
+            if !self.scrubTrace.awaitingPlayhead || self.clock() > deadline { self.playheadWatch?.invalidate(); self.refresh() }
         }
         RunLoop.main.add(watch, forMode: .common)
         playheadWatch = watch

@@ -1,6 +1,7 @@
 import PlayawayCore
 import AppKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var services: AppServices!
     var launch: LaunchCoordinator!

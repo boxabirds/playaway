@@ -12,6 +12,8 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
     private var resolutionStarted = false
     /// The file-following state (story 39): reloads, rebases and conflict merges are decided in the shared core.
     private(set) var followed: FollowedPlaylist?
+    /// What the last write by the platform's own save put in the file, until the save completes and `followed` is told.
+    private var lastWritten: Playlist?
     /// When iCloud conflict versions were last merged into this playlist, for the sync window to show.
     private(set) var lastMerge: Date?
 
@@ -93,6 +95,7 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
             if followed.playlist != playlist { takeFromFollowed(cleared: false) }
         } else {
             result = services.store.save(playlist, to: url)
+            if result == .saved { lastWritten = playlist }      // told to the followed playlist when the save completes
         }
         if case .writeFailed(let reason) = result {
             services.notices.show(.saveFailed(reason))
@@ -119,9 +122,14 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
     override func save(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
                        completionHandler: @escaping (Error?) -> Void) {
         super.save(to: url, ofType: typeName, for: saveOperation) { [weak self] error in
-            if error == nil, let self, self.followed == nil, let fileURL = self.fileURL {
-                self.followed = self.makeFollowed(url: fileURL, playlist: self.playlist)
+            if error == nil, let self {
+                if self.followed == nil, let fileURL = self.fileURL {
+                    self.followed = self.makeFollowed(url: fileURL, playlist: self.playlist)
+                } else if let written = self.lastWritten {
+                    self.followed?.wrote(written)           // the file holds what we wrote: it is not an unsaved edit any more
+                }
             }
+            self?.lastWritten = nil
             completionHandler(error)
         }
     }
@@ -319,20 +327,19 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
         apply(reference, toTrack: id)
     }
 
-    /// Resolves every track off the main thread, then applies the statuses and any refreshed references.
+    /// Resolves every track off the main thread, then applies the statuses and any refreshed references. The resolving, and
+    /// the rule that drops a result made from a reference that changed meanwhile, are the core's (`PlaylistResolution`).
     func resolveStatuses(completion: (() -> Void)? = nil) {
         let snapshot = playlist.tracks
         let resolver = services.resolver
         let folder = self.folder
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let results = snapshot.map { (track: $0, result: resolver.resolve($0.reference, besidePlaylistAt: folder)) }
+            let results = PlaylistResolution.resolve(snapshot, with: resolver, besidePlaylistAt: folder)
             DispatchQueue.main.async {
                 guard let self else { return }
-                // A track whose reference changed while this ran (a Locate, say) was resolved from a stale
-                // reference: its result is dropped rather than written over the newer state.
-                let current = results.filter { self.playlist.track(withID: $0.track.id)?.reference == $0.track.reference }
-                self.statuses.setAll(Dictionary(uniqueKeysWithValues: current.map { ($0.track.id, $0.result.0) }))
-                for entry in current { self.apply(entry.result.1, toTrack: entry.track.id) }
+                let current = PlaylistResolution.current(results, in: self.playlist)
+                self.statuses.setAll(Dictionary(uniqueKeysWithValues: current.map { ($0.trackID, $0.status) }))
+                for entry in current { self.apply(entry.refreshed, toTrack: entry.trackID) }
                 completion?()
             }
         }

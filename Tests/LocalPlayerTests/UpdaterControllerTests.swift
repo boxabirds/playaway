@@ -33,6 +33,7 @@ private func invalidConfiguration() -> UpdateConfiguration {
                         automaticChecksEnabled: true)
 }
 
+@MainActor
 final class UpdaterControllerTests: XCTestCase {
     private var logged: [String] = []
     private var factoryCalls = 0

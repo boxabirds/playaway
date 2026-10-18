@@ -2,6 +2,7 @@ import XCTest
 @testable import PlayawayCore
 
 /// Runs the shared fixture files. The same files are meant to be run by the Mac and iPhone suites.
+@MainActor
 final class DownloadFixtureTests: XCTestCase {
     private func load<T: Decodable>(_ name: String, as: T.Type) throws -> T {
         let url = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))

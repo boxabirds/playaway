@@ -5,6 +5,7 @@ import XCTest
 /// the repo's real audio fixtures, with a scripted download seam (no real iCloud). Playback starts only when a
 /// download finishes for the song that is still current; a download, a cancel, a failure and every icon tap leave the
 /// playlist, its order and every file untouched.
+@MainActor
 final class DownloadOnPlayIntegrationTests: XCTestCase {
     /// The scripted platform: records the start and cancel commands; which songs are on the device is the test's say.
     private final class ScriptedDownloader: SongDownloading {
@@ -14,7 +15,7 @@ final class DownloadOnPlayIntegrationTests: XCTestCase {
     }
 
     /// The adapter's side of "start playback": the song id names a track of the real player.
-    private final class Starter: SongPlaybackStarting {
+    @MainActor private final class Starter: SongPlaybackStarting {
         var player: PlaylistPlayer!
         var tracks: [SongID: Track] = [:]
         private(set) var starts: [SongID] = []

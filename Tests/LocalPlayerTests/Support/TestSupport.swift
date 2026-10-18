@@ -237,6 +237,7 @@ func makeSettings(shuffle: Bool = false, repeatMode: RepeatMode = .off,
 }
 
 /// Everything a PlaylistPlayer needs, wired with a recording sink.
+@MainActor
 final class PlayerRig {
     let fixture: PlaylistFixture
     let backend = RecordingAudioBackend()

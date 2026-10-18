@@ -3,6 +3,7 @@ import XCTest
 
 /// Story 39: an open playlist follows its file and never writes a stale copy over a newer one. The state machine is
 /// shared; here it is driven over a real temp folder and the real store, with a fake conflict-version seam.
+@MainActor
 final class FollowedPlaylistTests: XCTestCase {
     private final class FakeConflicts: ConflictVersionReading {
         var versions: [ConflictVersion] = []
@@ -352,5 +353,54 @@ final class FollowedPlaylistTests: XCTestCase {
         XCTAssertEqual(engine.state, .playing)
         player.next()
         XCTAssertEqual(engine.currentURL?.lastPathComponent, "track2.mp3", "the next step follows the new order")
+    }
+}
+
+/// Audit finding (flaky 39.9, failing about half the runs before this): the Mac's safe-save writes a temporary file and swaps it
+/// in, so the followed playlist never saw our own save, and learnt about it only from the file system's notification a
+/// moment later. If the other device's later version landed first, our already-saved edit still counted as unsaved and was
+/// merged on top of theirs instead of being replaced by it.
+@MainActor
+final class FollowedPlaylistOwnWriteTests: XCTestCase {
+    func testAnEditTheDocumentJustSavedItselfIsNotAnUnsavedEditWhenTheOtherDevicesVersionArrives() throws {
+        let dir = TempDir("ownwrite")
+        let url = dir.url.appendingPathComponent("P.\(playlistFileExtension)")
+        let store = PlaylistStore()
+        let a = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "/x/a.mp3", fileName: "a.mp3"))
+        let b = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "/x/b.mp3", fileName: "b.mp3"))
+        let c = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "/x/c.mp3", fileName: "c.mp3"))
+        XCTAssertEqual(store.save(Playlist(tracks: [a]), to: url), .saved)
+        let followed = FollowedPlaylist(url: url, playlist: Playlist(tracks: [a]), fingerprint: store.fingerprint(of: url), files: store, isInContainer: { _ in false })
+        // The person adds b; the platform saves it by its own safe-save, not through `followed.save()`.
+        let mine = Playlist(tracks: [a, b])
+        followed.edited(mine)
+        XCTAssertTrue(followed.isEdited, "before the save: an unsaved edit")
+        XCTAssertEqual(store.save(mine, to: url), .saved)
+        followed.wrote(mine)
+        XCTAssertFalse(followed.isEdited, "the file holds it now")
+        // The other device's later version arrives before the file system's own notification for our write was handled.
+        let theirs = Playlist(tracks: [a, c])
+        XCTAssertEqual(store.save(theirs, to: url), .saved)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: url.path)
+        XCTAssertEqual(followed.fileChanged(), .replaced, "their later version replaces ours: it is their answer to our saved edit")
+        XCTAssertEqual(followed.playlist.tracks.map(\.id), [a.id, c.id], "not merged: b is not resurrected on top of theirs")
+    }
+
+    func testWithoutTellingItTheOwnSaveStillCountsAsAnEditAndTheOldBehaviourIsWhatTheTestMeasures() throws {
+        let dir = TempDir("ownwrite2")
+        let url = dir.url.appendingPathComponent("P.\(playlistFileExtension)")
+        let store = PlaylistStore()
+        let a = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "/x/a.mp3", fileName: "a.mp3"))
+        let b = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "/x/b.mp3", fileName: "b.mp3"))
+        let c = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "/x/c.mp3", fileName: "c.mp3"))
+        XCTAssertEqual(store.save(Playlist(tracks: [a]), to: url), .saved)
+        let followed = FollowedPlaylist(url: url, playlist: Playlist(tracks: [a]), fingerprint: store.fingerprint(of: url), files: store, isInContainer: { _ in false })
+        let mine = Playlist(tracks: [a, b])
+        followed.edited(mine)
+        XCTAssertEqual(store.save(mine, to: url), .saved)          // saved, but `followed` was never told
+        XCTAssertTrue(followed.isEdited, "this is the state the bug lived in")
+        XCTAssertEqual(store.save(Playlist(tracks: [a, c]), to: url), .saved)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: url.path)
+        XCTAssertEqual(followed.fileChanged(), .merged, "and it merged b back on top of theirs")
     }
 }

@@ -7,6 +7,7 @@ package protocol SongDownloading: AnyObject {
 }
 
 /// The shared player, as far as the coordinator needs it.
+@MainActor
 package protocol SongPlaybackStarting: AnyObject {
     func startPlayback(of song: SongID)
 }

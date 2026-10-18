@@ -3,6 +3,7 @@ import XCTest
 
 /// Integration of PlaylistPlayer with the real decider, shuffle, settings, classifier, gate, resolver, registry and
 /// engine, over real fixture files and a recording sink. Rows follow the playlist-playback design (TC-19..TC-135).
+@MainActor
 final class PlaylistPlayerTests: XCTestCase {
     let names = Fixtures.trackNames
 

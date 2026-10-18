@@ -4,6 +4,7 @@ import XCTest
 /// Playback state lives in the engine and nowhere else. These tests fail if a screen could ever be shown anything other
 /// than what the engine is doing: no stored copy, a new song always starts at the beginning, a paused load is shown like
 /// any other paused song.
+@MainActor
 final class PlaybackStateTests: XCTestCase {
     private func rig() -> (TransportViewModel, AVPlaybackEngine, PlaylistFixture) {
         let engine = makeEngine()
@@ -77,6 +78,7 @@ final class PlaybackStateTests: XCTestCase {
 
 /// A source-level guard against the same mistake coming back: no screen or model may declare its own copy of the play
 /// position, the scrub position or a resume point. Playback state is read from the engine where it is drawn.
+@MainActor
 final class NoCopiedPlaybackStateSourceTests: XCTestCase {
     private static let forbiddenNames = ["scrubPosition", "resumePoint", "displayedPosition", "lastKnownPosition", "elapsed", "currentTime", "playPosition"]
 

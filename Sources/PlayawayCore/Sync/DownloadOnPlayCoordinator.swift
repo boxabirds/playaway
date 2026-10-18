@@ -14,6 +14,7 @@ package enum TransportPlayOutcome: Equatable { case ignored, proceed }
 
 /// Decides what happens when a song that may not be on this device is asked for. Pure decisions; effects only through
 /// the two seams. It never retries by itself and never touches playlists, order or files.
+@MainActor
 package final class DownloadOnPlayCoordinator {
     package private(set) var current: SongID?
     private(set) var states: [SongID: DownloadState] = [:]

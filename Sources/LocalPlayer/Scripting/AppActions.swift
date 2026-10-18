@@ -4,6 +4,7 @@ import AppKit
 /// The actions a script can ask for, validated and mapped to numbered refusals. Each one ends in the same handler
 /// the on-screen control uses (transport view model, playlist document, open coordinator), so a scripted action and
 /// its click cannot drift apart.
+@MainActor
 final class AppActions {
     private static let saveWaitSeconds: TimeInterval = 10
     /// How long a scripted play waits for a download from iCloud before giving up (a proposal; no bound is decided).

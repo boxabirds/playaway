@@ -8,6 +8,7 @@ private final class FakeSeams: SongDownloading, SongPlaybackStarting {
     func startPlayback(of song: SongID) { played.append(song) }
 }
 
+@MainActor
 final class DownloadOnPlayTests: XCTestCase {
     private let a = SongID("a"), b = SongID("b")
     private var seams = FakeSeams()

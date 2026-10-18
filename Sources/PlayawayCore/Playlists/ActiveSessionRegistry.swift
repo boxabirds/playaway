@@ -1,10 +1,12 @@
 import Foundation
 
+@MainActor
 package protocol SessionEnding: AnyObject {
     func end()
 }
 
 /// Only one thing plays at a time: beginning a session ends whichever session was active.
+@MainActor
 package final class ActiveSessionRegistry {
     package init() {}
     package private(set) weak var active: SessionEnding?

@@ -5,6 +5,7 @@ import AppKit
 
 /// The objects every window shares: one engine, one active-session registry, one set of settings.
 /// Built at launch; tests build their own with a recording sink and isolated defaults.
+@MainActor
 final class AppServices {
     static var shared: AppServices!
 

@@ -28,6 +28,7 @@ enum PlaylistOpenDecision {
 
 /// A playlist file opened from Finder: shown in its own window and started, unless it is already playing.
 /// The router holds no start-position logic and never reads or writes the shuffle or repeat settings.
+@MainActor
 final class PlaylistOpenRouter: PlaylistOpening {
     private let controller: PlaylistDocumentController
     private let registry: ActiveSessionRegistry

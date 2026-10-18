@@ -3,6 +3,7 @@ import Combine
 
 /// Playback of one playlist document: advances, shuffles, repeats, skips unreadable and missing tracks.
 /// There is one per open playlist document; the shared `ActiveSessionRegistry` keeps only one active.
+@MainActor
 package final class PlaylistPlayer: SessionEnding {
     private enum Attempt { case started, refused, noOutputDevice }
     private enum Prepared: Equatable { case refused, ready(URL), awaitingDownload }

@@ -2,8 +2,9 @@ import PlayawayCore
 import AppKit
 
 /// Cocoa scripting entry points. Each command only extracts its arguments and calls `AppActions`.
-private func actions() -> AppActions? { (NSApp.delegate as? AppDelegate)?.actions }
+@MainActor private func actions() -> AppActions? { (NSApp.delegate as? AppDelegate)?.actions }
 
+@MainActor
 class LocalPlayerCommand: NSScriptCommand {
     func run(_ body: (AppActions) throws -> Any?) -> Any? {
         guard let actions = actions() else { return fail(.notReady) }

@@ -3,6 +3,7 @@ import XCTest
 
 /// Reproduces "dragging the play head stutters": the song kept playing, or was sought several times, while the slider
 /// moved, and then sought again on release. Now it pauses for the drag and seeks once on release.
+@MainActor
 final class ScrubTests: XCTestCase {
     private func rig(playing: Bool = true) -> (TransportViewModel, AVPlaybackEngine, RecordingAudioBackend, URL) {
         let backend = RecordingAudioBackend()
@@ -68,6 +69,7 @@ final class ScrubTests: XCTestCase {
 
 /// Reproduces "moving the slider stops the music": the finger lifting was never reported (another gesture took the touch),
 /// so the song stayed paused for good.
+@MainActor
 final class ScrubWatchdogTests: XCTestCase {
     private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval = 3) {
         let done = expectation(description: "condition")
@@ -107,6 +109,7 @@ final class ScrubWatchdogTests: XCTestCase {
     }
 }
 
+@MainActor
 final class ScrubTraceTests: XCTestCase {
     func testTheSummaryReadsOffTheWholeDragInOrder() {
         let t0 = Date(timeIntervalSinceReferenceDate: 1000)
@@ -145,6 +148,7 @@ final class ScrubTraceTests: XCTestCase {
 
 /// Audio scrubbing: while the finger moves everything is quiet; when it holds still a short seamless snippet from the place
 /// under the finger loops; the slider shows the finger, never the loop; at the lift the song takes over from where the loop was.
+@MainActor
 final class LoopingPreviewTests: XCTestCase {
     private func rig(canStart: Bool = true) -> (TransportViewModel, FakeLoopingPreview, AVPlaybackEngine) {
         let backend = RecordingAudioBackend()

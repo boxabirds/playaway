@@ -17,6 +17,7 @@ struct SilentAudioBackend: AudioBackend {
 
 /// `--dump-window-elements <window-kind> <state>`: opens a fixture playlist document, reaches the state through
 /// in-memory seams, prints the visible elements as JSON and exits. Nothing is written to Documents or any user folder.
+@MainActor
 final class UICheckMode {
     private let services: AppServices
     private let workDir: URL

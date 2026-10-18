@@ -9,6 +9,7 @@ import XCTest
 ///
 /// The phone's container is stood in by a temp folder shaped `.../iCloud~software~away~play/Documents/<Playlist>/`;
 /// this device's copy by another; an offloaded song by its `.<name>.icloud` placeholder, as EvictedCloudFileTests does.
+@MainActor
 final class CrossDevicePlaylistTests: XCTestCase {
     private static let phoneRoot = "/private/var/mobile/Library/Mobile Documents/" + CloudFolder.containerFolderName + "/Documents"
 

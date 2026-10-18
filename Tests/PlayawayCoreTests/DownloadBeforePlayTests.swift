@@ -4,6 +4,7 @@ import XCTest
 /// Story 20 (and 31's download-on-play rule for every entry point): a playable track whose file is in iCloud but not
 /// on this device is handed to the adapter for a download rather than played or marked unreadable; it plays once the
 /// file is here; the play-through loop skips it, like a missing track, and asks for it.
+@MainActor
 final class DownloadBeforePlayTests: XCTestCase {
     private final class Asks { var urls: [URL] = [] }
     private var asks = Asks()

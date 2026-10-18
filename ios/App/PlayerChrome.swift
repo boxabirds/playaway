@@ -20,6 +20,10 @@ enum Chrome {
     static let firstCardHeight: CGFloat = 320
     /// How long the card takes to grow or shrink when artwork comes or goes or the lyrics panel changes.
     static let cardResizeDuration: TimeInterval = 0.35
+    /// A change of the card's height smaller than this (points) is layout noise, not a resize.
+    static let cardResizeThreshold: CGFloat = 0.5
+    /// How long after a resize the old detent stays available, so the slide can finish.
+    static let cardResizeSettle: TimeInterval = 0.1
     /// How far up a drag on the controller must go before it counts as opening the card.
     static let openDragDistance: CGFloat = 24
     /// The lyrics panel below the controls: a one-line note when the experiment is off, a short panel while there is
@@ -51,12 +55,48 @@ struct PlayerChrome: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .background(CardSheet(isPresented: $model.cardOpen, cornerRadius: Chrome.cardCorner) {
-                PlayerCard(screenHeight: geo.size.height).environmentObject(model)
-            }.frame(width: 0, height: 0).allowsHitTesting(false))
+            .sheet(isPresented: $model.cardOpen) { PlayerCard(screenHeight: geo.size.height).environmentObject(model) }
             .onChange(of: active) { _, isActive in if !isActive { model.cardOpen = false } }
         }
         .ignoresSafeArea(.keyboard)
+    }
+}
+
+/// The player card, in the system's own sheet. Its sheet follows the card's height: when the artwork appears or goes, the
+/// sheet's top edge slides while the controls stay exactly where they are (both measured on screen by the card tests).
+/// The sheet's detents are the height it is leaving and the height it is going to; selecting the new one inside an
+/// animation makes the system slide the sheet between them (changing a single detent's height snaps), then the old one is
+/// dropped. The content sits at the bottom of the sheet, so a change at the top never moves the controls.
+struct PlayerCard: View {
+    @EnvironmentObject var model: AppModel
+    let screenHeight: CGFloat
+    @State private var current = Chrome.firstCardHeight
+    @State private var leaving: CGFloat?
+    @State private var selection: PresentationDetent = .height(Chrome.firstCardHeight)
+
+    var body: some View {
+        ScrollView {
+            PlayerColumn(layout: .stacked, showsHandle: true, screenHeight: screenHeight)
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured in resize(to: measured) }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .defaultScrollAnchor(.bottom)
+        .accessibilityIdentifier("player-card")
+        .presentationDetents(Set([current, leaving].compactMap { $0 }.map { PresentationDetent.height($0) }), selection: $selection)
+        .presentationDragIndicator(.hidden)
+        .presentationCornerRadius(Chrome.cardCorner)
+    }
+
+    private func resize(to measured: CGFloat) {
+        guard abs(measured - current) > Chrome.cardResizeThreshold else { return }
+        leaving = current
+        current = measured
+        withAnimation(.easeInOut(duration: Chrome.cardResizeDuration)) { selection = .height(measured) }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Chrome.cardResizeDuration + Chrome.cardResizeSettle))
+            leaving = nil
+        }
     }
 }
 
@@ -122,33 +162,6 @@ struct FloatingController: View {
 
     private var detailLine: String? {
         [model.metadata?.artist, model.metadata?.album].compactMap { $0 }.joined(separator: " · ").nilIfEmpty
-    }
-}
-
-/// The card: handle, playlist link, artwork, title, scrubber and controls, and below them the lyrics panel. It is one
-/// scrolling column whose sheet is exactly as tall as its content (up to the system's limit); pulling up scrolls the
-/// controller and artwork away to reveal the lyrics. There is no blank space: the lyrics panel is a one-line note when
-/// the experiment is off, a short panel while there is something to do or to wait for, and most of the screen once the
-/// words are there. What the card shows is the engine's own state, read where it is drawn; the only thing it keeps is
-/// nothing: its content height goes straight to the sheet.
-struct PlayerCard: View {
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject private var resize: CardResize
-    @Environment(\.reportCardContentHeight) private var reportContentHeight
-    let screenHeight: CGFloat
-
-    var body: some View {
-        ScrollView { column }
-            .scrollBounceBehavior(.basedOnSize)
-            .scrollDisabled(!resize.scrolls)           // a card that fits does not scroll; a drag on it is the sheet's
-            .accessibilityIdentifier("player-card")
-    }
-
-    private var column: some View {
-        PlayerColumn(layout: .stacked, showsHandle: true, screenHeight: screenHeight)
-            .fixedSize(horizontal: false, vertical: true)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportContentHeight($0) }
-            .offset(y: resize.shift)                       // during a resize only: keeps the controls still on screen
     }
 }
 
