@@ -316,7 +316,7 @@ final class ScriptActionsTests: XCTestCase {
 }
 
 final class SdefAndParityTests: XCTestCase {
-    var sdefData: Data { try! Data(contentsOf: sdefURL) }
+    var sdefData: Data { get throws { try Data(contentsOf: sdefURL) } }
 
     func testSdefParsesAndEveryEntryHasADescription() throws {                                   // TC-59
         final class Delegate: NSObject, XMLParserDelegate {
@@ -325,7 +325,7 @@ final class SdefAndParityTests: XCTestCase {
                 if ["command", "property"].contains(name), (a["description"] ?? "").isEmpty { missing.append(a["name"] ?? "?") }
             }
         }
-        let parser = XMLParser(data: sdefData)
+        let parser = XMLParser(data: try sdefData)
         let delegate = Delegate(); parser.delegate = delegate
         XCTAssertTrue(parser.parse())
         XCTAssertTrue(delegate.missing.isEmpty, "no description: \(delegate.missing)")
@@ -338,8 +338,8 @@ final class SdefAndParityTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sdefURL.path))
     }
 
-    func testNoDeleteCommandAndNoSystemItemEntries() {                                            // TC-76 / TC-77
-        let text = String(data: sdefData, encoding: .utf8)!.lowercased()
+    func testNoDeleteCommandAndNoSystemItemEntries() throws {                                            // TC-76 / TC-77
+        let text = String(data: try sdefData, encoding: .utf8)!.lowercased()
         XCTAssertFalse(text.contains("delete"))
         XCTAssertFalse(text.contains("remove playlist"))
         for system in ["name=\"quit\"", "name=\"about", "name=\"hide", "name=\"services", "name=\"window", "name=\"help"] {
@@ -347,34 +347,34 @@ final class SdefAndParityTests: XCTestCase {
         }
     }
 
-    func testNineteenActionsAndTheGatePasses() {                                                  // TC-63 / TC-68
+    func testNineteenActionsAndTheGatePasses() throws {                                                  // TC-63 / TC-68
         XCTAssertEqual(ActionManifest.actions.count, 20)
         XCTAssertEqual(Set(ActionManifest.actions.map(\.id)).count, 20)
-        let entries = ParityGate.dictionaryEntries(sdef: sdefData)
+        let entries = ParityGate.dictionaryEntries(sdef: try sdefData)
         let result = ParityGate.checkParity(manifest: ActionManifest.actions, dictionaryEntries: entries, excluded: ExcludedSystemItems.ids)
         XCTAssertTrue(result.passed, "\(result)")
     }
 
-    func testGateFailsNamingAnActionWithNoScriptEntry() {                                         // TC-61
-        var entries = ParityGate.dictionaryEntries(sdef: sdefData)
+    func testGateFailsNamingAnActionWithNoScriptEntry() throws {                                         // TC-61
+        var entries = ParityGate.dictionaryEntries(sdef: try sdefData)
         entries.remove("seek")
         let result = ParityGate.checkParity(manifest: ActionManifest.actions, dictionaryEntries: entries, excluded: ExcludedSystemItems.ids)
         XCTAssertEqual(result.missingScript, ["seek"])
     }
 
-    func testGateFailsNamingAScriptEntryWithNoUIAction() {                                        // TC-62 / TC-72
-        var entries = ParityGate.dictionaryEntries(sdef: sdefData)
+    func testGateFailsNamingAScriptEntryWithNoUIAction() throws {                                        // TC-62 / TC-72
+        var entries = ParityGate.dictionaryEntries(sdef: try sdefData)
         entries.insert("shuffle the deck")
         let result = ParityGate.checkParity(manifest: ActionManifest.actions, dictionaryEntries: entries, excluded: ExcludedSystemItems.ids)
         XCTAssertEqual(result.missingUI, ["shuffle the deck"])
     }
 
-    func testExcludedSystemItemsNeedNoScriptEntry() {                                             // TC-64
+    func testExcludedSystemItemsNeedNoScriptEntry() throws {                                             // TC-64
         let manifest = ActionManifest.actions + ["about", "quit", "hide", "services", "windowMenu", "helpMenu"].map {
             ManifestAction(id: $0, description: "", uiBinding: "system", scriptBinding: nil) }
-        let result = ParityGate.checkParity(manifest: manifest, dictionaryEntries: ParityGate.dictionaryEntries(sdef: sdefData), excluded: ExcludedSystemItems.ids)
+        let result = ParityGate.checkParity(manifest: manifest, dictionaryEntries: ParityGate.dictionaryEntries(sdef: try sdefData), excluded: ExcludedSystemItems.ids)
         XCTAssertTrue(result.passed)
-        let unexcluded = ParityGate.checkParity(manifest: manifest, dictionaryEntries: ParityGate.dictionaryEntries(sdef: sdefData), excluded: [])
+        let unexcluded = ParityGate.checkParity(manifest: manifest, dictionaryEntries: ParityGate.dictionaryEntries(sdef: try sdefData), excluded: [])
         XCTAssertFalse(unexcluded.passed)
     }
 
@@ -391,7 +391,7 @@ final class SdefAndParityTests: XCTestCase {
     }
 
     func testEveryCommandClassNamedInTheSdefExists() throws {
-        let text = String(data: sdefData, encoding: .utf8)!
+        let text = String(data: try sdefData, encoding: .utf8)!
         let regex = try NSRegularExpression(pattern: #"<cocoa class="(\w+)"/>"#)
         let names = regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).map { String(text[Range($0.range(at: 1), in: text)!]) }
         XCTAssertGreaterThanOrEqual(names.count, 15)
@@ -401,9 +401,9 @@ final class SdefAndParityTests: XCTestCase {
     }
 
     func testKVCKeysAreWhitelistedAndExist() {                                                     // TC-58
-        for key in AppDelegate.scriptKVCKeys { XCTAssertTrue(sdefTextContains(key), key) }
+        for key in AppDelegate.scriptKVCKeys { XCTAssertTrue(try sdefTextContains(key), key) }
         XCTAssertFalse(AppDelegate.scriptKVCKeys.contains("scriptDeleteEverything"))
     }
 
-    func sdefTextContains(_ key: String) -> Bool { String(data: sdefData, encoding: .utf8)!.contains("key=\"\(key)\"") }
+    func sdefTextContains(_ key: String) throws -> Bool { try String(data: try sdefData, encoding: .utf8)!.contains("key=\"\(key)\"") }
 }

@@ -123,11 +123,11 @@ final class PlaylistOpenRouterTests: XCTestCase {
         XCTAssertEqual(started(), ["track1.mp3"])
     }
 
-    func testUnreadablePlaylistsKeepNoWindowAndStopNothing() {                            // TC-29/30/31
+    func testUnreadablePlaylistsKeepNoWindowAndStopNothing() throws {                            // TC-29/30/31
         finderOpen(save(PlaylistFixture(), as: "Busy.lplaylist"))
         let documentsBefore = app.controller.documents.count
-        let random = dir.path("random.lplaylist"); try! Data((0..<100).map { _ in UInt8.random(in: 0...255) }).write(to: random)
-        let newer = dir.path("newer.lplaylist"); try! Data("{\"version\": 50, \"tracks\": []}".utf8).write(to: newer)
+        let random = dir.path("random.lplaylist"); try Data((0..<100).map { _ in UInt8.random(in: 0...255) }).write(to: random)
+        let newer = dir.path("newer.lplaylist"); try Data("{\"version\": 50, \"tracks\": []}".utf8).write(to: newer)
         for url in [random, newer, dir.path("missing.lplaylist")] {
             finderOpen(url)
             XCTAssertEqual(actions.last, .doNothing, url.lastPathComponent)
@@ -149,16 +149,16 @@ final class PlaylistOpenRouterTests: XCTestCase {
 
     // MARK: content and settings untouched (TC-41, TC-42)
 
-    func testOpeningNeverChangesSettingsOrPlaylistContent() {
+    func testOpeningNeverChangesSettingsOrPlaylistContent() throws {
         let fixture = PlaylistFixture()
         let url = save(fixture, as: "Same.lplaylist")
         let defaultsBefore = app.services.defaults.dictionaryRepresentation().filter { $0.key.hasPrefix("shuffle") || $0.key.hasPrefix("repeat") }
-        let bytes = try! Data(contentsOf: url)
+        let bytes = try Data(contentsOf: url)
         finderOpen(url)
         let doc = app.controller.document(for: url) as! PlaylistDocument
         XCTAssertEqual(doc.playlist, fixture.playlist)
         spin(timeout: 0.3) { false }
-        XCTAssertEqual(try! Data(contentsOf: url), bytes, "unchanged files are not rewritten")
+        XCTAssertEqual(try Data(contentsOf: url), bytes, "unchanged files are not rewritten")
         let defaultsAfter = app.services.defaults.dictionaryRepresentation().filter { $0.key.hasPrefix("shuffle") || $0.key.hasPrefix("repeat") }
         XCTAssertEqual(NSDictionary(dictionary: defaultsBefore), NSDictionary(dictionary: defaultsAfter))
     }

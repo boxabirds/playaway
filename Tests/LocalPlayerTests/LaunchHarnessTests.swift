@@ -77,17 +77,17 @@ final class LaunchVerdictTests: XCTestCase {
 }
 
 final class LaunchTraceTests: XCTestCase {
-    func testTC41NoPathVariableWritesNothing() {
+    func testTC41NoPathVariableWritesNothing() throws {
         let dir = TempDir("trace")
-        let before = try! FileManager.default.contentsOfDirectory(atPath: dir.url.path)
+        let before = try FileManager.default.contentsOfDirectory(atPath: dir.url.path)
         let trace = LaunchTrace(environment: [:])
         trace.record(.launching)
         trace.record(.windowShown)
-        XCTAssertEqual(try! FileManager.default.contentsOfDirectory(atPath: dir.url.path), before)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.url.path), before)
         XCTAssertEqual(trace.recorded.count, 2, "phases are still kept in memory; only the file is skipped")
         let explicitNil = LaunchTrace(resultsPath: nil)
         explicitNil.record(.windowShown)
-        XCTAssertTrue(try! FileManager.default.contentsOfDirectory(atPath: dir.url.path).isEmpty)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: dir.url.path).isEmpty)
     }
 
     func testTC42TraceFileParsesToTheTimestampTheAppRecorded() {

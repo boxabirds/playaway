@@ -29,12 +29,12 @@ final class ICloudScriptingTests: XCTestCase {
     }
 
     /// A synced playlist with a song in its folder and here, a song outside iCloud, and a song in iCloud but not here.
-    private func openSynced(_ name: String = "Dinner") -> (doc: PlaylistDocument, inside: URL, outside: URL, absent: URL) {
+    private func openSynced(_ name: String = "Dinner") throws -> (doc: PlaylistDocument, inside: URL, outside: URL, absent: URL) {
         let folder = cloud.url.appendingPathComponent(name)
-        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let inside = folder.appendingPathComponent("track1.mp3"), absent = folder.appendingPathComponent("track3.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: inside)
-        try! FileManager.default.copyItem(at: Fixtures.url("track3.mp3"), to: absent)
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: inside)
+        try FileManager.default.copyItem(at: Fixtures.url("track3.mp3"), to: absent)
         let outsideFixture = PlaylistFixture(trackNames: ["track2.mp3"])
         fixtures.append(outsideFixture)
         let outside = outsideFixture.urls[0]
@@ -82,13 +82,13 @@ final class ICloudScriptingTests: XCTestCase {
 
     func testAddTrackWithAFilesAnswerGivesTheSameResultAsADropWithThatAnswer() throws {
         for (answer, token) in [(FilesChoice.copyToICloud, "copy to iCloud"), (.moveToICloud, "move to iCloud"), (.doNothing, "add without syncing")] {
-            let byDrop = openSynced("Drop-\(token)")
+            let byDrop = try openSynced("Drop-\(token)")
             let dropped = outside(["tone.wav"])
             let window = app.window(of: byDrop.doc)
             window.askFilesChoice = { answer }
             window.dropFiles(dropped.urls)
             spin { window.intakeFinished }
-            let byScript = openSynced("Script-\(token)")
+            let byScript = try openSynced("Script-\(token)")
             let added = outside(["tone.wav"])
             try actions.addTrack(path: added.urls[0].path, toPlaylist: "Script-\(token)", files: token)
             let relative = { (doc: PlaylistDocument) -> [String] in
@@ -115,7 +115,7 @@ final class ICloudScriptingTests: XCTestCase {
     }
 
     func testAddTrackWithAnAnswerThatIsNotAllowedIsRefusedWith1005AndChangesNothing() throws {
-        let synced = openSynced()
+        let synced = try openSynced()
         let before = paths(synced.doc)
         let added = outside(["tone.wav"])
         for bad in ["do nothing", "maybe"] {
@@ -126,7 +126,7 @@ final class ICloudScriptingTests: XCTestCase {
     }
 
     func testAddTrackWithNoFilesAnswerIntoASyncedPlaylistAddsWithoutSyncing() throws {
-        let synced = openSynced()
+        let synced = try openSynced()
         let added = outside(["tone.wav"])
         try actions.addTrack(path: added.urls[0].path, toPlaylist: "Dinner")
         XCTAssertEqual(paths(synced.doc).last, added.urls[0].canonicalPath, "as the sync playlist command does with no files answer")
@@ -136,7 +136,7 @@ final class ICloudScriptingTests: XCTestCase {
     // MARK: Reading state (prd.icloud.script.read_state, TC-12, TC-14, TC-30, TC-31, TC-41, TC-82)
 
     func testReadingSyncAndTrackStatesMatchesTheWindowAndChangesNothing() throws {
-        let synced = openSynced()
+        let synced = try openSynced()
         let doc = synced.doc
         let before = (paths(doc), app.services.engine.currentURL, songs.started)
         XCTAssertTrue(try actions.isPlaylistSynced("Dinner"))
@@ -218,7 +218,7 @@ final class ICloudScriptingTests: XCTestCase {
     // MARK: Scripted play of a song not on this Mac (prd.icloud.script.play_download, TC-70 to TC-81)
 
     func testPlayingASongNotOnThisMacByScriptStartsTheSameDownloadWaitsAndReturnsWhenItPlays() throws {
-        let synced = openSynced()
+        let synced = try openSynced()
         let doc = synced.doc
         var sawThePie = false
         let timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [self] _ in
@@ -235,14 +235,14 @@ final class ICloudScriptingTests: XCTestCase {
     }
 
     func testTheClickRouteAndTheScriptRouteStartTheSameDownloadForTheSameSong() throws {
-        let synced = openSynced()
+        let synced = try openSynced()
         app.window(of: synced.doc).playRow(2)
         let byClick = (songs.started, cell(synced.doc, 2).cloudKind)
         songs.finish(synced.absent)
         app.tearDown()
         makeApp(root: cloud.url)
         try? FileManager.default.removeItem(at: cloud.url.appendingPathComponent("Dinner"))
-        let again = openSynced()
+        let again = try openSynced()
         var kindDuring: CloudIconState?
         let timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [self] _ in
             kindDuring = cell(again.doc, 2).cloudKind
@@ -255,7 +255,7 @@ final class ICloudScriptingTests: XCTestCase {
     }
 
     func testPlayingASongOnThisMacOrOutsideICloudByScriptPlaysAtOnceWithNoDownload() throws {
-        let synced = openSynced()
+        let synced = try openSynced()
         try actions.playTrack(1, inPlaylist: "Dinner")
         XCTAssertEqual(app.services.engine.currentURL, synced.inside)
         try actions.playTrack(2, inPlaylist: "Dinner")
@@ -267,7 +267,7 @@ final class ICloudScriptingTests: XCTestCase {
     }
 
     func testAFailedDownloadByScriptReturnsANumberedErrorPlaysNothingAndTheWindowShowsTheFailure() throws {
-        let synced = openSynced()
+        let synced = try openSynced()
         let timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [self] _ in songs.fail(synced.absent) }
         let failure = expectFailure(nil) { try actions.playTrack(3, inPlaylist: "Dinner") }     // the number is not decided; not asserted
         timer.invalidate()

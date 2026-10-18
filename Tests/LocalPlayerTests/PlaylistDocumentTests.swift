@@ -92,14 +92,14 @@ final class PlaylistDocumentTests: XCTestCase {
         XCTAssertNotNil(b.windowControllers.first?.window)
     }
 
-    func testUnreadableFilesCreateNoDocumentAndChangeNothing() {               // TC-48
+    func testUnreadableFilesCreateNoDocumentAndChangeNothing() throws {               // TC-48
         let cases: [(String, Data)] = [("random.lplaylist", Data((0..<200).map { _ in UInt8.random(in: 0...255) })),
                                        ("newer.lplaylist", Data("{\"version\": 9, \"tracks\": []}".utf8)),
                                        ("empty.lplaylist", Data())]
         for (name, data) in cases {
             let url = dir.path(name)
-            try! data.write(to: url)
-            let before = try! Data(contentsOf: url)
+            try data.write(to: url)
+            let before = try Data(contentsOf: url)
             var error: Error?, document: NSDocument?, done = false
             let before2 = app.controller.documents.count
             app.controller.openDocument(withContentsOf: url, display: true) { doc, _, err in document = doc; error = err; done = true }
@@ -107,7 +107,7 @@ final class PlaylistDocumentTests: XCTestCase {
             XCTAssertNil(document, name)
             XCTAssertNotNil(error, name)
             XCTAssertEqual(app.controller.documents.count, before2, "no window kept: \(name)")
-            XCTAssertEqual(try! Data(contentsOf: url), before)
+            XCTAssertEqual(try Data(contentsOf: url), before)
         }
         var error: Error?, done = false
         app.controller.openDocument(withContentsOf: dir.path("nope.lplaylist"), display: true) { _, _, err in error = err; done = true }
@@ -140,10 +140,10 @@ final class PlaylistDocumentTests: XCTestCase {
         XCTAssertEqual(app.controller.documents.count, 1)
     }
 
-    func testRenameFailuresKeepOldNameAndFile() {                               // TC-50
+    func testRenameFailuresKeepOldNameAndFile() throws {                               // TC-50
         let url = dir.path("Dinner.lplaylist")
         let doc = app.openSaved(Playlist(), at: url)
-        try! Data().write(to: dir.path("Taken.lplaylist"))
+        try Data().write(to: dir.path("Taken.lplaylist"))
         for bad in ["Taken", "", "a/b"] {
             var result: Result<Void, PlaylistDocument.RenameError>?
             doc.renameFile(to: bad) { result = $0 }
@@ -205,13 +205,13 @@ final class PlaylistDocumentTests: XCTestCase {
         for track in fixture.tracks { XCTAssertEqual(doc.statuses.status(of: track.id), .resolved(fixture.urls[fixture.tracks.firstIndex(of: track)!])) }
     }
 
-    func testMovedFilesAreFollowedAndRefreshedReferencesSaved() {               // TC-03 / E2E-8
+    func testMovedFilesAreFollowedAndRefreshedReferencesSaved() throws {               // TC-03 / E2E-8
         let fixture = PlaylistFixture()
         let url = dir.path("Moved.lplaylist")
         let doc = app.openSaved(fixture.playlist, at: url)
         let elsewhere = audio.makeSubfolder("moved")
         for index in 0..<2 {
-            try! FileManager.default.moveItem(at: fixture.urls[index], to: elsewhere.appendingPathComponent(fixture.urls[index].lastPathComponent))
+            try FileManager.default.moveItem(at: fixture.urls[index], to: elsewhere.appendingPathComponent(fixture.urls[index].lastPathComponent))
         }
         var done = false
         doc.resolveStatuses { done = true }
@@ -266,17 +266,17 @@ final class PlaylistDocumentTests: XCTestCase {
         XCTAssertFalse(window.reorder(rows: [9], toBefore: 0))
     }
 
-    func testUnsupportedDropShowsNoticeAndLeavesRowsAndFileAlone() {              // TC-83 / TC-91
+    func testUnsupportedDropShowsNoticeAndLeavesRowsAndFileAlone() throws {              // TC-83 / TC-91
         let url = dir.path("U.lplaylist")
         let doc = app.openSaved(PlaylistFixture(trackNames: ["track1.mp3"]).playlist, at: url)
-        let before = try! Data(contentsOf: url)
+        let before = try Data(contentsOf: url)
         let result = doc.addFiles([Fixtures.url("tone.flac")])
         XCTAssertEqual(result.rejected.count, 1)
         XCTAssertEqual(doc.playlist.tracks.count, 1)
         XCTAssertEqual(app.notices.shown.count, 1)
         guard case .unsupported = app.notices.shown[0] else { return XCTFail() }
         spin(timeout: 0.3) { false }
-        XCTAssertEqual(try! Data(contentsOf: url), before, "playlist file not rewritten")
+        XCTAssertEqual(try Data(contentsOf: url), before, "playlist file not rewritten")
     }
 
     func testRemoveSelectedRowKeepsAudioFile() {                                   // TC-85 / TC-90
@@ -302,7 +302,7 @@ final class PlaylistDocumentTests: XCTestCase {
         XCTAssertFalse(window.removeButton.isEnabled)
     }
 
-    func testSaveFailureAfterEditKeepsRowsAndShowsNotice() {                        // TC-84
+    func testSaveFailureAfterEditKeepsRowsAndShowsNotice() throws {                        // TC-84
         final class FlakyStore: PlaylistStoring {
             var failing = false
             let real = PlaylistStore()
@@ -313,13 +313,13 @@ final class PlaylistDocumentTests: XCTestCase {
         app = TestApp(store: flaky)
         let url = dir.path("F.lplaylist")
         let doc = app.openSaved(PlaylistFixture(trackNames: ["track1.mp3"]).playlist, at: url)
-        let onDiskBefore = try! Data(contentsOf: url)
+        let onDiskBefore = try Data(contentsOf: url)
         flaky.failing = true
         doc.addFiles(files(["tone.wav"]))
         spin { !self.app.notices.shown.isEmpty }
         XCTAssertEqual(app.notices.shown.first, .saveFailed("The folder is read-only."))
         XCTAssertEqual(doc.playlist.tracks.count, 2, "rows show the edit")
-        XCTAssertEqual(try! Data(contentsOf: url), onDiskBefore, "disk keeps its previous version")
+        XCTAssertEqual(try Data(contentsOf: url), onDiskBefore, "disk keeps its previous version")
     }
 
     // MARK: Locate through the window (story 5)
@@ -336,14 +336,14 @@ final class PlaylistDocumentTests: XCTestCase {
         for present in [0, 1, 2, 4, -1, 99] { XCTAssertTrue(window.locateMenuItems(forRow: present).isEmpty, "row \(present)") }
     }
 
-    func testLocateRepairsMissingTracksAndSurvivesReopen() {                         // TC-17 / TC-45 / E2E-3
+    func testLocateRepairsMissingTracksAndSurvivesReopen() throws {                         // TC-17 / TC-45 / E2E-3
         let fixture = PlaylistFixture()
         let url = dir.path("Fix.lplaylist")
         let doc = app.openSaved(fixture.playlist, at: url)
         let copy = TempDir("newhome")
         for index in [1, 3] { fixture.deleteFile(at: index) }
-        try! FileManager.default.copyItem(at: Fixtures.url("track2.mp3"), to: copy.path("track2.mp3"))
-        try! FileManager.default.copyItem(at: Fixtures.url("track4.mp3"), to: copy.path("track4.mp3"))
+        try FileManager.default.copyItem(at: Fixtures.url("track2.mp3"), to: copy.path("track2.mp3"))
+        try FileManager.default.copyItem(at: Fixtures.url("track4.mp3"), to: copy.path("track4.mp3"))
         var done = false
         doc.resolveStatuses { done = true }
         spin { done }

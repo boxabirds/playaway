@@ -168,9 +168,9 @@ final class ReviewFixDocumentTests: XCTestCase {
         XCTAssertEqual(doc.fileURL?.lastPathComponent, "Dinner.lplaylist")
     }
 
-    func testRenameToADifferentExistingFileIsStillRefused() {
+    func testRenameToADifferentExistingFileIsStillRefused() throws {
         let doc = app.openSaved(Playlist(), at: dir.path("dinner.lplaylist"))
-        try! Data().write(to: dir.path("Supper.lplaylist"))
+        try Data().write(to: dir.path("Supper.lplaylist"))
         var result: Result<Void, PlaylistDocument.RenameError>?
         doc.renameFile(to: "Supper") { result = $0 }
         spin { result != nil }

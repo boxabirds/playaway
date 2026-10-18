@@ -154,8 +154,8 @@ final class CloudStandInWiringTests: XCTestCase {
         actions.isReady = { true }
         let delivery = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
             let temp = folder.appendingPathComponent(".delivering")
-            try! FileManager.default.copyItem(at: Fixtures.url("track3.mp3"), to: temp)
-            try! FileManager.default.moveItem(at: temp, to: absent)
+            try? FileManager.default.copyItem(at: Fixtures.url("track3.mp3"), to: temp)
+            try? FileManager.default.moveItem(at: temp, to: absent)
         }
         RunLoop.main.add(delivery, forMode: .common)
         XCTAssertNoThrow(try actions.playTrack(1, inPlaylist: "Trip"), "state: \(app.services.downloads.state(of: MacSongs.id(for: absent))) mark: \(app.services.marks.mark(of: track))")

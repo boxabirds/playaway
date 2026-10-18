@@ -24,12 +24,12 @@ final class CloudRowsTests: XCTestCase {
 
     /// A synced playlist (its file inside the stand-in folder) with three songs: one in iCloud and here, one outside
     /// iCloud, one in iCloud but not on this Mac.
-    private func openSynced(order: [String] = ["inside", "outside", "absent"]) -> (doc: PlaylistDocument, inside: URL, outside: URL, absent: URL) {
+    private func openSynced(order: [String] = ["inside", "outside", "absent"]) throws -> (doc: PlaylistDocument, inside: URL, outside: URL, absent: URL) {
         let folder = cloud.url.appendingPathComponent("Dinner")
-        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let inside = folder.appendingPathComponent("track1.mp3"), absent = folder.appendingPathComponent("track3.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: inside)
-        try! FileManager.default.copyItem(at: Fixtures.url("track3.mp3"), to: absent)
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: inside)
+        try FileManager.default.copyItem(at: Fixtures.url("track3.mp3"), to: absent)
         let outsideFixture = PlaylistFixture(trackNames: ["track2.mp3"])
         fixtures.append(outsideFixture)
         let outside = outsideFixture.urls[0]
@@ -46,8 +46,8 @@ final class CloudRowsTests: XCTestCase {
         app.window(of: doc).tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as! TrackCellView
     }
 
-    func testEachRowShowsWhereItsSongIsAndIsDimmedOnlyWhenTheFileIsNotHere() {                 // TC-01, TC-02, TC-70, TC-16
-        let (doc, _, _, _) = openSynced()
+    func testEachRowShowsWhereItsSongIsAndIsDimmedOnlyWhenTheFileIsNotHere() throws {                 // TC-01, TC-02, TC-70, TC-16
+        let (doc, _, _, _) = try openSynced()
         XCTAssertEqual(cell(doc, 0).cloudKind, .outline); XCTAssertFalse(cell(doc, 0).isGreyedOut)
         XCTAssertTrue(cell(doc, 0).accessibilityLabel()?.hasSuffix(", in iCloud") == true, cell(doc, 0).accessibilityLabel() ?? "")
         XCTAssertEqual(cell(doc, 1).cloudKind, .crossedOut); XCTAssertFalse(cell(doc, 1).isGreyedOut, "local, plays, not dimmed")
@@ -68,8 +68,8 @@ final class CloudRowsTests: XCTestCase {
         XCTAssertFalse(cell(doc, 0).accessibilityLabel()?.contains("iCloud") == true)
     }
 
-    func testPlayingASongNotOnThisMacDownloadsItShowsThePieAndPlaysItWhenItArrives() {          // TC-71, TC-73, TC-78, TC-83
-        let (doc, _, _, absent) = openSynced()
+    func testPlayingASongNotOnThisMacDownloadsItShowsThePieAndPlaysItWhenItArrives() throws {          // TC-71, TC-73, TC-78, TC-83
+        let (doc, _, _, absent) = try openSynced()
         let window = app.window(of: doc)
         window.playRow(2)
         XCTAssertNil(app.services.engine.currentURL, "nothing plays yet")
@@ -83,8 +83,8 @@ final class CloudRowsTests: XCTestCase {
         XCTAssertEqual(cell(doc, 2).cloudKind, .outline); XCTAssertFalse(cell(doc, 2).isGreyedOut)
     }
 
-    func testChoosingAnotherSongWhileItDownloadsKeepsTheFileWithoutInterrupting() {              // TC-74
-        let (doc, inside, _, absent) = openSynced()
+    func testChoosingAnotherSongWhileItDownloadsKeepsTheFileWithoutInterrupting() throws {              // TC-74
+        let (doc, inside, _, absent) = try openSynced()
         let window = app.window(of: doc)
         window.playRow(2)
         window.playRow(0)
@@ -94,16 +94,16 @@ final class CloudRowsTests: XCTestCase {
         XCTAssertEqual(cell(doc, 2).cloudKind, .outline); XCTAssertFalse(cell(doc, 2).isGreyedOut, "the file is here now")
     }
 
-    func testTransportPlayDoesNothingWhileTheCurrentSongDownloads() {                           // TC-80
-        let (doc, _, _, _) = openSynced()
+    func testTransportPlayDoesNothingWhileTheCurrentSongDownloads() throws {                           // TC-80
+        let (doc, _, _, _) = try openSynced()
         app.window(of: doc).playRow(2)
         app.services.transport.playPause()
         XCTAssertNil(app.services.engine.currentURL)
         XCTAssertEqual(app.services.engine.state, .idle)
     }
 
-    func testAFailedDownloadShowsTheExclamationMarkAndAClickOnItRetries() {                     // TC-86, TC-87, TC-92, TC-95
-        let (doc, _, _, absent) = openSynced()
+    func testAFailedDownloadShowsTheExclamationMarkAndAClickOnItRetries() throws {                     // TC-86, TC-87, TC-92, TC-95
+        let (doc, _, _, absent) = try openSynced()
         let window = app.window(of: doc)
         window.playRow(2)
         songs.fail(absent)
@@ -118,8 +118,8 @@ final class CloudRowsTests: XCTestCase {
         XCTAssertEqual(app.services.engine.currentURL, absent, "plays at the end, still current")
     }
 
-    func testAClickOnThePieCancelsTheDownloadAndTheRowReturnsToTheOutlineCloudDimmed() {        // TC-91
-        let (doc, _, _, absent) = openSynced()
+    func testAClickOnThePieCancelsTheDownloadAndTheRowReturnsToTheOutlineCloudDimmed() throws {        // TC-91
+        let (doc, _, _, absent) = try openSynced()
         app.window(of: doc).playRow(2)
         cell(doc, 2).cloudButton.performClick(nil)
         XCTAssertEqual(songs.cancelled, [MacSongs.id(for: absent)])
@@ -130,7 +130,7 @@ final class CloudRowsTests: XCTestCase {
     }
 
     func testAClickOnTheCrossedOutCloudAsksTheFilesQuestionForThatSongOnly() throws {           // TC-89, TC-94
-        let (doc, _, outside, _) = openSynced()
+        let (doc, _, outside, _) = try openSynced()
         let window = app.window(of: doc)
         var asked = 0
         window.askFilesChoice = { asked += 1; return .doNothing }
@@ -150,8 +150,8 @@ final class CloudRowsTests: XCTestCase {
         XCTAssertEqual(doc.playlist.tracks.count, 3, "same rows")
     }
 
-    func testAClickOnTheOutlineCloudDoesNothing() {                                              // TC-90, TC-94
-        let (doc, _, _, _) = openSynced()
+    func testAClickOnTheOutlineCloudDoesNothing() throws {                                              // TC-90, TC-94
+        let (doc, _, _, _) = try openSynced()
         let window = app.window(of: doc)
         var asked = 0
         window.askFilesChoice = { asked += 1; return .doNothing }
@@ -165,8 +165,8 @@ final class CloudRowsTests: XCTestCase {
 
     /// Task 20.23: the song the person asked for plays when it arrives even though the song that was playing has
     /// ended and the playlist ran out meanwhile; running out is not the person moving on.
-    func testTheAskedForSongStillPlaysWhenTheSongBeforeItEndedAndThePlaylistRanOut() {          // 20.23 (1)
-        let (doc, inside, _, absent) = openSynced(order: ["inside", "absent"])
+    func testTheAskedForSongStillPlaysWhenTheSongBeforeItEndedAndThePlaylistRanOut() throws {          // 20.23 (1)
+        let (doc, inside, _, absent) = try openSynced(order: ["inside", "absent"])
         let window = app.window(of: doc)
         window.playRow(0)
         XCTAssertEqual(app.services.engine.currentURL, inside)
@@ -183,8 +183,8 @@ final class CloudRowsTests: XCTestCase {
 
     /// Task 20.23: a playlist started on its first song, which is not on this Mac: the play-through asks for it, runs
     /// out, and the song plays when it arrives.
-    func testAPlaylistStartedOnASongNotOnThisMacPlaysItWhenItArrives() {                       // 20.23 (2)
-        let (doc, _, _, absent) = openSynced(order: ["absent"])
+    func testAPlaylistStartedOnASongNotOnThisMacPlaysItWhenItArrives() throws {                       // 20.23 (2)
+        let (doc, _, _, absent) = try openSynced(order: ["absent"])
         doc.player.start()
         XCTAssertEqual(songs.started, [MacSongs.id(for: absent)], "asked for by the play-through")
         XCTAssertNil(app.services.engine.currentURL)
@@ -193,8 +193,8 @@ final class CloudRowsTests: XCTestCase {
         XCTAssertEqual(app.services.engine.currentURL, absent, "it plays when it arrives")
     }
 
-    func testPlayingThroughSkipsASongNotOnThisMacAndAsksForItWithoutPlayingItLater() {          // TC-79 (start, next, auto-advance)
-        let (doc, inside, outside, absent) = openSynced(order: ["inside", "absent", "outside"])
+    func testPlayingThroughSkipsASongNotOnThisMacAndAsksForItWithoutPlayingItLater() throws {          // TC-79 (start, next, auto-advance)
+        let (doc, inside, outside, absent) = try openSynced(order: ["inside", "absent", "outside"])
         doc.player.start()
         XCTAssertEqual(app.services.engine.currentURL, inside)
         doc.player.next()

@@ -77,11 +77,11 @@ final class LaunchDocumentTests: XCTestCase {
         XCTAssertTrue(LaunchState.firstWindowPresented)
     }
 
-    func testAnUnreadableRestoredPlaylistStillLeavesAWindow() {
+    func testAnUnreadableRestoredPlaylistStillLeavesAWindow() throws {
         let app = makeApp(resolver: TrackResolver())
         defer { app.tearDown() }
         let dir = TempDir()
-        let bad = dir.path("Bad.lplaylist"); try! Data("garbage".utf8).write(to: bad)
+        let bad = dir.path("Bad.lplaylist"); try Data("garbage".utf8).write(to: bad)
         var error: Error?, finished = false
         app.controller.openDocument(withContentsOf: bad, display: true) { _, _, e in error = e; finished = true }
         spin { finished }
