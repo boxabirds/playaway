@@ -71,10 +71,8 @@ final class RealICloudE2ETests: XCTestCase {
         app.open(playlistFile)
         XCTAssertTrue(app.wait { self.app.osa("get name of every playlist document").out.contains(Self.folderName) })
         XCTAssertEqual(app.osa("get track iCloud states of playlist document \(E2EApp.quoted(Self.folderName))").out, "in iCloud", "location only")
-        if !E2EApp.isScreenLocked {
-            XCTAssertEqual(app.cloudLabels(inWindow: Self.folderName), ["In iCloud, not on this Mac"])
-            XCTAssertEqual(app.rowLabels(inWindow: Self.folderName), ["long30, not on this Mac"])
-        }
+        // Opening the playlist plays its first song, which asks for the download at once; on this account it arrives
+        // in well under a second, so the window is read after it rather than during it (the stand-in run reads the pie).
         let play = app.osaInBackground("play track 1 in \(E2EApp.quoted(Self.folderName))")
         XCTAssertTrue(app.wait(timeout: Self.downloadTimeout) { !play.isRunning }, "the script returns once the song plays")
         XCTAssertEqual(play.terminationStatus, 0, "the script returned once the song played")
@@ -82,7 +80,8 @@ final class RealICloudE2ETests: XCTestCase {
         XCTAssertEqual(app.osa("get current track").out, "long30.mp3")
         XCTAssertEqual(status(of: copy), ubiquitousStatusCurrent)
         if !E2EApp.isScreenLocked {
-            XCTAssertEqual(app.cloudLabels(inWindow: Self.folderName), ["In iCloud"])
+            XCTAssertEqual(app.cloudLabels(inWindow: Self.folderName), ["In iCloud"], "downloaded again: the outline cloud, not dimmed")
+            XCTAssertEqual(app.rowLabels(inWindow: Self.folderName), ["long30, playing, in iCloud"])
         }
         app.quit()
     }

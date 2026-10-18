@@ -30,6 +30,7 @@ final class ICloudE2ETests: XCTestCase {
     var cloud: URL { dir.url.appendingPathComponent("Cloud", isDirectory: true) }
     var local: URL { dir.url.appendingPathComponent("Local", isDirectory: true) }
     private var readOnlyFolders: [URL] = []
+    private var panelDiagnostics = ""
 
     override func setUpWithError() throws {
         try XCTSkipUnless(app.isBuilt, "dev bundle not built: run scripts/run-e2e.sh")
@@ -212,7 +213,7 @@ final class ICloudE2ETests: XCTestCase {
         XCTAssertTrue(app.wait { self.syncValue("Supper") == "on" }, "sync stays on")
         XCTAssertEqual(names(in: cloud.appendingPathComponent("Supper")), ["Supper.\(playlistFileExtension)"], "only the playlist moved")
         XCTAssertTrue(FileManager.default.fileExists(atPath: one.path) && FileManager.default.fileExists(atPath: two.path))
-        XCTAssertEqual(app.cloudLabels(inWindow: "Supper"), ["Not in iCloud", "Not in iCloud"])
+        XCTAssertTrue(app.wait { self.app.cloudLabels(inWindow: "Supper") == ["Not in iCloud", "Not in iCloud"] }, "the rows follow: \(app.cloudLabels(inWindow: "Supper"))")
         XCTAssertEqual(app.rowLabels(inWindow: "Supper"), ["track1, not in iCloud", "track2, not in iCloud"], "normal rows: nothing says not on this Mac")
         XCTAssertEqual(scriptStates("Supper"), "not in iCloud, not in iCloud")
         XCTAssertEqual(app.osa("play track 1 in \"Supper\"").status, 0)
@@ -220,8 +221,11 @@ final class ICloudE2ETests: XCTestCase {
         // A file that is gone dims its row (after a play is attempted), the local one beside it does not.
         try FileManager.default.removeItem(at: two)
         XCTAssertEqual(app.osaError("play track 2 in \"Supper\"")?.number, 1004)
-        XCTAssertTrue(app.wait { self.app.rowLabels(inWindow: "Supper").last?.contains("file not found") == true })
-        XCTAssertEqual(app.rowLabels(inWindow: "Supper"), ["track1, playing, not in iCloud", "track2, file not found, not in iCloud"])
+        // The row says it could not be played (the hazard) once a play was attempted, and carries no cloud (a file that
+        // cannot be found has no place to report); the row beside it is untouched.
+        XCTAssertTrue(app.wait { self.app.rowLabels(inWindow: "Supper").last?.contains("could not be played") == true }, "\(app.rowLabels(inWindow: "Supper"))")
+        XCTAssertEqual(app.rowLabels(inWindow: "Supper"), ["track1, playing, not in iCloud", "track2, could not be played"])
+        XCTAssertEqual(app.cloudLabels(inWindow: "Supper"), ["Not in iCloud"], "the local song keeps its crossed-out cloud")
     }
 
     // MARK: 20.5 / 20.18 / 22.17: the row clouds and a download on play
@@ -511,7 +515,9 @@ final class ICloudE2ETests: XCTestCase {
         XCTAssertTrue(app.clickSheetButton("Copy to iCloud", onWindow: "Dragged"))
         XCTAssertTrue(app.waitForNoSheet(onWindow: "Dragged"))
         try addFilesByMenu(in: menuFolder, toWindow: "Chosen")
-        let menuSheet = try XCTUnwrap(app.waitForSheet(titled: FilesPrompt.title, onWindow: "Chosen"), "the same question after Add Files")
+        let menuSheetFound = app.waitForSheet(titled: FilesPrompt.title, onWindow: "Chosen")
+        XCTAssertNotNil(menuSheetFound, "the same question after Add Files; panel steps: \(panelDiagnostics)")
+        let menuSheet = try XCTUnwrap(menuSheetFound)
         XCTAssertEqual(menuSheet.title, dragSheet.title)
         XCTAssertEqual(menuSheet.message, dragSheet.message)
         XCTAssertEqual(menuSheet.buttons, dragSheet.buttons)
@@ -532,6 +538,7 @@ final class ICloudE2ETests: XCTestCase {
     /// because the drag's own tracking loop runs inside the mouse-down.
     func drag(_ urls: [URL], intoWindow window: String) throws {
         _ = app.ax("set frontmost to true")
+        _ = app.ax("perform action \"AXRaise\" of window \(E2EApp.quoted(window))")     // the drop lands on the window in front
         Thread.sleep(forTimeInterval: Self.dragSettle)
         let table = try XCTUnwrap(app.elements(identifier: ElementID.tracks, inWindow: window).first, "the song list of \(window)")
         let target = CGPoint(x: table.position.x + table.size.width / 2, y: table.position.y + table.size.height * 0.8)
@@ -561,23 +568,34 @@ final class ICloudE2ETests: XCTestCase {
         source.close()
     }
 
-    /// File > Add Files…, then the open panel: Go to Folder, the folder's path, select all, Open.
+    /// File > Add Files…, then the open panel (its own window, "Open"): Go to Folder, the folder's path, select all,
+    /// Open. Each step's windows and the panel's elements are kept for the failure message.
     func addFilesByMenu(in folder: URL, toWindow window: String) throws {
         _ = app.ax("set frontmost to true")
         _ = app.ax("perform action \"AXRaise\" of window \(E2EApp.quoted(window))")
         Thread.sleep(forTimeInterval: Self.dragSettle)
         XCTAssertEqual(app.ax("click menu item \"Add Files…\" of menu 1 of menu bar item \"File\" of menu bar 1").status, 0)
-        XCTAssertTrue(app.wait { self.app.ax("exists sheet 1 of window \(E2EApp.quoted(window))").out == "true" }, "the open panel")
+        XCTAssertTrue(app.wait { self.app.ax("exists window \"Open\"").out == "true" }, "the open panel; windows now: \(app.ax("get name of every window").out)")
         Thread.sleep(forTimeInterval: Self.openPanelDelay)
+        let shot = { (name: String) in
+            self.panelDiagnostics += " [\(name): windows=\(self.app.ax("get name of every window").out); sheets of Open=\(self.app.ax("get count of sheets of window \"Open\"").out)]"
+        }
+        shot("opened")
         XCTAssertEqual(app.ax("keystroke \"g\" using {command down, shift down}").status, 0)
         Thread.sleep(forTimeInterval: Self.openPanelDelay)
+        shot("goto")
         XCTAssertEqual(app.ax("keystroke \(E2EApp.quoted(folder.path))").status, 0)
         Thread.sleep(forTimeInterval: Self.openPanelDelay)
         XCTAssertEqual(app.ax("keystroke return").status, 0)
         Thread.sleep(forTimeInterval: Self.openPanelDelay)
+        shot("went")
         XCTAssertEqual(app.ax("keystroke \"a\" using command down").status, 0)
         Thread.sleep(forTimeInterval: Self.openPanelDelay)
-        XCTAssertEqual(app.ax("click button \"Open\" of sheet 1 of window \(E2EApp.quoted(window))").status, 0)
+        shot("selected")
+        // Return opens the selected files (the panel's Open button is not a plain child of its window).
+        XCTAssertEqual(app.ax("keystroke return").status, 0)
+        XCTAssertTrue(app.wait { self.app.ax("exists window \"Open\"").out == "false" }, "the panel closes; \(panelDiagnostics); buttons: \(app.ax("get name of every button of window \"Open\"").out)")
+        shot("after")
     }
 }
 

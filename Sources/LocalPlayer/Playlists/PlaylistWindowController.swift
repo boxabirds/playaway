@@ -129,6 +129,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
             guard let self else { return }
             await playlistDocument.sync.turnOn(presenter: presenter, filesPresenter: filesPresenter)
             refreshSync()
+            refreshRows()                      // the rows' clouds appear now, also when no file moved (Add Without Syncing)
             intakeFinished = true
         }
     }

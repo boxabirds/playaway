@@ -80,6 +80,9 @@ final class FilesIntakeTests: XCTestCase {
         var done = false; doc.resolveStatuses { done = true }; spin { done }
         XCTAssertTrue(doc.playlist.tracks.allSatisfy { doc.statuses.status(of: $0.id) != .missing }, "still playable from where they are")
         XCTAssertEqual(window.filesMessages, [])
+        // The rows show their clouds as soon as sync is on, with no reload: nothing moved, so nothing else redraws them.
+        let kinds = (0..<doc.playlist.tracks.count).map { (window.tableView.view(atColumn: 0, row: $0, makeIfNecessary: true) as? TrackCellView)?.cloudKind }
+        XCTAssertEqual(kinds, [.crossedOut, .crossedOut], "crossed-out clouds right after Add Without Syncing")
     }
 
     func testDismissingTheFilesQuestionIsAddWithoutSyncing() throws {                             // TC-19, TC-72
