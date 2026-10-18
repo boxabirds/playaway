@@ -77,7 +77,7 @@ final class PlaylistModelTests: XCTestCase {
 
     func testRemovingATrackNeverTouchesTheAudioFile() throws {              // TC-90
         let dir = TempDir()
-        let file = dir.copyFixture("track1.mp3")
+        let file = try dir.copyFixture("track1.mp3")
         let before = FileSnapshot(file)
         let added = adding([file], to: Playlist(), classifier: FormatClassifier())
         _ = try removing(at: 0, from: added.playlist)
@@ -94,13 +94,13 @@ final class PlaylistStoreTests: XCTestCase {
         PlaylistFixture(trackNames: Array(Fixtures.trackNames.prefix(count)), dir: TempDir("audio")).playlist
     }
 
-    func testRoundTripPreservesIdsReferencesAndOrder() {                   // TC-20 / TC-21 / TC-35
+    func testRoundTripPreservesIdsReferencesAndOrder() throws {                   // TC-20 / TC-21 / TC-35
         for count in [0, 1, 5] {
             let playlist = realPlaylist(count)
             XCTAssertEqual(store.save(playlist, to: url), .saved)
             XCTAssertEqual(store.load(from: url), .loaded(playlist))
         }
-        let text = try! String(contentsOf: url, encoding: .utf8)
+        let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertFalse(text.contains("Dinner"), "the name is the file name, not stored inside")
         XCTAssertTrue(text.contains("\"version\""))
     }
@@ -122,33 +122,33 @@ final class PlaylistStoreTests: XCTestCase {
         XCTAssertEqual(store.load(from: url), .loaded(playlist))
     }
 
-    func testLoadErrors() {                                                // TC-30..33
+    func testLoadErrors() throws {                                                // TC-30..33
         XCTAssertEqual(store.load(from: url), .notFound)
-        try! Data((0..<256).map { _ in UInt8.random(in: 0...255) }).write(to: url)
+        try Data((0..<256).map { _ in UInt8.random(in: 0...255) }).write(to: url)
         XCTAssertEqual(store.load(from: url), .corrupt)
-        try! Data().write(to: url)
+        try Data().write(to: url)
         XCTAssertEqual(store.load(from: url), .corrupt)
-        try! Data("{\"version\": 99, \"tracks\": []}".utf8).write(to: url)
+        try Data("{\"version\": 99, \"tracks\": []}".utf8).write(to: url)
         XCTAssertEqual(store.load(from: url), .unsupportedVersion(99))
-        try! Data("{\"tracks\": []}".utf8).write(to: url)
+        try Data("{\"tracks\": []}".utf8).write(to: url)
         XCTAssertEqual(store.load(from: url), .corrupt, "no version")
-        try! Data("{\"version\": 1, \"tracks\": [{\"id\": 4}]".utf8).write(to: url)
+        try Data("{\"version\": 1, \"tracks\": [{\"id\": 4}]".utf8).write(to: url)
         XCTAssertEqual(store.load(from: url), .corrupt, "truncated")
     }
 
-    func testUnknownFutureFieldsInSameVersionAreIgnored() {
+    func testUnknownFutureFieldsInSameVersionAreIgnored() throws {
         let playlist = realPlaylist(2)
         _ = store.save(playlist, to: url)
-        var object = try! JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
         object["futureField"] = ["a": 1]
-        try! JSONSerialization.data(withJSONObject: object).write(to: url)
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
         XCTAssertEqual(store.load(from: url), .loaded(playlist))
     }
 
-    func testTrackWithMissingAudioFileStillLoads() {                       // TC-34
+    func testTrackWithMissingAudioFileStillLoads() throws {                       // TC-34
         let fixture = PlaylistFixture(trackNames: ["track1.mp3"])
         _ = store.save(fixture.playlist, to: url)
-        fixture.deleteFile(at: 0)
+        try fixture.deleteFile(at: 0)
         XCTAssertEqual(store.load(from: url), .loaded(fixture.playlist))
     }
 
@@ -176,27 +176,27 @@ final class PlaylistStoreTests: XCTestCase {
         (try? FileManager.default.contentsOfDirectory(atPath: dir.url.path))?.filter { $0 != "Dinner.lplaylist" } ?? []
     }
 
-    func testInterruptionBeforeReplaceLeavesOriginalByteIdentical() {      // TC-24
+    func testInterruptionBeforeReplaceLeavesOriginalByteIdentical() throws {      // TC-24
         let ops = FaultOps()
         let faulty = PlaylistStore(operations: ops)
         let original = realPlaylist(3)
         XCTAssertEqual(faulty.save(original, to: url), .saved)
-        let before = try! Data(contentsOf: url)
+        let before = try Data(contentsOf: url)
         ops.fault = .interruptBeforeReplace
         guard case .writeFailed = faulty.save(realPlaylist(5), to: url) else { return XCTFail("expected writeFailed") }
-        XCTAssertEqual(try! Data(contentsOf: url), before)
+        XCTAssertEqual(try Data(contentsOf: url), before)
         XCTAssertTrue(strayFiles().isEmpty)
     }
 
-    func testDiskFullKeepsOriginalAndLeavesNoTemporary() {                 // TC-25 / TC-92
+    func testDiskFullKeepsOriginalAndLeavesNoTemporary() throws {                 // TC-25 / TC-92
         let ops = FaultOps()
         let faulty = PlaylistStore(operations: ops)
         XCTAssertEqual(faulty.save(realPlaylist(3), to: url), .saved)
-        let before = try! Data(contentsOf: url)
+        let before = try Data(contentsOf: url)
         ops.fault = .diskFullOnWrite
         guard case .writeFailed(let reason) = faulty.save(realPlaylist(1), to: url) else { return XCTFail() }
         XCTAssertTrue(reason.contains("No space"), reason)
-        XCTAssertEqual(try! Data(contentsOf: url), before)
+        XCTAssertEqual(try Data(contentsOf: url), before)
         XCTAssertTrue(strayFiles().isEmpty)
     }
 
@@ -229,17 +229,17 @@ final class PlaylistStoreTests: XCTestCase {
         XCTAssertEqual(store.load(from: url), .loaded(second))
     }
 
-    func testCopyLoadsIdentically() {                                      // TC-29
+    func testCopyLoadsIdentically() throws {                                      // TC-29
         let playlist = realPlaylist(3)
-        let icloud = dir.makeSubfolder("Mobile Documents/com~apple~CloudDocs")
+        let icloud = try dir.makeSubfolder("Mobile Documents/com~apple~CloudDocs")
         XCTAssertEqual(store.save(playlist, to: icloud.appendingPathComponent("Dinner.lplaylist")), .saved)
         let copy = dir.path("Copy.lplaylist")
-        try! FileManager.default.copyItem(at: icloud.appendingPathComponent("Dinner.lplaylist"), to: copy)
+        try FileManager.default.copyItem(at: icloud.appendingPathComponent("Dinner.lplaylist"), to: copy)
         XCTAssertEqual(store.load(from: copy), .loaded(playlist))
     }
 
     func testSaveCreatesOnlyThePlaylistFile() {                            // TC-94
         _ = store.save(realPlaylist(2), to: url)
-        XCTAssertEqual(try! FileManager.default.contentsOfDirectory(atPath: dir.url.path), ["Dinner.lplaylist"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.url.path), ["Dinner.lplaylist"])
     }
 }

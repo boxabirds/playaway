@@ -67,8 +67,8 @@ final class FollowedPlaylistTests: XCTestCase {
         XCTAssertFalse(followed.isEdited, "but nothing was edited")
         var theirs = fixture.playlist
         theirs.tracks.removeLast()
-        Thread.sleep(forTimeInterval: 1.1)                                               // a later modification date
         XCTAssertEqual(files.save(theirs, to: url), .saved)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: url.path)   // a later modification date, without waiting for the clock
         XCTAssertEqual(followed.fileChanged(), .replaced)
         XCTAssertEqual(followed.playlist.tracks.map(\.id), theirs.tracks.map(\.id), "their removal stands")
         // A real edit still counts.
@@ -303,7 +303,7 @@ final class FollowedPlaylistTests: XCTestCase {
     // MARK: Through the player (TC-29 to TC-31): a reload never touches the engine
 
     private func audioTrack(_ name: String) -> Track {
-        Track(id: UUID(), reference: TrackReference.make(for: dir.copyFixture(name))!)
+        Track(id: UUID(), reference: TrackReference.make(for: try dir.copyFixture(name))!)
     }
 
     private func playerRig(_ followed: FollowedPlaylist) -> (PlaylistPlayer, AVPlaybackEngine) {

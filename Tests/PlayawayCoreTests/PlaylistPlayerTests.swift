@@ -154,7 +154,7 @@ final class PlaylistPlayerTests: XCTestCase {
         for otherPlaying in [false, true] {
             let rig = PlayerRig()
             if otherPlaying { rig.player.start() }
-            rig.fixture.deleteFile(at: 2)
+            try rig.fixture.deleteFile(at: 2)
             let startsBefore = rig.startedNames
             rig.player.play(track: rig.playlist.tracks[2])
             XCTAssertEqual(rig.marks.mark(of: rig.playlist.tracks[2]), .unreadable)
@@ -242,7 +242,7 @@ final class PlaylistPlayerTests: XCTestCase {
 
     func testMissingTrackSkippedAndMarkedBeforeEngineIsCalled() {   // TC-92 / TC-99
         let rig = PlayerRig()
-        rig.fixture.deleteFile(at: 2)
+        try rig.fixture.deleteFile(at: 2)
         rig.player.start()
         rig.finishCurrent(); rig.finishCurrent()
         XCTAssertEqual(rig.startedNames, ["track1.mp3", "track2.mp3", "track4.mp3"])
@@ -252,20 +252,20 @@ final class PlaylistPlayerTests: XCTestCase {
 
     func testMissingFirstLastAndRepeatAll() {                       // TC-93/94/97
         var rig = PlayerRig()
-        rig.fixture.deleteFile(at: 0)
+        try rig.fixture.deleteFile(at: 0)
         rig.player.start()
         XCTAssertEqual(rig.startedNames, ["track2.mp3"], "TC-94")
         XCTAssertEqual(rig.marks.mark(of: rig.playlist.tracks[0]), .unreadable)
 
         rig = PlayerRig()
-        rig.fixture.deleteFile(at: 4)
+        try rig.fixture.deleteFile(at: 4)
         rig.player.start()
         for _ in 0..<4 { rig.finishCurrent() }
         XCTAssertFalse(rig.player.isSessionActive, "TC-93: session stops after track 4")
         XCTAssertEqual(rig.marks.mark(of: rig.playlist.tracks[4]), .unreadable)
 
         rig = PlayerRig(repeatMode: .all)
-        rig.fixture.deleteFile(at: 4)
+        try rig.fixture.deleteFile(at: 4)
         rig.player.start()
         for _ in 0..<4 { rig.finishCurrent() }
         XCTAssertEqual(rig.startedNames.last, "track1.mp3", "TC-97/TC-21(5): wraps and never plays track 5")
@@ -275,7 +275,7 @@ final class PlaylistPlayerTests: XCTestCase {
     func testAllMissingMarksEachAndStopsEvenWithRepeat() {         // TC-95 / story 5 TC-24/25
         for mode in [RepeatMode.off, .all] {
             let rig = PlayerRig(repeatMode: mode)
-            for index in 0..<5 { rig.fixture.deleteFile(at: index) }
+            for index in 0..<5 { try rig.fixture.deleteFile(at: index) }
             rig.player.start()
             XCTAssertTrue(rig.backend.players.isEmpty, "engine never called")
             for track in rig.playlist.tracks { XCTAssertEqual(rig.marks.mark(of: track), .unreadable) }
@@ -285,7 +285,7 @@ final class PlaylistPlayerTests: XCTestCase {
 
     func testMissingAndUnreadableMixed() {                          // TC-96
         let rig = PlayerRig()
-        rig.fixture.deleteFile(at: 1)
+        try rig.fixture.deleteFile(at: 1)
         rig.backend.unreadableNames = ["track3.mp3"]
         rig.player.start()
         rig.finishCurrent()
@@ -294,7 +294,7 @@ final class PlaylistPlayerTests: XCTestCase {
 
     func testShuffleWithOneMissingTrackPlaysTheOtherFourOnce() {   // TC-98
         let rig = PlayerRig(shuffle: true)
-        rig.fixture.deleteFile(at: 1)
+        try rig.fixture.deleteFile(at: 1)
         rig.player.start()
         for _ in 0..<4 { rig.finishCurrent() }
         XCTAssertEqual(Set(rig.startedNames), Set(names).subtracting(["track2.mp3"]))
@@ -302,15 +302,15 @@ final class PlaylistPlayerTests: XCTestCase {
         XCTAssertEqual(rig.marks.mark(of: rig.playlist.tracks[1]), .unreadable)
     }
 
-    func testFileThatReappearsPlaysOnTheNextPass() {                // TC-100
+    func testFileThatReappearsPlaysOnTheNextPass() throws {                // TC-100
         let rig = PlayerRig(repeatMode: .all)
         let url = rig.fixture.urls[2]
-        let contents = try! Data(contentsOf: url)
-        rig.fixture.deleteFile(at: 2)                               // a real delete: a moved file would be followed
+        let contents = try Data(contentsOf: url)
+        try rig.fixture.deleteFile(at: 2)                               // a real delete: a moved file would be followed
         rig.player.start()
         for _ in 0..<3 { rig.finishCurrent() }                      // 1 → 2 → (3 skipped) 4 → 5
         XCTAssertFalse(rig.startedNames.contains("track3.mp3"))
-        try! contents.write(to: url)                                // the file is back at the same path
+        try contents.write(to: url)                                // the file is back at the same path
         rig.finishCurrent()                                         // 5 ends, wraps to 1
         rig.finishCurrent(); rig.finishCurrent()                    // 1 → 2 → 3
         XCTAssertEqual(rig.startedNames.last, "track3.mp3", "status is re-read every time")
@@ -318,7 +318,7 @@ final class PlaylistPlayerTests: XCTestCase {
 
     func testMarkIsNotWrittenToThePlaylistAndNoSettingsChange() {  // TC-101
         let rig = PlayerRig()
-        rig.fixture.deleteFile(at: 1)
+        try rig.fixture.deleteFile(at: 1)
         let before = rig.playlist
         rig.player.start(); rig.finishCurrent()
         XCTAssertEqual(rig.playlist, before)
@@ -421,7 +421,7 @@ final class PlaylistPlayerTests: XCTestCase {
         XCTAssertEqual(rig.player.lastAsked?.id, rig.playlist.tracks[2].id)
         rig.player.next()
         XCTAssertEqual(rig.player.lastAsked?.id, rig.playlist.tracks[3].id, "Next asks for the next song")
-        rig.fixture.deleteFile(at: 4)
+        try rig.fixture.deleteFile(at: 4)
         rig.finishCurrent()                                         // 4 ends; 5 is missing and skipped; the playlist runs out
         XCTAssertFalse(rig.player.isSessionActive)
         XCTAssertNil(rig.player.current)
@@ -529,7 +529,7 @@ final class PlaylistPlayerTests: XCTestCase {
 
     func testLoadOfASongThatIsGoneChangesNothing() {
         let rig = PlayerRig()
-        rig.fixture.deleteFile(at: 1)
+        try rig.fixture.deleteFile(at: 1)
         XCTAssertFalse(rig.player.load(track: rig.fixture.tracks[1], atSeconds: 1))
         XCTAssertEqual(rig.engine.state, .idle)
         XCTAssertNil(rig.player.current)

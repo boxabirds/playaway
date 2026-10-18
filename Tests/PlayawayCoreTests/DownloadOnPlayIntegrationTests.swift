@@ -34,7 +34,7 @@ final class DownloadOnPlayIntegrationTests: XCTestCase {
     private var ids: [SongID] = []
     private var bytesBefore: [Data] = []
 
-    override func setUp() {
+    override func setUp() async throws {
         fixture = PlaylistFixture(trackNames: ["track1.mp3", "track2.mp3", "track3.mp3"])
         engine = makeEngine()
         starter = Starter()
@@ -46,12 +46,12 @@ final class DownloadOnPlayIntegrationTests: XCTestCase {
         for (id, track) in zip(ids, fixture.tracks) { starter.tracks[id] = track }
         downloader = ScriptedDownloader()
         sut = DownloadOnPlayCoordinator(downloader: downloader, player: starter)
-        bytesBefore = fixture.urls.map { try! Data(contentsOf: $0) }
+        bytesBefore = try fixture.urls.map { try Data(contentsOf: $0) }
     }
 
     private func assertNothingElseChanged(file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(fixture.playlist.tracks, fixture.tracks, "the playlist and its order are unchanged", file: file, line: line)
-        XCTAssertEqual(fixture.urls.map { try! Data(contentsOf: $0) }, bytesBefore, "every file is unchanged", file: file, line: line)
+        XCTAssertEqual(try fixture.urls.map { try Data(contentsOf: $0) }, bytesBefore, "every file is unchanged", file: file, line: line)
     }
 
     // MARK: Playback only at finish, only for the current song (TC-30, TC-31)

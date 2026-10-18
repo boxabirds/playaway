@@ -28,6 +28,25 @@ package final class AVLoopingPreview: LoopingPreviewing {
 
     package init() {}
 
+    /// The engine and node on their way out. They are handed to one background task and touched by nothing else.
+    private struct Winding: @unchecked Sendable { let engine: AVAudioEngine; let node: AVAudioPlayerNode }
+
+    private static let fadeQueue = DispatchQueue(label: "software.away.play.loop-fade", qos: .userInteractive)
+
+    /// Ramps the loop's level to silence in small steps, then stops it, so that stopping cannot click. This used to sleep on
+    /// the calling (main) thread; the song takes over with its own short fade-in, so the two overlap for a few milliseconds.
+    private static func fadeOut(_ winding: Winding) {
+        fadeQueue.async {
+            let mixer = winding.engine.mainMixerNode
+            for step in 1...stopFadeSteps {
+                mixer.outputVolume = 1 - Float(step) / Float(stopFadeSteps)
+                Thread.sleep(forTimeInterval: stopFade / Double(stopFadeSteps))
+            }
+            winding.node.stop()
+            winding.engine.stop()
+        }
+    }
+
     package func start(url: URL, at seconds: Double, length: Double) -> Bool {
         stop()
         guard let file = try? AVAudioFile(forReading: url) else { return false }
@@ -76,15 +95,9 @@ package final class AVLoopingPreview: LoopingPreviewing {
         if let nodeTime = node.lastRenderTime, let playerTime = node.playerTime(forNodeTime: nodeTime), loopFrames > 0 {
             place += Double(playerTime.sampleTime % AVAudioFramePosition(loopFrames)) / sampleRate
         }
-        let mixer = engine.mainMixerNode
-        for step in 1...Self.stopFadeSteps {
-            mixer.outputVolume = 1 - Float(step) / Float(Self.stopFadeSteps)
-            Thread.sleep(forTimeInterval: Self.stopFade / Double(Self.stopFadeSteps))
-        }
-        node.stop()
-        engine.stop()
         self.engine = nil; self.node = nil
         isPlaying = false
+        Self.fadeOut(Winding(engine: engine, node: node))      // the caller is not held up; the loop dies away by itself
         return place
     }
 }

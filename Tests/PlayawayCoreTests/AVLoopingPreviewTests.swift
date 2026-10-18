@@ -20,6 +20,22 @@ final class AVLoopingPreviewTests: XCTestCase {
         XCTAssertNil(preview.stop(), "stopping twice is harmless")
     }
 
+    /// Audit F7: stopping slept on the calling thread for the length of the fade. Now the caller is released at once (and
+    /// the loop is reported stopped at once), and starting again straight away is safe while the old one dies away.
+    func testStoppingDoesNotHoldUpTheCallerAndAnImmediateRestartIsSafe() {
+        let preview = AVLoopingPreview()
+        let repeats = 20
+        var heldUp = 0.0
+        for _ in 0..<repeats {
+            XCTAssertTrue(preview.start(url: song, at: 5, length: 0.5))
+            let before = Date()
+            XCTAssertNotNil(preview.stop())
+            heldUp += Date().timeIntervalSince(before)
+            XCTAssertFalse(preview.isPlaying, "stopped as far as the caller can see, immediately")
+        }
+        XCTAssertLessThan(heldUp, 0.1, "the 10 ms sleep per stop used to add up to at least 0.2 s here")
+    }
+
     func testASnippetAtTheVeryEndOfTheSongIsShorterButStillPlays() {
         let preview = AVLoopingPreview()
         XCTAssertTrue(preview.start(url: song, at: 29.7, length: 1))

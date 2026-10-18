@@ -59,13 +59,13 @@ final class TrackResolverTests: XCTestCase {
         XCTAssertEqual(refreshed, ref, "TC-01: nothing to save")
     }
 
-    func testMovedFileIsFollowedAndReferenceRefreshed() {                // C2 / prd.missing.track
+    func testMovedFileIsFollowedAndReferenceRefreshed() throws {                // C2 / prd.missing.track
         let dir = TempDir()
         let url = dir.copyFixture("track1.mp3")
         let ref = reference(for: url)
         let folder = dir.makeSubfolder("moved album")
         let newURL = folder.appendingPathComponent("track1.mp3")
-        try! FileManager.default.moveItem(at: url, to: newURL)
+        try FileManager.default.moveItem(at: url, to: newURL)
         let (status, refreshed) = resolver.resolve(ref)
         XCTAssertEqual(status, .resolved(newURL))
         XCTAssertEqual(refreshed.lastKnownPath, newURL.path)
@@ -76,20 +76,20 @@ final class TrackResolverTests: XCTestCase {
         XCTAssertEqual(same, refreshed, "the second opening needs no further work")
     }
 
-    func testRenamedFileInSameFolderIsFollowedByTheAlias() {
+    func testRenamedFileInSameFolderIsFollowedByTheAlias() throws {
         let dir = TempDir()
         let url = dir.copyFixture("track1.mp3")
         let ref = reference(for: url)
         let renamed = dir.path("renamed.mp3")
-        try! FileManager.default.moveItem(at: url, to: renamed)
+        try FileManager.default.moveItem(at: url, to: renamed)
         XCTAssertEqual(resolver.resolve(ref).0, .resolved(renamed), "an alias follows renames too (more than required)")
     }
 
-    func testDeletedFileIsMissing() {                                    // C4
+    func testDeletedFileIsMissing() throws {                                    // C4
         let dir = TempDir()
         let url = dir.copyFixture("track1.mp3")
         let ref = reference(for: url)
-        try! FileManager.default.removeItem(at: url)
+        try FileManager.default.removeItem(at: url)
         let (status, unchanged) = resolver.resolve(ref)
         XCTAssertEqual(status, .missing)
         XCTAssertEqual(unchanged, ref)
@@ -120,14 +120,14 @@ final class TrackResolverTests: XCTestCase {
         XCTAssertEqual(resolver.resolve(TrackReference(bookmark: Data(), lastKnownPath: "", fileName: "")).0, .missing)
     }
 
-    func testFiftyTracksTwentyFiveMoved() {                              // TC-32
+    func testFiftyTracksTwentyFiveMoved() throws {                              // TC-32
         let dir = TempDir()
         let target = dir.makeSubfolder("elsewhere")
         var refs: [TrackReference] = []
         for index in 0..<50 {
             let url = dir.copyFixture("track1.mp3", as: "t\(index).mp3")
             refs.append(reference(for: url))
-            if index % 2 == 0 { try! FileManager.default.moveItem(at: url, to: target.appendingPathComponent("t\(index).mp3")) }
+            if index % 2 == 0 { try FileManager.default.moveItem(at: url, to: target.appendingPathComponent("t\(index).mp3")) }
         }
         let results = refs.map { resolver.resolve($0) }
         XCTAssertTrue(results.allSatisfy { if case .resolved = $0.0 { return true } else { return false } })
@@ -184,22 +184,22 @@ final class FolderMatcherTests: XCTestCase {
         XCTAssertTrue(matcher.match(missing: [(UUID(), "a.mp3")], in: dir.path("nope")).isEmpty)
     }
 
-    func testSubfoldersAreNotSearched() {                                // TC-48
+    func testSubfoldersAreNotSearched() throws {                                // TC-48
         let dir = TempDir()
         let sub = dir.makeSubfolder("sub")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: sub.appendingPathComponent("a.mp3"))
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: sub.appendingPathComponent("a.mp3"))
         XCTAssertTrue(matcher.match(missing: [(UUID(), "a.mp3")], in: dir.url).isEmpty)
         XCTAssertTrue(matcher.match(missing: [(UUID(), "sub")], in: dir.url).isEmpty, "a folder is not a file match")
     }
 
-    func testSearchNeverChangesAnyFile() {                               // TC-60
+    func testSearchNeverChangesAnyFile() throws {                               // TC-60
         let dir = TempDir()
         let files = (0..<5).map { dir.copyFixture("track\($0 + 1).mp3") }
         let before = files.map(FileSnapshot.init)
-        let listing = try! FileManager.default.contentsOfDirectory(atPath: dir.url.path).sorted()
+        let listing = try FileManager.default.contentsOfDirectory(atPath: dir.url.path).sorted()
         _ = matcher.match(missing: files.map { (UUID(), $0.lastPathComponent) }, in: dir.url)
         XCTAssertEqual(files.map(FileSnapshot.init), before)
-        XCTAssertEqual(try! FileManager.default.contentsOfDirectory(atPath: dir.url.path).sorted(), listing)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.url.path).sorted(), listing)
     }
 
     func testFiftyMissingFiftyPresent() {                                // TC-50
@@ -247,9 +247,9 @@ final class MissingTrackRelinkerTests: XCTestCase {
             }
         }
 
-        func putBack(_ indices: [Int], as names: [Int: String] = [:]) {
+        func putBack(_ indices: [Int], as names: [Int: String] = [:]) throws {
             for index in indices {
-                try! FileManager.default.copyItem(at: Fixtures.url(Fixtures.trackNames[index]),
+                try FileManager.default.copyItem(at: Fixtures.url(Fixtures.trackNames[index]),
                                                   to: newFolder.path(names[index] ?? Fixtures.trackNames[index]))
             }
         }
@@ -258,9 +258,9 @@ final class MissingTrackRelinkerTests: XCTestCase {
         func status(_ index: Int) -> TrackStatus? { statuses.status(of: id(index)) }
     }
 
-    func testPickedSameNameWithMatchingMissingTracksInOneEdit() {       // TC-11 / acceptance 6
+    func testPickedSameNameWithMatchingMissingTracksInOneEdit() throws {       // TC-11 / acceptance 6
         let rig = Rig(missing: [1, 3, 4])
-        rig.putBack([1, 3])                                              // track 5 is not in the folder
+        try rig.putBack([1, 3])                                              // track 5 is not in the folder
         let result = rig.relinker.relink(trackID: rig.id(1), to: rig.newFolder.path("track2.mp3"), in: rig.document)
         XCTAssertEqual(result, .relinked([rig.id(1), rig.id(3)]))
         XCTAssertEqual(rig.status(1), .resolved(rig.newFolder.path("track2.mp3")))
@@ -273,26 +273,26 @@ final class MissingTrackRelinkerTests: XCTestCase {
         XCTAssertEqual(TrackResolver().resolve(rig.document.playlist.tracks[3].reference).0, .resolved(rig.newFolder.path("track4.mp3")))
     }
 
-    func testFolderWithNoMatchesRepairsOnlyTheLocatedTrack() {           // TC-12 / TC-15
+    func testFolderWithNoMatchesRepairsOnlyTheLocatedTrack() throws {           // TC-12 / TC-15
         let rig = Rig(missing: [1, 3])
-        rig.putBack([1])
+        try rig.putBack([1])
         XCTAssertEqual(rig.relinker.relink(trackID: rig.id(1), to: rig.newFolder.path("track2.mp3"), in: rig.document),
                        .relinked([rig.id(1)]))
         XCTAssertEqual(rig.status(3), .missing)
     }
 
-    func testMatchesOnlyForTracksThatAreNotMissingAreIgnored() {         // TC-13 / TC-16
+    func testMatchesOnlyForTracksThatAreNotMissingAreIgnored() throws {         // TC-13 / TC-16
         let rig = Rig(missing: [1])
-        rig.putBack([1, 2])                                              // track 3 is present elsewhere and unchanged
+        try rig.putBack([1, 2])                                              // track 3 is present elsewhere and unchanged
         let originalReference = rig.document.playlist.tracks[2].reference
         XCTAssertEqual(rig.relinker.relink(trackID: rig.id(1), to: rig.newFolder.path("track2.mp3"), in: rig.document),
                        .relinked([rig.id(1)]))
         XCTAssertEqual(rig.document.playlist.tracks[2].reference, originalReference, "present tracks keep their references")
     }
 
-    func testPickedFileWithDifferentNameStillUsed() {                    // TC-14
+    func testPickedFileWithDifferentNameStillUsed() throws {                    // TC-14
         let rig = Rig(missing: [1, 3])
-        rig.putBack([1, 3], as: [1: "other name.mp3"])
+        try rig.putBack([1, 3], as: [1: "other name.mp3"])
         let result = rig.relinker.relink(trackID: rig.id(1), to: rig.newFolder.path("other name.mp3"), in: rig.document)
         XCTAssertEqual(result, .relinked([rig.id(1), rig.id(3)]))
         XCTAssertEqual(rig.document.playlist.tracks[1].reference.fileName, "other name.mp3")
@@ -308,9 +308,9 @@ final class MissingTrackRelinkerTests: XCTestCase {
         XCTAssertEqual(rig.marks.mark(of: rig.fixture.tracks[1]), .unreadable)
     }
 
-    func testTrackNoLongerInDocumentIsEditRefused() {                    // TC-44
+    func testTrackNoLongerInDocumentIsEditRefused() throws {                    // TC-44
         let rig = Rig(missing: [1])
-        rig.putBack([1])
+        try rig.putBack([1])
         let ghost = UUID()
         rig.statuses.set(.missing, for: ghost)
         XCTAssertEqual(rig.relinker.relink(trackID: ghost, to: rig.newFolder.path("track2.mp3"), in: rig.document), .editRefused)
@@ -318,16 +318,16 @@ final class MissingTrackRelinkerTests: XCTestCase {
         XCTAssertEqual(rig.marks.mark(of: rig.fixture.tracks[1]), .unreadable, "no mark cleared")
     }
 
-    func testLocateIsRejectedOnATrackThatIsPresent() {                   // TC-42
+    func testLocateIsRejectedOnATrackThatIsPresent() throws {                   // TC-42
         let rig = Rig(missing: [1])
-        rig.putBack([0])
+        try rig.putBack([0])
         XCTAssertEqual(rig.relinker.relink(trackID: rig.id(0), to: rig.newFolder.path("track1.mp3"), in: rig.document), .editRefused)
         XCTAssertTrue(rig.document.applied.isEmpty)
     }
 
-    func testMatchWhoseTrackLeftTheDocumentIsSkipped() {
+    func testMatchWhoseTrackLeftTheDocumentIsSkipped() throws {
         let rig = Rig(missing: [1, 3])
-        rig.putBack([1, 3])
+        try rig.putBack([1, 3])
         let gone = rig.id(3)
         let removing = Rig.RemovingMatcher(remove: gone, document: rig.document)
         let relinker = MissingTrackRelinker(statuses: rig.statuses, marks: rig.marks, matcher: removing)
@@ -335,18 +335,18 @@ final class MissingTrackRelinkerTests: XCTestCase {
                        .relinked([rig.id(1)]))
     }
 
-    func testLocateOnOnePlaylistDoesNotChangeAnother() {                 // TC-66
+    func testLocateOnOnePlaylistDoesNotChangeAnother() throws {                 // TC-66
         let rig = Rig(missing: [1])
-        rig.putBack([1])
+        try rig.putBack([1])
         let otherDocument = RecordingDocument(rig.fixture.playlist)
         _ = rig.relinker.relink(trackID: rig.id(1), to: rig.newFolder.path("track2.mp3"), in: rig.document)
         XCTAssertTrue(otherDocument.applied.isEmpty)
         XCTAssertEqual(otherDocument.playlist, rig.fixture.playlist)
     }
 
-    func testRelinkNeverModifiesAudioFiles() {                           // TC-68
+    func testRelinkNeverModifiesAudioFiles() throws {                           // TC-68
         let rig = Rig(missing: [1, 3])
-        rig.putBack([1, 3])
+        try rig.putBack([1, 3])
         let files = ["track2.mp3", "track4.mp3"].map { rig.newFolder.path($0) }
         let before = files.map(FileSnapshot.init)
         _ = rig.relinker.relink(trackID: rig.id(1), to: files[0], in: rig.document)

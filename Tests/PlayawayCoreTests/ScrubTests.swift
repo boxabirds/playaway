@@ -99,8 +99,7 @@ final class ScrubWatchdogTests: XCTestCase {
         transport.scrubTimeout = 0.4
         transport.beginScrub()
         for place in [0.5, 1.0, 1.5] {
-            Thread.sleep(forTimeInterval: 0.25)
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            RunLoop.main.run(until: Date().addingTimeInterval(0.25))      // real time passes (the safety timer is shorter than the whole drag), and its timer can fire
             try transport.seek(toSeconds: place)
             XCTAssertEqual(engine.state, .paused, "still scrubbing while the finger moves")
         }

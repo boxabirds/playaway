@@ -6,16 +6,16 @@ import XCTest
 /// fetched, so the resolver must still find it (reported "in iCloud, not on this device" by the app, which then
 /// downloads it on play). Reproduces "a song in iCloud that was offloaded shows as missing".
 final class EvictedCloudFileTests: XCTestCase {
-    private func evictedSong(in dir: TempDir, named name: String) -> URL {
+    private func evictedSong(in dir: TempDir, named name: String) throws -> URL {
         let real = dir.url.appendingPathComponent(name)
         let placeholder = dir.url.appendingPathComponent("." + name + ".icloud")
-        try! Data("placeholder".utf8).write(to: placeholder)
+        try Data("placeholder".utf8).write(to: placeholder)
         return real
     }
 
-    func testAnOffloadedSongResolvesToItsRealPathNotMissing() {
+    func testAnOffloadedSongResolvesToItsRealPathNotMissing() throws {
         let dir = TempDir("evicted")
-        let real = evictedSong(in: dir, named: "song.mp3")
+        let real = try evictedSong(in: dir, named: "song.mp3")
         let reference = TrackReference(bookmark: Data(), lastKnownPath: real.path, fileName: "song.mp3")
         let (status, refreshed) = TrackResolver().resolve(reference)
         XCTAssertEqual(status, .resolved(real), "the placeholder stands for the song; it is in iCloud, not gone")
@@ -29,7 +29,7 @@ final class EvictedCloudFileTests: XCTestCase {
         try Data("audio".utf8).write(to: real)
         let made = try XCTUnwrap(TrackReference.make(for: real))
         try FileManager.default.removeItem(at: real)                 // iCloud takes the file away
-        _ = evictedSong(in: dir, named: "song.mp3")                  // and leaves the placeholder
+        _ = try evictedSong(in: dir, named: "song.mp3")                  // and leaves the placeholder
         let (status, _) = TrackResolver().resolve(made)
         XCTAssertEqual(status, .resolved(real))
     }
@@ -41,9 +41,9 @@ final class EvictedCloudFileTests: XCTestCase {
         XCTAssertEqual(TrackResolver().resolve(reference).0, .missing)
     }
 
-    func testTheOffloadedPlaceholderIsRecognised() {
+    func testTheOffloadedPlaceholderIsRecognised() throws {
         let dir = TempDir("evicted")
-        let real = evictedSong(in: dir, named: "song.mp3")
+        let real = try evictedSong(in: dir, named: "song.mp3")
         XCTAssertTrue(iCloudPlaceholderExists(for: real))
         XCTAssertFalse(iCloudPlaceholderExists(for: dir.url.appendingPathComponent("other.mp3")))
     }

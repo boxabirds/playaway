@@ -3,8 +3,8 @@ import XCTest
 
 /// Story 42, icon.elsewhere: the question-mark cloud is one more state of the shared cloud icon.
 final class ElsewhereCloudTests: XCTestCase {
-    func testAnElsewhereSongShowsTheQuestionCloudWhateverElseIsKnown() {            // TC-10
-        let display = try! XCTUnwrap(SongRowCloudDisplay.unfound(.elsewhere))
+    func testAnElsewhereSongShowsTheQuestionCloudWhateverElseIsKnown() throws {            // TC-10
+        let display = try XCTUnwrap(SongRowCloudDisplay.unfound(.elsewhere))
         XCTAssertEqual(display, SongRowCloudDisplay(icon: .elsewhere, dimmed: false, fraction: nil))
     }
     func testAGoneSongShowsNoCloudAsToday() {                                       // TC-11

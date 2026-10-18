@@ -15,44 +15,44 @@ final class CrossDevicePlaylistTests: XCTestCase {
 
     /// A reference as the other device wrote it: a real alias to a file that is gone (so it cannot resolve here, as a
     /// foreign alias cannot) and a path on the other device.
-    private func foreignReference(name: String, playlist: String, in dir: TempDir) -> TrackReference {
-        let gone = dir.copyFixture("track1.mp3", as: "gone-\(UUID().uuidString).mp3")
-        let alias = try! gone.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        try! FileManager.default.removeItem(at: gone)
+    private func foreignReference(name: String, playlist: String, in dir: TempDir) throws -> TrackReference {
+        let gone = try dir.copyFixture("track1.mp3", as: "gone-\(UUID().uuidString).mp3")
+        let alias = try gone.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        try FileManager.default.removeItem(at: gone)
         return TrackReference(bookmark: alias, lastKnownPath: Self.phoneRoot + "/\(playlist)/\(name)", fileName: name)
     }
 
-    private func placeholder(for url: URL) {
+    private func placeholder(for url: URL) throws {
         let marker = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".icloud")
-        try! Data("placeholder".utf8).write(to: marker)
+        try Data("placeholder".utf8).write(to: marker)
     }
 
     /// This device's iCloud Playaway folder, with the playlist's folder inside it.
-    private func cloud(in dir: TempDir, playlist: String) -> (documents: URL, playlistFolder: URL) {
-        let documents = dir.makeSubfolder("Mobile Documents/\(CloudFolder.containerFolderName)/Documents")
+    private func cloud(in dir: TempDir, playlist: String) throws -> (documents: URL, playlistFolder: URL) {
+        let documents = try dir.makeSubfolder("Mobile Documents/\(CloudFolder.containerFolderName)/Documents")
         let folder = documents.appendingPathComponent(playlist)
-        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return (documents, folder)
     }
 
     // MARK: Same device (unchanged behaviour)
 
-    func testASongThisDeviceAddedResolvesByItsAliasWithTheReferenceUnchanged() {          // TC-01
+    func testASongThisDeviceAddedResolvesByItsAliasWithTheReferenceUnchanged() throws {          // TC-01
         let dir = TempDir("same")
-        let url = dir.copyFixture("track1.mp3")
+        let url = try dir.copyFixture("track1.mp3")
         let ref = TrackReference.make(for: url)!
-        let resolver = TrackResolver(cloudDocuments: dir.makeSubfolder("cloud"))
+        let resolver = TrackResolver(cloudDocuments: try dir.makeSubfolder("cloud"))
         let (status, back) = resolver.resolve(ref, besidePlaylistAt: dir.url)
         XCTAssertEqual(status, .resolved(url))
         XCTAssertEqual(back, ref)
     }
 
-    func testASongMovedOnThisDeviceIsFollowedAndRefreshedAsBefore() {                     // TC-02
+    func testASongMovedOnThisDeviceIsFollowedAndRefreshedAsBefore() throws {                     // TC-02
         let dir = TempDir("same")
-        let url = dir.copyFixture("track1.mp3")
+        let url = try dir.copyFixture("track1.mp3")
         let ref = TrackReference.make(for: url)!
-        let moved = dir.makeSubfolder("elsewhere").appendingPathComponent("track1.mp3")
-        try! FileManager.default.moveItem(at: url, to: moved)
+        let moved = try dir.makeSubfolder("elsewhere").appendingPathComponent("track1.mp3")
+        try FileManager.default.moveItem(at: url, to: moved)
         let (status, back) = TrackResolver(cloudDocuments: nil).resolve(ref, besidePlaylistAt: dir.url)
         XCTAssertEqual(status, .resolved(moved))
         XCTAssertEqual(back.lastKnownPath, moved.path, "a move on this device still refreshes the reference")
@@ -60,23 +60,23 @@ final class CrossDevicePlaylistTests: XCTestCase {
 
     // MARK: The same place inside this device's iCloud folder
 
-    func testASongThePhoneStoredIsFoundAtTheSamePlaceInThisDevicesCloudFolder() {        // TC-03
+    func testASongThePhoneStoredIsFoundAtTheSamePlaceInThisDevicesCloudFolder() throws {        // TC-03
         let dir = TempDir("cloud")
-        let (documents, folder) = cloud(in: dir, playlist: "Dinner")
+        let (documents, folder) = try cloud(in: dir, playlist: "Dinner")
         let here = folder.appendingPathComponent("track1.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
         let (status, back) = TrackResolver(cloudDocuments: documents).resolve(ref)
         XCTAssertEqual(status, .resolved(here))
         XCTAssertEqual(back, ref, "found on the other device's terms: nothing is rewritten")
     }
 
-    func testAnOffloadedSongThePhoneStoredCountsAsPresentInTheCloudFolder() {           // TC-04
+    func testAnOffloadedSongThePhoneStoredCountsAsPresentInTheCloudFolder() throws {           // TC-04
         let dir = TempDir("cloud")
-        let (documents, folder) = cloud(in: dir, playlist: "Dinner")
+        let (documents, folder) = try cloud(in: dir, playlist: "Dinner")
         let here = folder.appendingPathComponent("track1.mp3")
-        placeholder(for: here)
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        try placeholder(for: here)
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
         let (status, back) = TrackResolver(cloudDocuments: documents).resolve(ref)
         XCTAssertEqual(status, .resolved(here))
         XCTAssertEqual(back, ref)
@@ -84,100 +84,100 @@ final class CrossDevicePlaylistTests: XCTestCase {
 
     // MARK: Beside the playlist, by name
 
-    func testASongBesideThePlaylistIsFoundByItsName() {                                  // TC-05
+    func testASongBesideThePlaylistIsFoundByItsName() throws {                                  // TC-05
         let dir = TempDir("beside")
-        let folder = dir.makeSubfolder("Dinner")
+        let folder = try dir.makeSubfolder("Dinner")
         let here = folder.appendingPathComponent("track1.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
-        let (status, back) = TrackResolver(cloudDocuments: dir.makeSubfolder("empty-cloud")).resolve(ref, besidePlaylistAt: folder)
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        let (status, back) = TrackResolver(cloudDocuments: try dir.makeSubfolder("empty-cloud")).resolve(ref, besidePlaylistAt: folder)
         XCTAssertEqual(status, .resolved(here))
         XCTAssertEqual(back, ref)
     }
 
-    func testAnOffloadedSongBesideThePlaylistCountsAsPresent() {                          // TC-06
+    func testAnOffloadedSongBesideThePlaylistCountsAsPresent() throws {                          // TC-06
         let dir = TempDir("beside")
-        let folder = dir.makeSubfolder("Dinner")
+        let folder = try dir.makeSubfolder("Dinner")
         let here = folder.appendingPathComponent("track1.mp3")
-        placeholder(for: here)
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        try placeholder(for: here)
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
         let (status, back) = TrackResolver(cloudDocuments: nil).resolve(ref, besidePlaylistAt: folder)
         XCTAssertEqual(status, .resolved(here))
         XCTAssertEqual(back, ref)
     }
 
-    func testASongNowhereOnThisDeviceIsStillMissing() {                                   // TC-07
+    func testASongNowhereOnThisDeviceIsStillMissing() throws {                                   // TC-07
         let dir = TempDir("nowhere")
-        let (documents, _) = cloud(in: dir, playlist: "Dinner")
-        let folder = dir.makeSubfolder("Dinner")
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        let (documents, _) = try cloud(in: dir, playlist: "Dinner")
+        let folder = try dir.makeSubfolder("Dinner")
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
         let (status, back) = TrackResolver(cloudDocuments: documents).resolve(ref, besidePlaylistAt: folder)
         XCTAssertEqual(status, .missing)
         XCTAssertEqual(back, ref)
     }
 
-    func testAMacPathOutsideTheContainerStillFindsTheSongBesideThePlaylist() {           // TC-08
+    func testAMacPathOutsideTheContainerStillFindsTheSongBesideThePlaylist() throws {           // TC-08
         let dir = TempDir("music")
-        let folder = dir.makeSubfolder("Dinner")
+        let folder = try dir.makeSubfolder("Dinner")
         let here = folder.appendingPathComponent("track1.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
         let ref = TrackReference(bookmark: Data(), lastKnownPath: "/Users/someone/Music/track1.mp3", fileName: "track1.mp3")
-        let (status, back) = TrackResolver(cloudDocuments: dir.makeSubfolder("cloud")).resolve(ref, besidePlaylistAt: folder)
+        let (status, back) = TrackResolver(cloudDocuments: try dir.makeSubfolder("cloud")).resolve(ref, besidePlaylistAt: folder)
         XCTAssertEqual(status, .resolved(here))
         XCTAssertEqual(back, ref)
     }
 
-    func testWithNoPlaylistFolderOnlyTheCloudRouteIsTried() {                             // TC-09
+    func testWithNoPlaylistFolderOnlyTheCloudRouteIsTried() throws {                             // TC-09
         let dir = TempDir("nofolder")
-        let (documents, _) = cloud(in: dir, playlist: "Dinner")
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        let (documents, _) = try cloud(in: dir, playlist: "Dinner")
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
         XCTAssertEqual(TrackResolver(cloudDocuments: documents).resolve(ref, besidePlaylistAt: nil).0, .missing)
     }
 
-    func testASongWithTheSameNameInAnotherPlaylistsFolderIsNotTaken() {                  // TC-10
+    func testASongWithTheSameNameInAnotherPlaylistsFolderIsNotTaken() throws {                  // TC-10
         let dir = TempDir("sibling")
-        let folder = dir.makeSubfolder("Dinner")
-        let sibling = dir.makeSubfolder("Party")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: sibling.appendingPathComponent("track1.mp3"))
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        let folder = try dir.makeSubfolder("Dinner")
+        let sibling = try dir.makeSubfolder("Party")
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: sibling.appendingPathComponent("track1.mp3"))
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
         XCTAssertEqual(TrackResolver(cloudDocuments: nil).resolve(ref, besidePlaylistAt: folder).0, .missing,
                        "no guessing across folders")
     }
 
-    func testTheNameMatchIgnoresLetterCaseAsLocateDoes() {                                // TC-11
+    func testTheNameMatchIgnoresLetterCaseAsLocateDoes() throws {                                // TC-11
         let dir = TempDir("case")
-        let folder = dir.makeSubfolder("Dinner")
+        let folder = try dir.makeSubfolder("Dinner")
         let here = folder.appendingPathComponent("Track1.MP3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
         XCTAssertEqual(TrackResolver(cloudDocuments: nil).resolve(ref, besidePlaylistAt: folder).0, .resolved(here))
     }
 
-    func testAnEmptyFileNameNeverMatches() {                                              // TC-12
+    func testAnEmptyFileNameNeverMatches() throws {                                              // TC-12
         let dir = TempDir("empty")
-        let folder = dir.makeSubfolder("Dinner")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: folder.appendingPathComponent("track1.mp3"))
+        let folder = try dir.makeSubfolder("Dinner")
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: folder.appendingPathComponent("track1.mp3"))
         let ref = TrackReference(bookmark: Data(), lastKnownPath: Self.phoneRoot + "/Dinner/", fileName: "")
         XCTAssertEqual(TrackResolver(cloudDocuments: nil).resolve(ref, besidePlaylistAt: folder).0, .missing)
     }
 
-    func testWithoutACloudFolderOnThisDeviceTheSongBesideThePlaylistIsStillFound() {     // TC-13
+    func testWithoutACloudFolderOnThisDeviceTheSongBesideThePlaylistIsStillFound() throws {     // TC-13
         let dir = TempDir("nocloud")
-        let folder = dir.makeSubfolder("Dinner")
+        let folder = try dir.makeSubfolder("Dinner")
         let here = folder.appendingPathComponent("track1.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
-        let ref = foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
+        let ref = try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir)
         XCTAssertEqual(TrackResolver(cloudDocuments: nil).resolve(ref, besidePlaylistAt: folder).0, .resolved(here))
     }
 
-    func testAStoredPathInTheTrashIsNotTakenAndTheSearchGoesOn() {                       // TC-14
+    func testAStoredPathInTheTrashIsNotTakenAndTheSearchGoesOn() throws {                       // TC-14
         let dir = TempDir("trash")
-        let trash = dir.makeSubfolder(".Trash")
+        let trash = try dir.makeSubfolder(".Trash")
         let trashed = trash.appendingPathComponent("track1.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: trashed)
-        let folder = dir.makeSubfolder("Dinner")
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: trashed)
+        let folder = try dir.makeSubfolder("Dinner")
         let here = folder.appendingPathComponent("track1.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
         let ref = TrackReference(bookmark: Data(), lastKnownPath: trashed.path, fileName: "track1.mp3")
         XCTAssertEqual(TrackResolver(cloudDocuments: nil).resolve(ref, besidePlaylistAt: folder).0, .resolved(here))
     }
@@ -191,10 +191,10 @@ final class CrossDevicePlaylistTests: XCTestCase {
         XCTAssertNil(CloudFolder.relativePath(inContainer: Self.phoneRoot + "/"), "nothing after the Documents folder")
     }
 
-    func testThisDevicesCloudFolderIsUnderMobileDocumentsWhenItExists() {
+    func testThisDevicesCloudFolderIsUnderMobileDocumentsWhenItExists() throws {
         let home = TempDir("home")
         XCTAssertNil(CloudFolder.documentsOnThisDevice(home: home.url), "no iCloud Drive here")
-        let documents = home.makeSubfolder("Library/Mobile Documents/\(CloudFolder.containerFolderName)/Documents")
+        let documents = try home.makeSubfolder("Library/Mobile Documents/\(CloudFolder.containerFolderName)/Documents")
         XCTAssertEqual(CloudFolder.documentsOnThisDevice(home: home.url)?.path, documents.path)
     }
 
@@ -214,12 +214,12 @@ final class CrossDevicePlaylistTests: XCTestCase {
         return (player, engine)
     }
 
-    func testThePlayerPlaysASongFoundBesideThePlaylistAndReportsTheReferenceUnchanged() {   // TC-19
+    func testThePlayerPlaysASongFoundBesideThePlaylistAndReportsTheReferenceUnchanged() throws {   // TC-19
         let dir = TempDir("player")
-        let folder = dir.makeSubfolder("Dinner")
+        let folder = try dir.makeSubfolder("Dinner")
         let here = folder.appendingPathComponent("track1.mp3")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
-        let track = Track(id: UUID(), reference: foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir))
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: here)
+        let track = Track(id: UUID(), reference: try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir))
         let recorder = ReferenceRecorder()
         let (player, engine) = player(folder: folder, track: track, recorder: recorder)
         player.start()
@@ -229,11 +229,11 @@ final class CrossDevicePlaylistTests: XCTestCase {
         XCTAssertEqual(recorder.seen.first?.2, track.reference, "nothing for a document to write")
     }
 
-    func testThePlayerRefusesTheSongWhenItDoesNotKnowThePlaylistsFolder() {                 // TC-20
+    func testThePlayerRefusesTheSongWhenItDoesNotKnowThePlaylistsFolder() throws {                 // TC-20
         let dir = TempDir("player")
-        let folder = dir.makeSubfolder("Dinner")
-        try! FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: folder.appendingPathComponent("track1.mp3"))
-        let track = Track(id: UUID(), reference: foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir))
+        let folder = try dir.makeSubfolder("Dinner")
+        try FileManager.default.copyItem(at: Fixtures.url("track1.mp3"), to: folder.appendingPathComponent("track1.mp3"))
+        let track = Track(id: UUID(), reference: try foreignReference(name: "track1.mp3", playlist: "Dinner", in: dir))
         let recorder = ReferenceRecorder()
         let (player, engine) = player(folder: nil, track: track, recorder: recorder)
         player.start()
