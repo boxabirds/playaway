@@ -149,7 +149,10 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     /// What a row's cloud icon shows: the shared row rule over this Mac's answer about the file and the download
     /// coordinator's. Only a synced playlist shows cloud state (an unsynced one shows nothing, as on the iPhone).
     func cloudDisplay(for track: Track) -> SongRowCloudDisplay? {
-        guard playlistDocument.sync.state == .on, let url = songURL(for: track) else { return nil }
+        guard playlistDocument.sync.state == .on else { return nil }
+        guard let url = songURL(for: track) else {
+            return playlistDocument.unfoundKind(of: track).flatMap(SongRowCloudDisplay.unfound)   // story 42: the question-mark cloud
+        }
         let tracked = services.downloads.state(of: MacSongs.id(for: url))
         return SongRowCloudDisplay(presence: services.cloudSongs.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
     }
@@ -157,6 +160,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
     /// A click on a row's cloud icon follows the shared rule (story 31): crossed-out asks the Files question for that
     /// song only, the pie cancels, the exclamation mark retries, the outline does nothing. No click plays the row.
     func cloudIconClicked(_ track: Track) {
+        if cloudDisplay(for: track)?.icon == .elsewhere { services.notices.show(.addedElsewhere); return }
         guard let display = cloudDisplay(for: track), let url = songURL(for: track) else { return }
         switch cloudIconTapAction(state: display.icon, kind: .song) {
         case .openSyncDialog:
@@ -170,7 +174,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
             services.cancelDownload(of: MacSongs.id(for: url))
         case .retryDownload:
             services.retryDownload(of: track, at: url, in: playlistDocument)
-        case .none, .restoreAccess:     // restoreAccess belongs to the iPhone and iPad: the Mac reads iCloud Drive directly
+        case .none, .restoreAccess, .explainElsewhere:     // restoreAccess belongs to the iPhone and iPad: the Mac reads iCloud Drive directly
             break
         }
     }
@@ -652,17 +656,19 @@ final class TrackCellView: NSTableCellView {
         guard let cloud else { cloudButton.isHidden = true; return }
         cloudButton.isHidden = false
         let quiet: NSColor = emphasized ? .alternateSelectedControlTextColor : .secondaryLabelColor
-        var symbol: String?, tint = quiet, opacity = Self.quietCloudOpacity
+        var symbol: String?, tint = quiet, opacity = Self.quietCloudOpacity, elsewhereImage = false
         switch cloud.icon {
         case .crossedOut, .locked: symbol = "icloud.slash"     // locked never occurs on the Mac
+        case .elsewhere: symbol = nil; elsewhereImage = true
         case .outline: symbol = "icloud"
         case .exclamation: symbol = "exclamationmark.icloud"; tint = emphasized ? quiet : .systemRed; opacity = 1
         case .pieDownload, .pieSync: opacity = 1
         }
-        cloudButton.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: cloudLabel) }
+        cloudButton.image = elsewhereImage ? Self.questionCloud(description: cloudLabel)
+            : symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: cloudLabel) }
         cloudButton.contentTintColor = tint
         cloudButton.alphaValue = opacity
-        pie.isHidden = symbol != nil
+        pie.isHidden = symbol != nil || elsewhereImage
         pie.fraction = cloud.fraction
         cloudButton.toolTip = cloudLabel
         cloudButton.setAccessibilityLabel(cloudLabel)
@@ -677,6 +683,7 @@ final class TrackCellView: NSTableCellView {
         case .pieDownload, .pieSync: return "Downloading, click to cancel"
         case .exclamation: return DownloadState.failedAccessibilityLabel
         case .locked: return "Needs access to this folder"
+        case .elsewhere: return "Not available on this Mac. Added from another device."
         }
     }
 
@@ -689,7 +696,23 @@ final class TrackCellView: NSTableCellView {
         case .pieDownload, .pieSync: return ", downloading from iCloud"
         case .exclamation: return ", " + DownloadState.failedAccessibilityLabel
         case .locked: return ", needs access to this folder"
+        case .elsewhere: return ", on another device"
         }
+    }
+
+    /// A cloud with a question mark: the system has no such symbol, so the cloud is drawn with the mark in it.
+    private static func questionCloud(description: String) -> NSImage? {
+        guard let cloud = NSImage(systemSymbolName: "icloud", accessibilityDescription: description) else { return nil }
+        let image = NSImage(size: cloud.size, flipped: false) { rect in
+            cloud.draw(in: rect)
+            let mark = NSAttributedString(string: "?", attributes: [.font: NSFont.systemFont(ofSize: rect.height * 0.5, weight: .bold)])
+            let size = mark.size()
+            mark.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2 - rect.height * 0.04))
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = description
+        return image
     }
 
     var cloudKind: CloudIconState? { cloudButton.isHidden ? nil : cloud?.icon }

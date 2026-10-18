@@ -190,6 +190,7 @@ struct CloudIconButton: View {
         .accessibilityLabel(label)
         .accessibilityIdentifier("cloud-icon")
         .accessibilityValue(valueText)
+        .accessibilityHint(display.icon == .elsewhere ? "Double tap for what to do" : "")
         .contextMenu { if let locate { Button("Locate…", systemImage: "magnifyingglass", action: locate) } }
     }
 
@@ -198,6 +199,9 @@ struct CloudIconButton: View {
         case .crossedOut: Image(systemName: "icloud.slash").foregroundStyle(.secondary)
         case .outline: Image(systemName: "icloud").foregroundStyle(.secondary)
         case .exclamation: Image(systemName: "exclamationmark.icloud").foregroundStyle(.red)
+        case .elsewhere:
+            Image(systemName: "icloud").foregroundStyle(.secondary)
+                .overlay { Text("?").font(.system(size: 10, weight: .heavy)).foregroundStyle(.secondary).offset(y: 1) }
         case .locked:
             Image(systemName: "icloud").foregroundStyle(.secondary)
                 .overlay { Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary).offset(y: 2) }
@@ -221,11 +225,13 @@ struct CloudIconButton: View {
         case .pieDownload, .pieSync: return "Downloading, tap to cancel"
         case .exclamation: return DownloadState.failedAccessibilityLabel
         case .locked: return "Needs access to this folder. Double tap to restore."
+        case .elsewhere: return "Not available on this device. Added from another device."
         }
     }
 
     private var valueText: String {
         if display.icon == .locked { return "locked" }
+        if display.icon == .elsewhere { return "elsewhere" }
         guard let fraction = display.fraction, fraction > 0 else { return "" }
         return "\(Int(fraction * 100)) percent"
     }

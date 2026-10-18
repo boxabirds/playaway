@@ -42,6 +42,16 @@ package struct SongRowCloudDisplay: Equatable {
         else { self.init(presence: presence, tracked: tracked) }
     }
 
+    /// The display of a song that cannot be found: the locked cloud, the question-mark cloud, or none (a song that was on
+    /// this device and is gone keeps today's behaviour: no cloud, and the not-found message when tapped).
+    package static func unfound(_ kind: UnfoundKind) -> SongRowCloudDisplay? {
+        switch kind {
+        case .needsAccess: return SongRowCloudDisplay(icon: .locked, dimmed: false, fraction: nil)
+        case .elsewhere: return SongRowCloudDisplay(icon: .elsewhere, dimmed: false, fraction: nil)
+        case .gone: return nil
+        }
+    }
+
     /// `tracked` is what the download coordinator knows about this song, if anything. An active download or a
     /// failure wins over what the file system says.
     package init(presence: SongPresence, tracked: DownloadState?) {

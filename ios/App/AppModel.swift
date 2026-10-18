@@ -323,6 +323,8 @@ final class AppModel: ObservableObject {
         // Test aid: a playlist another device (a Mac) wrote into the Playaway folder, its references the Mac's.
         if arguments.contains("-PlayawaySeedForeignPlaylist"), let fake = fakeCloudRoot { seedForeignPlaylist(in: fake) }
         // Test aid: a playlist the iPhone wrote whose songs live in iCloud Drive/Mixdowns, in build-22 form (no cloud path).
+        // Test aid (story 42): a playlist whose songs were added on a Mac from a folder that is not in iCloud.
+        if arguments.contains("-PlayawaySeedElsewherePlaylist"), let fake = fakeCloudRoot { seedElsewherePlaylist(in: fake) }
         if arguments.contains("-PlayawaySeedDrivePlaylist"), let fake = fakeCloudRoot, let drive = fakeDriveRoot {
             seedDrivePlaylist(in: fake, drive: drive)
             seedMixedDrivePlaylist(in: fake, drive: drive)
@@ -505,6 +507,23 @@ final class AppModel: ObservableObject {
         playlist.tracks.append(track)
         session.apply(playlist)
         considerNudge(after: [track])
+    }
+
+    /// Test aid (story 42): two songs a Mac added from its own Music folder (a dead bookmark, a Mac path, no place in
+    /// iCloud) and one that is here, so rows can be compared.
+    private func seedElsewherePlaylist(in cloudRoot: URL) {
+        let name = "From Mac Music"
+        let folder = cloudRoot.appendingPathComponent(name)
+        let file = folder.appendingPathComponent(name).appendingPathExtension(playlistFileExtension)
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let here = folder.appendingPathComponent("Elsewhere Here.wav")
+        try? Self.tone(60, hz: 500).write(to: here)
+        var tracks = ["Elsewhere One", "Elsewhere Two"].map {
+            Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "/Users/someone/Music/\($0).mp3", fileName: "\($0).mp3"))
+        }
+        tracks.append(Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: here.canonicalPath, fileName: "Elsewhere Here.wav")))
+        _ = PlaylistStore().save(Playlist(tracks: tracks), to: file)
     }
 
     /// Test aid (story 40, TC-35): the phone that made the playlist. One song resolves by its own path on this device
@@ -853,6 +872,12 @@ final class AppModel: ObservableObject {
         return snapshot
     }
 
+    /// Why a song cannot be found on this device, nil when it can (story 42, with the locked cloud of story 41).
+    func unfoundKind(for track: Track, in session: PlaylistSession) -> UnfoundKind? {
+        guard songURL(for: track, in: session) == nil else { return nil }
+        return classifyUnfound(track.reference, accessNeeded: needsAccess(track, in: session) ? "locked" : nil, device: .current)
+    }
+
     func recoveryPlan(for session: PlaylistSession) -> RecoveryPlan? { accessSnapshot(for: session).plan }
     func needsAccess(_ track: Track, in session: PlaylistSession) -> Bool { accessSnapshot(for: session).locked.contains(track.id) }
 
@@ -1022,6 +1047,7 @@ final class AppModel: ObservableObject {
         case .resolved:
             failureMessage = "“\(name)” could not be played. The file may be damaged or in a format Playaway can't play."
         default:
+            if unfoundKind(for: track, in: session) == .elsewhere { failureMessage = addedElsewhereMessage; return }
             failureMessage = "“\(name)” can't be found. Its file may have been moved, renamed or deleted."
         }
     }
@@ -1038,8 +1064,9 @@ final class AppModel: ObservableObject {
     }
 
     func cloudDisplay(for track: Track, in session: PlaylistSession) -> SongRowCloudDisplay? {
-        if needsAccess(track, in: session) { return SongRowCloudDisplay(needsAccess: true, presence: .localOnly, tracked: nil) }
-        guard let url = songURL(for: track, in: session) else { return nil }
+        guard let url = songURL(for: track, in: session) else {
+            return unfoundKind(for: track, in: session).flatMap(SongRowCloudDisplay.unfound)    // locked, question mark, or none
+        }
         let song = cloud.id(for: url)
         let tracked = downloads.state(of: song)
         return SongRowCloudDisplay(presence: cloud.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
@@ -1047,6 +1074,7 @@ final class AppModel: ObservableObject {
 
     func cloudIconTapped(_ track: Track, session: PlaylistSession) {
         if needsAccess(track, in: session) { beginRestore(for: session); return }
+        if unfoundKind(for: track, in: session) == .elsewhere { enqueueMessage(addedElsewhereMessage); return }
         guard let display = cloudDisplay(for: track, in: session), let url = songURL(for: track, in: session) else { return }
         let song = cloud.id(for: url)
         pendingPlays[song] = (session, track)
@@ -1058,7 +1086,7 @@ final class AppModel: ObservableObject {
             // playlist itself if it is still only on this phone.
             if let cloudLibrary, library(for: session.url) === cloudLibrary { songsEntered([track], in: session, source: .iPhoneAdd) }
             else if let entry = entries.first(where: { $0.url == session.url }) { beginSync(entry) }
-        case .none, .cancelSync, .restoreAccess: break
+        case .none, .cancelSync, .restoreAccess, .explainElsewhere: break
         }
         cloudRevision += 1
     }

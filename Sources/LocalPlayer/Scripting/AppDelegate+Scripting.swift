@@ -51,10 +51,17 @@ extension PlaylistDocument {
     /// Story 22: the state the window shows, readable by script. Reading changes nothing.
     @objc var scriptICloudSync: Bool { sync.state == .on }
     /// Where each song's file is, in row order: location only, never whether it is downloaded (owner decision).
-    @objc var scriptTrackICloudStates: [String] { playlist.tracks.map { isInICloud($0) ? ScriptTrackState.inICloud : ScriptTrackState.notInICloud } }
+    @objc var scriptTrackICloudStates: [String] {
+        playlist.tracks.map { track in
+            if unfoundKind(of: track) == .elsewhere { return ScriptTrackState.onAnotherDevice }
+            return isInICloud(track) ? ScriptTrackState.inICloud : ScriptTrackState.notInICloud
+        }
+    }
 }
 
 enum ScriptTrackState {
     static let inICloud = "in iCloud"
     static let notInICloud = "not in iCloud"
+    /// Added on another device and cannot be found here (story 42).
+    static let onAnotherDevice = "on another device"
 }

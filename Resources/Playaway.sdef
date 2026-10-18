@@ -59,7 +59,7 @@
                 <cocoa key="scriptICloudSync"/>
             </property>
             <property name="track iCloud states" code="lpTS" access="r"
-                      description="Where each track's file is, in order: in iCloud, or not in iCloud. Location only, as the cloud at the end of each row shows; whether a file is on this Mac is not reported.">
+                      description="Where each track's file is, in order: in iCloud, not in iCloud, or on another device (added there and cannot be found on this Mac). Location only, as the cloud at the end of each row shows; whether a file is on this Mac is not reported.">
                 <type type="text" list="yes"/>
                 <cocoa key="scriptTrackICloudStates"/>
             </property>

@@ -274,6 +274,12 @@ final class PlaylistDocument: NSDocument, PlaylistDocumentEditing, TrackResoluti
 
     /// Whether a track's file is in iCloud (location only; whether it is downloaded is a separate matter). A file
     /// that cannot be found counts as not in iCloud, as the window draws it.
+    /// Why a song cannot be found here, nil when it can (story 42). The Mac never needs a folder permission.
+    func unfoundKind(of track: Track) -> UnfoundKind? {
+        guard songURL(for: track) == nil else { return nil }
+        return classifyUnfound(track.reference, accessNeeded: nil, device: .current)
+    }
+
     func isInICloud(_ track: Track) -> Bool {
         guard let url = songURL(for: track) else { return false }
         return services.cloudSongs.presence(of: url) != .localOnly
