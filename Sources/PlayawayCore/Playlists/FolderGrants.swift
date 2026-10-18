@@ -44,12 +44,50 @@ package final class InMemoryFolderGrantStore: FolderGrantStoring {
     package func save(_ grants: [FolderGrant]) { self.grants = grants }
 }
 
+/// What this device has learned about where songs are, kept per device and never in the shared playlist: a song found
+/// somewhere other than where it was saved (`moved`: saved drive path to the path found), and a song the person
+/// pointed at with Locate (`located`: saved drive path to a bookmark of the chosen file).
+package struct DeviceMatches: Codable, Equatable {
+    package var moved: [String: String] = [:]
+    package var located: [String: Data] = [:]
+    package init(moved: [String: String] = [:], located: [String: Data] = [:]) { self.moved = moved; self.located = located }
+}
+
+package protocol DeviceMatchStoring {
+    func load() -> DeviceMatches
+    func save(_ matches: DeviceMatches)
+}
+
+package final class DeviceMatchFileStore: DeviceMatchStoring {
+    private let url: URL
+    package init(url: URL) { self.url = url }
+    package func load() -> DeviceMatches {
+        guard let data = try? Data(contentsOf: url) else { return DeviceMatches() }
+        return (try? JSONDecoder().decode(DeviceMatches.self, from: data)) ?? DeviceMatches()
+    }
+    package func save(_ matches: DeviceMatches) {
+        guard let data = try? JSONEncoder().encode(matches) else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+package final class InMemoryDeviceMatchStore: DeviceMatchStoring {
+    package private(set) var matches: DeviceMatches
+    package init(_ matches: DeviceMatches = DeviceMatches()) { self.matches = matches }
+    package func load() -> DeviceMatches { matches }
+    package func save(_ matches: DeviceMatches) { self.matches = matches }
+}
+
 /// The iPhone's and iPad's roots: the Playaway container directly, iCloud Drive through the folders the person allowed.
 /// A grant's URL, once resolved, is kept open for the app's life: the grant is the app's standing permission to read
 /// that folder, not a one-read lease.
 package final class GrantedCloudRoots: CloudRoots {
     package var playawayDocuments: URL?
     private let store: FolderGrantStoring
+    private let matchStore: DeviceMatchStoring
+    private var deviceMatches: DeviceMatches
+    private var locatedURLs: [String: URL] = [:]
     private let drivePath: (URL) -> String?
     private let makeBookmark: (URL) -> Data?
     private let resolveBookmark: (Data) -> URL?
@@ -59,12 +97,14 @@ package final class GrantedCloudRoots: CloudRoots {
     /// `drivePath` reads a picked folder's place under iCloud Drive (nil outside it); `makeBookmark` and
     /// `resolveBookmark` are Foundation's unless a test says otherwise. The default resolution starts security-scoped
     /// access and keeps it.
-    package init(playawayDocuments: URL?, store: FolderGrantStoring,
+    package init(playawayDocuments: URL?, store: FolderGrantStoring, matchStore: DeviceMatchStoring = InMemoryDeviceMatchStore(),
                  drivePath: @escaping (URL) -> String? = { CloudFolder.relativePath(inDrive: $0.path) },
                  makeBookmark: @escaping (URL) -> Data? = { try? $0.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil) },
                  resolveBookmark: @escaping (Data) -> URL? = GrantedCloudRoots.resolveKeepingAccess) {
         self.playawayDocuments = playawayDocuments
         self.store = store
+        self.matchStore = matchStore
+        deviceMatches = matchStore.load()
         self.drivePath = drivePath
         self.makeBookmark = makeBookmark
         self.resolveBookmark = resolveBookmark
@@ -108,15 +148,70 @@ package final class GrantedCloudRoots: CloudRoots {
         case .playawayFolder(let rest):
             return playawayDocuments.flatMap { appending(rest, to: $0) }
         case .iCloudDrive(let rest):
-            guard let (grant, folder) = grantURL(covering: path) else { return nil }
-            let remainder = String(rest.dropFirst(grant.drivePath.count))
-            return appending(remainder, to: folder)
+            if let located = locatedURL(for: rest) { return located }
+            if let actual = deviceMatches.moved[rest] {
+                if let url = urlUnderGrant(actual), Self.exists(url) { return url }
+                forget(moved: rest)                 // the file it was found at is gone: ask again
+            }
+            return urlUnderGrant(rest)
         }
     }
 
+    /// The folder to ask for when this device cannot reach the path: its top folder, unless something here already covers it.
     package func accessNeeded(for path: CloudPath) -> String? {
-        guard path.isInDrive, !covers(path) else { return nil }
-        return path.topFolder
+        guard case .iCloudDrive(let rest) = path else { return nil }
+        if locatedURL(for: rest) != nil { return nil }
+        if let actual = deviceMatches.moved[rest], covers(.iCloudDrive(actual)) { return nil }
+        return covers(path) ? nil : path.topFolder
+    }
+
+    /// Whether this device reaches the song only through what the person gave it here: a folder grant, a match found
+    /// under one, or a Locate. A song found any other way (its own reference) says the folder is readable anyway.
+    package func reaches(_ path: CloudPath) -> Bool {
+        guard case .iCloudDrive(let rest) = path else { return false }
+        return deviceMatches.located[rest] != nil || deviceMatches.moved[rest] != nil || covers(path)
+    }
+
+    /// Remembers where songs were found other than where they were saved, per device.
+    package func remember(_ moved: [String: String]) {
+        guard !moved.isEmpty else { return }
+        deviceMatches.moved.merge(moved) { _, new in new }
+        matchStore.save(deviceMatches)
+    }
+
+    /// Locate: the person chose this file for the song saved at `path`; kept per device as a bookmark.
+    @discardableResult
+    package func locate(savedPath path: String, file: URL) -> Bool {
+        guard let bookmark = makeBookmark(file) else { return false }
+        deviceMatches.located[path] = bookmark
+        locatedURLs[path] = file
+        matchStore.save(deviceMatches)
+        return true
+    }
+
+    private func locatedURL(for path: String) -> URL? {
+        if let url = locatedURLs[path], Self.exists(url) { return url }
+        guard let bookmark = deviceMatches.located[path] else { return nil }
+        guard let url = resolveBookmark(bookmark), Self.exists(url) else {
+            deviceMatches.located[path] = nil; locatedURLs[path] = nil; matchStore.save(deviceMatches)
+            return nil
+        }
+        locatedURLs[path] = url
+        return url
+    }
+
+    private func urlUnderGrant(_ rest: String) -> URL? {
+        guard let (grant, folder) = grantURL(covering: .iCloudDrive(rest)) else { return nil }
+        return appending(String(rest.dropFirst(grant.drivePath.count)), to: folder)
+    }
+
+    private func forget(moved path: String) {
+        deviceMatches.moved[path] = nil
+        matchStore.save(deviceMatches)
+    }
+
+    private static func exists(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path) || iCloudPlaceholderExists(for: url)
     }
 
     /// The one folder to ask for next: the top folder most of the unfound songs share. A folder in which some song of

@@ -6,6 +6,7 @@ package enum CloudIconState: Equatable {
     case pieDownload
     case pieSync
     case exclamation       // download failed
+    case locked            // iPhone and iPad: the song needs this device to be allowed to read its folder (story 41)
 }
 
 package enum SyncItemKind: Equatable { case song, playlist }
@@ -16,6 +17,7 @@ package enum CloudIconTapAction: Equatable {
     case cancelDownload
     case cancelSync
     case retryDownload
+    case restoreAccess     // a tap on a locked cloud starts the restore, as the banner does
 }
 
 /// What a tap (iPhone) or click (Mac) on a cloud icon does. There is no action that turns sync off.
@@ -26,6 +28,7 @@ package func cloudIconTapAction(state: CloudIconState, kind: SyncItemKind) -> Cl
     case .pieDownload: return .cancelDownload
     case .pieSync: return .cancelSync
     case .exclamation: return .retryDownload
+    case .locked: return .restoreAccess
     }
 }
 

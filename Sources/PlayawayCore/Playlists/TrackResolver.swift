@@ -83,7 +83,8 @@ package struct TrackResolver: TrackResolving {
 
     private static func refreshed(_ ref: TrackReference, at url: URL) -> TrackReference? {
         guard let made = TrackReference.make(for: url) else { return nil }
-        return TrackReference(bookmark: made.bookmark, lastKnownPath: made.lastKnownPath, fileName: ref.fileName, cloudPath: made.cloudPath ?? ref.cloudPath)
+        return TrackReference(bookmark: made.bookmark, lastKnownPath: made.lastKnownPath, fileName: ref.fileName, cloudPath: made.cloudPath ?? ref.cloudPath,
+                              fileSize: made.fileSize ?? ref.fileSize, duration: made.duration ?? ref.duration, folderName: made.folderName ?? ref.folderName)
     }
 }
 

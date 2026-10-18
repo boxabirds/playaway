@@ -170,7 +170,7 @@ final class PlaylistWindowController: NSWindowController, NSTableViewDataSource,
             services.cancelDownload(of: MacSongs.id(for: url))
         case .retryDownload:
             services.retryDownload(of: track, at: url, in: playlistDocument)
-        case .none:
+        case .none, .restoreAccess:     // restoreAccess belongs to the iPhone and iPad: the Mac reads iCloud Drive directly
             break
         }
     }
@@ -654,7 +654,7 @@ final class TrackCellView: NSTableCellView {
         let quiet: NSColor = emphasized ? .alternateSelectedControlTextColor : .secondaryLabelColor
         var symbol: String?, tint = quiet, opacity = Self.quietCloudOpacity
         switch cloud.icon {
-        case .crossedOut: symbol = "icloud.slash"
+        case .crossedOut, .locked: symbol = "icloud.slash"     // locked never occurs on the Mac
         case .outline: symbol = "icloud"
         case .exclamation: symbol = "exclamationmark.icloud"; tint = emphasized ? quiet : .systemRed; opacity = 1
         case .pieDownload, .pieSync: opacity = 1
@@ -676,6 +676,7 @@ final class TrackCellView: NSTableCellView {
         case .outline: return cloud.dimmed ? "In iCloud, not on this Mac" : "In iCloud"
         case .pieDownload, .pieSync: return "Downloading, click to cancel"
         case .exclamation: return DownloadState.failedAccessibilityLabel
+        case .locked: return "Needs access to this folder"
         }
     }
 
@@ -687,6 +688,7 @@ final class TrackCellView: NSTableCellView {
         case .outline: return cloud.dimmed ? ", not on this Mac" : ", in iCloud"
         case .pieDownload, .pieSync: return ", downloading from iCloud"
         case .exclamation: return ", " + DownloadState.failedAccessibilityLabel
+        case .locked: return ", needs access to this folder"
         }
     }
 

@@ -215,27 +215,88 @@ struct PlaylistsView: View {
     }
 }
 
-/// The notice above a playlist's songs while this device needs permission for their iCloud Drive folder (story 40).
-struct AccessNotice: View {
-    let folder: String
-    let allow: () -> Void
+/// The banner above a playlist's songs while some of them need this device to be allowed to read their folder (story 41).
+struct RestoreBanner: View {
+    let plan: RecoveryPlan
+    let restore: () -> Void
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("These songs are in your iCloud Drive folder “\(folder)”, which Playaway is not yet allowed to read on this \(device). Tap Allow, then choose “\(folder)” in the chooser and tap Open.")
+        let songs = plan.trackCount, folders = plan.folders.count
+        HStack(spacing: 12) {
+            Text("Playaway needs your OK to play \(songs) \(songs == 1 ? "song" : "songs") from \(folders) \(folders == 1 ? "folder" : "folders") on this \(device)")
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Allow", action: allow)
+            Spacer(minLength: 0)
+            Button("Restore", action: restore)
                 .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("access-allow")
+                .accessibilityIdentifier("restore-button")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.regularMaterial)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("access-notice")
-        .accessibilityLabel("Needs access to \(folder)")
+        .accessibilityIdentifier("restore-banner")
+        .accessibilityLabel("\(songs) songs need access")
+    }
+}
+
+/// What the person is about to do, before the system's chooser appears: which folders, how many songs, and what to tap.
+struct RestoreExplainer: View {
+    @EnvironmentObject var model: AppModel
+    private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                if let session = model.restoreSession, let plan = model.recoveryPlan(for: session) {
+                    Text("Playaway needs access to \(plan.folders.count == 1 ? "1 folder" : "\(plan.folders.count) folders") to restore \(plan.trackCount) \(plan.trackCount == 1 ? "song" : "songs") on this \(device).")
+                        .font(.headline)
+                    ForEach(plan.folders, id: \.drivePath) { folder in
+                        Label("\(folder.name): \(folder.trackCount) \(folder.trackCount == 1 ? "song" : "songs")", systemImage: "folder")
+                    }
+                    if let first = plan.folders.first {
+                        Text("On the next screen, tap Open to let Playaway use “\(first.name)” on this \(device). You only do this once for each folder.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Button("Continue") { model.continueRestore() }
+                    .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("restore-continue")
+                Button("Not Now") { model.cancelRestore() }
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("restore-not-now")
+            }
+            .padding()
+            .navigationTitle("Restore songs")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .accessibilityIdentifier("restore-explainer")
+        .presentationDetents([.medium])
+    }
+}
+
+/// The system's folder chooser, opened at a hinted folder. SwiftUI's own file importer cannot set where it opens.
+struct FolderPicker: UIViewControllerRepresentable {
+    let hint: URL?
+    let picked: (URL?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(picked: picked) }
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        if let hint { picker.directoryURL = hint }     // a hint: a wrong one only makes the chooser open where it last was
+        return picker
+    }
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let picked: (URL?) -> Void
+        init(picked: @escaping (URL?) -> Void) { self.picked = picked }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { picked(urls.first) }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { picked(nil) }
     }
 }
 
@@ -271,18 +332,37 @@ struct PlaylistView: View {
             .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
                 guard case .success(let urls) = result else { return }
                 let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
+                let before = Set(session.playlist.tracks.map(\.id))
                 session.add(urls)
+                model.considerNudge(after: session.playlist.tracks.filter { !before.contains($0.id) })
                 scoped.forEach { $0.stopAccessingSecurityScopedResource() }
             }
-            // Story 40: songs in an iCloud Drive folder this device has not been allowed to read. One tap opens the
-            // system's folder chooser; the grant covers the folder and everything in it from then on.
+            // Story 41: songs this device may not read yet. One banner with the count; the explanation, then the system's chooser.
             .safeAreaInset(edge: .top, spacing: 0) {
-                if let folder = model.accessNeeded(for: session) {
-                    AccessNotice(folder: folder) { model.allowAccess(for: session) }
+                VStack(spacing: 0) {
+                    if let plan = model.recoveryPlan(for: session) {
+                        RestoreBanner(plan: plan) { model.beginRestore(for: session) }
+                    }
+                    #if DEBUG
+                    // Test aid: adds a song from a drive folder the way the file chooser would (the chooser cannot be driven by a test).
+                    if ProcessInfo.processInfo.arguments.contains("-PlayawayFakeDrive") {
+                        Button("Add from Drive") { model.addFakeDriveSong(to: session) }
+                            .font(.caption2).accessibilityIdentifier("add-fake-drive-song")
+                    }
+                    #endif
                 }
             }
-            .fileImporter(isPresented: $model.folderPickerShown, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
-                model.folderPicked(try? result.get().first)
+            .sheet(isPresented: Binding(get: { model.restoreSession === session }, set: { if !$0 { model.cancelRestore() } })) {
+                switch model.restorePhase {
+                case .explain: RestoreExplainer().environmentObject(model)
+                case .pick: FolderPicker(hint: model.restoreHint) { model.folderPicked($0) }.ignoresSafeArea()
+                }
+            }
+            .fileImporter(isPresented: $model.locateShown, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+                model.locate(try? result.get().first)
+            }
+            .sheet(isPresented: $model.nudgePickerShown) {
+                FolderPicker(hint: nil) { model.nudgeFolderPicked($0) }.ignoresSafeArea()
             }
             .alert("Playlist", isPresented: Binding(get: { session.notice != nil }, set: { if !$0 { session.dismissNotice() } })) {
                 Button("OK", role: .cancel) {}

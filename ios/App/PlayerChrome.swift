@@ -80,6 +80,10 @@ struct ModelAlerts: ViewModifier {
                 }
             }
         } message: { Text(FilesPrompt.message) }
+        .alert("Let Playaway use this whole folder?", isPresented: Binding(get: { model.nudgeFolderName != nil }, set: { if !$0 { model.nudgeAnswered(accepted: false) } })) {
+            Button("Choose Folder") { model.nudgeAnswered(accepted: true) }
+            Button("Not Now", role: .cancel) { model.nudgeAnswered(accepted: false) }
+        } message: { Text("Playaway can then play every song in “\(model.nudgeFolderName ?? "")” on this device without asking again.") }
         .alert("Playlist", isPresented: Binding(get: { model.failureMessage != nil }, set: { if !$0 { model.dismissFailureMessage() } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(model.failureMessage ?? "") }

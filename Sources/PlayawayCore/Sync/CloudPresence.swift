@@ -35,6 +35,13 @@ package struct SongRowCloudDisplay: Equatable {
         self.icon = icon; self.dimmed = dimmed; self.fraction = fraction
     }
 
+    /// A song that needs this device to be allowed to read its folder shows the locked cloud whatever else is known:
+    /// there is nothing to download or play until the person restores access (story 41).
+    package init(needsAccess: Bool, presence: SongPresence, tracked: DownloadState?) {
+        if needsAccess { self.init(icon: .locked, dimmed: false, fraction: nil) }
+        else { self.init(presence: presence, tracked: tracked) }
+    }
+
     /// `tracked` is what the download coordinator knows about this song, if anything. An active download or a
     /// failure wins over what the file system says.
     package init(presence: SongPresence, tracked: DownloadState?) {

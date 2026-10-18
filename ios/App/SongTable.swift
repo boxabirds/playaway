@@ -81,10 +81,13 @@ struct SongTable: UIViewRepresentable {
                     Spacer()
                     if playing { Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint) }
                     if let display {
-                        CloudIconButton(display: display) { [weak self] in
+                        CloudIconButton(display: display, tapped: { [weak self] in
                             guard let self, let model = self.model else { return }
                             model.cloudIconTapped(track, session: self.session)
-                        }
+                        }, locate: display.icon == .locked ? { [weak self] in
+                            guard let self, let model = self.model else { return }
+                            model.beginLocate(track, in: self.session)
+                        } : nil)
                     }
                 }
             }
@@ -170,6 +173,7 @@ struct SongTable: UIViewRepresentable {
 struct CloudIconButton: View {
     let display: SongRowCloudDisplay
     let tapped: () -> Void
+    var locate: (() -> Void)? = nil
 
     var body: some View {
         Button(action: tapped) {
@@ -186,6 +190,7 @@ struct CloudIconButton: View {
         .accessibilityLabel(label)
         .accessibilityIdentifier("cloud-icon")
         .accessibilityValue(valueText)
+        .contextMenu { if let locate { Button("Locate…", systemImage: "magnifyingglass", action: locate) } }
     }
 
     @ViewBuilder private var icon: some View {
@@ -193,6 +198,9 @@ struct CloudIconButton: View {
         case .crossedOut: Image(systemName: "icloud.slash").foregroundStyle(.secondary)
         case .outline: Image(systemName: "icloud").foregroundStyle(.secondary)
         case .exclamation: Image(systemName: "exclamationmark.icloud").foregroundStyle(.red)
+        case .locked:
+            Image(systemName: "icloud").foregroundStyle(.secondary)
+                .overlay { Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary).offset(y: 2) }
         case .pieDownload, .pieSync:
             if let fraction = display.fraction, fraction > 0 {
                 ZStack {
@@ -212,10 +220,12 @@ struct CloudIconButton: View {
         case .outline: return display.dimmed ? "In iCloud, not on this iPhone" : "In iCloud"
         case .pieDownload, .pieSync: return "Downloading, tap to cancel"
         case .exclamation: return DownloadState.failedAccessibilityLabel
+        case .locked: return "Needs access to this folder. Double tap to restore."
         }
     }
 
     private var valueText: String {
+        if display.icon == .locked { return "locked" }
         guard let fraction = display.fraction, fraction > 0 else { return "" }
         return "\(Int(fraction * 100)) percent"
     }
