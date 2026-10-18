@@ -59,20 +59,28 @@ package final class DownloadOnPlayCoordinator {
         begin(song)
     }
 
-    package func handle(_ event: DownloadEvent) {
+    /// Applies what the downloader reported. True when something a screen shows changed; an event that changes nothing
+    /// (a progress tick with no new percentage, a report for a song no longer being fetched) is False, so a list is not
+    /// redrawn twice a second for a download whose pie is not moving.
+    @discardableResult
+    package func handle(_ event: DownloadEvent) -> Bool {
+        let song: SongID
+        switch event { case .progress(let id, _), .finished(let id), .failed(let id): song = id }
+        let before = state(of: song)
         switch event {
         case .progress(let song, let reported):
-            guard case .downloading(let previous) = state(of: song) else { return }
+            guard case .downloading(let previous) = before else { return false }
             let fraction = downloadFraction(reported: reported, isDownloading: true, previous: previous)
             states[song] = .downloading(fraction ?? previous)
         case .finished(let song):
-            guard state(of: song).isDownloading else { return }
+            guard before.isDownloading else { return false }
             states[song] = .onThisDevice
             if current == song { player.startPlayback(of: song) }   // another current song: keep the file, no playback
         case .failed(let song):
-            guard state(of: song).isDownloading else { return }
+            guard before.isDownloading else { return false }
             states[song] = .failed
         }
+        return state(of: song) != before
     }
 
     private func begin(_ song: SongID) {

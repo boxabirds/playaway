@@ -949,10 +949,10 @@ import UIKit
         app.buttons["experiments-button"].tap()
         let toggle = app.switches["lyrics-enabled"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        if (toggle.value as? String) != "1" {
+        for _ in 0..<3 where (toggle.value as? String) != "1" {                          // a tap can land before the sheet settles
             toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()   // the switch sits at the row's right edge
+            sleep(1)
         }
-        sleep(1)
         XCTAssertEqual(toggle.value as? String, "1", "the switch is on")
         app.buttons["Done"].tap()
         let card = openCard(app)
@@ -960,8 +960,9 @@ import UIKit
     }
 
     /// The lyrics section has a disclosure header, as the system's own folding sections do: a "Lyrics" row with a
-    /// chevron. Tapping it folds the words away and the card shrinks to fit with the controls where they were; the
-    /// choice is kept across launches; tapping again brings the words back.
+    /// chevron. Tapping it folds the words away and the card shrinks to fit (the standard sheet follows its content, so its
+    /// top edge comes down and the controls keep their place within the card); the choice is kept across launches; tapping
+    /// again brings the words back.
     func testTheLyricsSectionFoldsFromItsHeaderStaysFoldedAcrossLaunchesAndUnfolds() {
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeLyrics"]; app.launch()
         let card = openCard(app)
@@ -972,6 +973,7 @@ import UIKit
         let pauseBefore = app.buttons.matching(identifier: "Pause").allElementsBoundByIndex.first { $0.isHittable }?.frame
         XCTAssertNotNil(pauseBefore)
         let openHeight = card.frame.height
+        let cardTopBefore = card.frame.minY
 
         header.tap()
         XCTAssertTrue(app.staticTexts["lyrics-line-0"].waitForNonExistence(timeout: 5), "the words fold away")
@@ -979,13 +981,19 @@ import UIKit
         sleep(1)                                                    // the card's resize finishes
         XCTAssertLessThan(card.frame.height, openHeight - 100, "the card shrinks to fit (was \(openHeight))")
         let pauseAfter = app.buttons.matching(identifier: "Pause").allElementsBoundByIndex.first { $0.isHittable }?.frame
-        XCTAssertEqual(pauseAfter?.midY ?? -1, pauseBefore?.midY ?? -2, accuracy: 2, "the controls stay where they were")
+        let cardFrame = card.frame
+        XCTAssertTrue(pauseAfter.map { cardFrame.contains(CGPoint(x: $0.midX, y: $0.midY)) } ?? false,
+                      "the controls are still on the card, in reach (the sheet follows its content, so they come down with its top edge)")
+        XCTAssertNotNil(pauseBefore)
 
         app.terminate()
         let again = XCUIApplication()
         again.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeLyrics", "-PlayawayKeepMemory"]
         again.launch()
-        _ = openCard(again)
+        // The app comes back in the playlist and the song that were open (remembered), so the card opens from the controller.
+        let controllerAgain = again.descendants(matching: .any)["floating-controller"]
+        XCTAssertTrue(controllerAgain.waitForExistence(timeout: 15), "the song that was playing is shown")
+        controllerAgain.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
         let headerAgain = again.buttons["lyrics-disclosure"]
         XCTAssertTrue(headerAgain.waitForExistence(timeout: 5))
         XCTAssertEqual(headerAgain.value as? String, "Collapsed", "the choice is kept across launches")

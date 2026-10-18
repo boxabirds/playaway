@@ -195,13 +195,13 @@ final class AppModel: ObservableObject {
     @Published var restorePhase: RestorePhase = .explain
     /// The playlist whose folder the system chooser is open for. The chooser closes its sheet when Open is tapped and only
     /// then reports the folder, so the answer must not depend on the sheet still being up (the bug: Open did nothing).
-    private var pickingSession: PlaylistSession?
+    var pickingSession: PlaylistSession?
     /// A restore that is searching a folder: shown as a progress card with a Cancel, so a big iCloud folder never looks frozen.
     struct RestoreProgress: Equatable { var folder: String; var looked: Int }
     @Published var restoreProgress: RestoreProgress?
-    private var restoreCancellation: CancelFlag?
+    var restoreCancellation: CancelFlag?
     /// Read from the search, which runs off the main thread; set from the Cancel button.
-    private final class CancelFlag: @unchecked Sendable {
+    final class CancelFlag: @unchecked Sendable {
         private let lock = NSLock()
         private var cancelled = false
         func cancel() { lock.lock(); cancelled = true; lock.unlock() }
@@ -209,13 +209,13 @@ final class AppModel: ObservableObject {
     }
     /// Choosing a file for one song (Locate), and the offer of a whole folder after a song was added.
     @Published var locateShown = false
-    private var locateTarget: (session: PlaylistSession, track: Track)?
+    var locateTarget: (session: PlaylistSession, track: Track)?
     @Published var nudgeFolderName: String?
     @Published var nudgePickerShown = false
-    private static let declinedNudgesKey = "declinedFolderNudges"
+    static let declinedNudgesKey = "declinedFolderNudges"
     /// What this playlist needs, worked out once per change of what is on disk and kept until something changes.
     struct AccessSnapshot { var plan: RecoveryPlan?; var unfound: [UnfoundSong]; var locked: Set<UUID> }
-    private var accessCache: [URL: (revision: Int, snapshot: AccessSnapshot)] = [:]
+    var accessCache: [URL: (revision: Int, snapshot: AccessSnapshot)] = [:]
     let settings = PlayModeSettings()
     let engine = AVPlaybackEngine()
     let registry = ActiveSessionRegistry()
@@ -241,11 +241,13 @@ final class AppModel: ObservableObject {
         return CloudSongs()
     }()
     private(set) lazy var downloads = DownloadOnPlayCoordinator(downloader: cloud, player: self)
-    private var pendingPlays: [SongID: (session: PlaylistSession, track: Track)] = [:]
+    var pendingPlays: [SongID: (session: PlaylistSession, track: Track)] = [:]
+    /// Where each song of the open playlists was last found on this device (see `songURL(for:in:)`).
+    let songCache = ResolutionCache()
     /// Songs being fetched from iCloud only to be restored after a relaunch: when one arrives it is loaded paused at its
     /// remembered place, not played.
-    private var pendingRestores: [SongID: Double] = [:]
-    @Published private(set) var cloudRevision = 0
+    var pendingRestores: [SongID: Double] = [:]
+    @Published var cloudRevision = 0
     private(set) lazy var openCoordinator = OpenCoordinator(classifier: FormatClassifier(), engine: engine,
                                                             notices: openAdapter, playlists: openAdapter)
     private let launchTimer: LaunchTimer?
@@ -366,8 +368,7 @@ final class AppModel: ObservableObject {
         if !fakeCloud { resolveICloud() }
         cloud.onEvent = { [weak self] event in
             guard let self else { return }
-            self.downloads.handle(event)
-            self.cloudRevision += 1
+            if self.downloads.handle(event) { self.cloudRevision += 1 }      // not for a tick that changed nothing
         }
         refresh()
         transport.startHandler = { [weak self] in
@@ -582,7 +583,7 @@ final class AppModel: ObservableObject {
             let outcome = await Task.detached { await flow.run(playlist: playlist, playlistName: name, tracks: tracks, source: source) }.value
             guard let self, outcome.playlist != session.playlist else { return }
             session.apply(outcome.playlist)
-            self.songURLs.removeAll()
+            self.songCache.removeAll()
             self.cloudRevision += 1
             self.pendingPlays.removeAll()
         }
@@ -590,7 +591,7 @@ final class AppModel: ObservableObject {
 
     /// Another device changed an open playlist's file (story 39): everything drawn from it is read again.
     func playlistChangedUnderUs(_ session: PlaylistSession) {
-        songURLs.removeAll()
+        songCache.removeAll()
         cloudRevision += 1
         objectWillChange.send()
         refresh()
@@ -687,7 +688,7 @@ final class AppModel: ObservableObject {
         try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
         UserDefaults.standard.set(documents.path, forKey: Self.cloudFolderKey)
         roots.playawayDocuments = documents
-        songURLs = [:]                                 // a song another device stored may be findable now
+        songCache.removeAll()                                 // a song another device stored may be findable now
         guard cloudLibrary?.folder.path != documents.path else { return }
         cloudLibrary = PlaylistLibrary(folder: documents, layout: .folderPerPlaylist)
         cloudRevision += 1     // where the Playaway folder is decides which songs count as in iCloud
@@ -703,274 +704,6 @@ final class AppModel: ObservableObject {
         launchStore.add(report)
         Logger(subsystem: "software.away.play", category: "launch")
             .info("launch \(report.kind.rawValue) \(report.seconds, format: .fixed(precision: 3)) s")
-    }
-
-    // MARK: Restoring access (story 41)
-
-    /// What this playlist needs on this device: the songs that cannot be found and whose folder this device may not read,
-    /// the plan to ask for those folders, and which songs show the locked cloud. A folder in which some song of the
-    /// playlist IS found is never asked for. Kept until something that could change the answer changes.
-    func accessSnapshot(for session: PlaylistSession) -> AccessSnapshot {
-        if let cached = accessCache[session.url], cached.revision == cloudRevision { return cached.snapshot }
-        let folder = session.folder
-        var unfound: [UnfoundSong] = [], found: [CloudPath] = []
-        for track in session.playlist.tracks {
-            guard let location = track.reference.portableLocation, location.isInDrive else { continue }
-            if resolver.accessNeeded(for: track.reference, besidePlaylistAt: folder) != nil {
-                unfound.append(UnfoundSong(id: track.id, location: location, fileName: track.reference.fileName, fileSize: track.reference.fileSize))
-            } else if case .resolved = resolver.resolve(track.reference, besidePlaylistAt: folder).0, !roots.reaches(location) {
-                found.append(location)      // found by its own means, not through a permission given here: the folder is readable
-            }
-        }
-        let plan = RecoveryPlanner.plan(unfound: unfound.map(\.location), found: found)
-        let planned = Set(plan?.folders.map(\.name) ?? [])
-        let needing = unfound.filter { planned.contains($0.location.topFolder ?? "") }
-        let snapshot = AccessSnapshot(plan: plan, unfound: needing, locked: Set(needing.map(\.id)))
-        accessCache[session.url] = (cloudRevision, snapshot)
-        return snapshot
-    }
-
-    /// Why a song cannot be found on this device, nil when it can (story 42, with the locked cloud of story 41).
-    func unfoundKind(for track: Track, in session: PlaylistSession) -> UnfoundKind? {
-        guard songURL(for: track, in: session) == nil else { return nil }
-        return classifyUnfound(track.reference, accessNeeded: needsAccess(track, in: session) ? "locked" : nil, device: .current)
-    }
-
-    func recoveryPlan(for session: PlaylistSession) -> RecoveryPlan? { accessSnapshot(for: session).plan }
-    func needsAccess(_ track: Track, in session: PlaylistSession) -> Bool { accessSnapshot(for: session).locked.contains(track.id) }
-
-    /// Shows the explanation (the banner's Restore, and a tap on a locked cloud).
-    func beginRestore(for session: PlaylistSession) {
-        guard recoveryPlan(for: session) != nil else { return }
-        restoreSession = session
-        restorePhase = .explain
-        pickingSession = nil
-    }
-
-    func cancelRestore() { restoreSession = nil; pickingSession = nil }
-
-    /// The restore sheet went away. While the chooser is up that is how the system answers Open, so the pick stays
-    /// pending until the chooser reports; at any other moment it is the person dismissing the explanation.
-    func restoreSheetDismissed() {
-        if restorePhase == .pick, let session = restoreSession { pickingSession = session; restoreSession = nil }
-        else { cancelRestore() }
-    }
-
-    /// Where the chooser opens: the folder being asked for, as an iPhone or iPad lays out iCloud Drive.
-    var restoreHint: URL? {
-        guard let session = restoreSession, let folder = recoveryPlan(for: session)?.folders.first else { return nil }
-        return RecoveryPlanner.hint(for: folder)
-    }
-
-    /// Continue on the explanation: the system's folder chooser (in the fake drive, the answer a launch argument names).
-    func continueRestore() {
-        guard let session = restoreSession, let folder = recoveryPlan(for: session)?.folders.first else { restoreSession = nil; return }
-        #if DEBUG
-        if let fakeDriveRoot, !Self.fakesTheChooserSheet {
-            folderPicked(Self.fakePick(in: fakeDriveRoot, default: folder.drivePath))
-            return
-        }
-        #endif
-        pickingSession = session
-        restorePhase = .pick
-    }
-
-
-    /// The chooser's answer; nil when the person cancelled. The search for the songs runs off the main thread, with a
-    /// progress card and a Cancel, then says how many songs came back, or why nothing did.
-    func folderPicked(_ url: URL?) {
-        guard let session = pickingSession ?? restoreSession else { return }
-        pickingSession = nil
-        restoreSession = nil
-        guard let url else { return }                       // the person cancelled the chooser: nothing to do
-        let snapshot = accessSnapshot(for: session)
-        _ = url.startAccessingSecurityScopedResource()
-        let flag = CancelFlag()
-        restoreCancellation = flag
-        restoreProgress = RestoreProgress(folder: url.lastPathComponent, looked: 0)
-        let roots = self.roots, unfound = snapshot.unfound
-        #if DEBUG
-        let listing: FolderListing = Self.restoreDelay.map { SlowFolderListing(delay: $0) } ?? SystemFolderListing()
-        #else
-        let listing: FolderListing = SystemFolderListing()
-        #endif
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let result = RecoveryPlanner.apply(picked: url, unfound: unfound, roots: roots, listing: listing,
-                                               progress: { looked in Task { @MainActor in self?.restoreProgress?.looked = looked } },
-                                               isCancelled: { flag.isCancelled })
-            await MainActor.run { self?.finishRestore(result, cancelled: flag.isCancelled) }
-        }
-    }
-
-    func cancelRestoreSearch() { restoreCancellation?.cancel() }
-
-    private func finishRestore(_ result: RecoveryResult, cancelled: Bool) {
-        restoreProgress = nil
-        restoreCancellation = nil
-        songURLs.removeAll()
-        pendingPlays.removeAll()
-        cloudRevision += 1
-        switch result.reason {
-        case nil where cancelled:
-            enqueueMessage("Restored \(result.restored) of \(result.needed) songs. You cancelled the search, so songs that have moved were not looked for.")
-        case nil: enqueueMessage("Restored \(result.restored) of \(result.needed) songs.")
-        case .cancelled?: enqueueMessage("Search cancelled. Nothing was restored.")
-        case .notInICloudDrive?: enqueueMessage("That folder is not in your iCloud Drive. Choose the folder that holds your songs.")
-        case .holdsNoneOfTheSongs?: enqueueMessage("None of the songs were in that folder. Choose the folder that holds them, or a folder above it.")
-        }
-    }
-
-
-    /// Locate (long-press on a locked cloud): one song, one file, kept on this device only.
-    func beginLocate(_ track: Track, in session: PlaylistSession) {
-        locateTarget = (session, track)
-        #if DEBUG
-        if let fakeDriveRoot, let location = track.reference.portableLocation {
-            locate(fakeDriveRoot.appendingPathComponent(location.relativePath)); return
-        }
-        #endif
-        locateShown = true
-    }
-
-    func locate(_ file: URL?) {
-        locateShown = false
-        guard let file, let target = locateTarget, let location = target.track.reference.portableLocation else { return }
-        locateTarget = nil
-        _ = file.startAccessingSecurityScopedResource()
-        guard roots.locate(savedPath: location.relativePath, file: file) else {
-            enqueueMessage("That file could not be used for this song."); return
-        }
-        songURLs.removeAll()
-        pendingPlays.removeAll()
-        cloudRevision += 1
-    }
-
-    // MARK: Offering the whole folder when a song is added (story 41)
-
-    private var declinedNudges: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: Self.declinedNudgesKey) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: Self.declinedNudgesKey) }
-    }
-
-    /// The folder to offer after songs were added from outside; nil when something covers it, it was already declined,
-    /// or the song is in the Playaway folder or at the top of iCloud Drive.
-    func nudgeFolder(for added: [Track]) -> String? {
-        for track in added {
-            guard let location = track.reference.portableLocation, location.isInDrive, let top = location.topFolder else { continue }
-            if !roots.covers(location), !declinedNudges.contains(top) { return top }
-        }
-        return nil
-    }
-
-    func considerNudge(after added: [Track]) {
-        if let folder = nudgeFolder(for: added) { nudgeFolderName = folder }
-    }
-
-    func nudgeAnswered(accepted: Bool) {
-        guard let folder = nudgeFolderName else { return }
-        nudgeFolderName = nil
-        guard accepted else { declinedNudges.insert(folder); return }
-        #if DEBUG
-        if let fakeDriveRoot {
-            if let grant = roots.grant(pickedFolder: fakeDriveRoot.appendingPathComponent(folder, isDirectory: true)) {
-                enqueueMessage("Playaway can now use “\(grant.drivePath)” on this device.")
-            }
-            cloudRevision += 1
-            return
-        }
-        #endif
-        nudgePickerShown = true
-    }
-
-    func nudgeFolderPicked(_ url: URL?) {
-        nudgePickerShown = false
-        guard let url else { return }
-        _ = url.startAccessingSecurityScopedResource()
-        if let grant = roots.grant(pickedFolder: url) { enqueueMessage("Playaway can now use “\(grant.drivePath)” on this device.") }
-        else { enqueueMessage("That folder is not in your iCloud Drive.") }
-        songURLs.removeAll()
-        cloudRevision += 1
-    }
-
-    // MARK: Download on play
-
-    /// A song was chosen. If its file is in iCloud and not on this device it is downloaded first and plays when it
-    /// has arrived; otherwise it plays at once.
-    func requestPlay(_ track: Track, in session: PlaylistSession) {
-        if needsAccess(track, in: session) { beginRestore(for: session); return }
-        guard case .resolved(let url) = resolver.resolve(track.reference, besidePlaylistAt: session.folder).0 else {
-            playExplainingFailure(track, in: session); return
-        }
-        let song = cloud.id(for: url)
-        pendingPlays[song] = (session, track)
-        downloads.request(song, source: .list, isOnDevice: cloud.presence(of: url).isOnDevice)
-        cloudRevision += 1
-    }
-
-    func startPlayback(of song: SongID) {
-        guard let pending = pendingPlays[song] else { return }
-        if let place = pendingRestores.removeValue(forKey: song) {
-            if pending.session.player.load(track: pending.track, atSeconds: place) { becameActive(pending.session) }
-            cloudRevision += 1
-            return
-        }
-        playExplainingFailure(pending.track, in: pending.session)
-        cloudRevision += 1
-    }
-
-    /// Plays a song, and when it does not start says why, rather than leaving a tap that does nothing (an old playlist
-    /// whose songs have moved or been deleted looked exactly like that: no sound, no controller, no word).
-    private func playExplainingFailure(_ track: Track, in session: PlaylistSession) {
-        becameActive(session)
-        session.player.play(track: track)
-        guard session.player.current?.id != track.id || engine.state == .idle else { return }
-        let name = track.reference.fileName
-        switch resolver.resolve(track.reference, besidePlaylistAt: session.folder).0 {
-        case .resolved:
-            failureMessage = "“\(name)” could not be played. The file may be damaged or in a format Playaway can't play."
-        default:
-            if unfoundKind(for: track, in: session) == .elsewhere { failureMessage = addedElsewhereMessage; return }
-            failureMessage = "“\(name)” can't be found. Its file may have been moved, renamed or deleted."
-        }
-    }
-
-    /// What a song row shows about iCloud, nil when no iCloud account is available.
-    /// A song's file address, found once and remembered: resolving a bookmark touches the file system, and doing it for
-    /// every row on every update made scrolling jerky.
-    private var songURLs: [UUID: URL] = [:]
-    private func songURL(for track: Track, in session: PlaylistSession) -> URL? {
-        if let cached = songURLs[track.id] { return cached }
-        guard case .resolved(let url) = resolver.resolve(track.reference, besidePlaylistAt: session.folder).0 else { return nil }
-        songURLs[track.id] = url
-        return url
-    }
-
-    func cloudDisplay(for track: Track, in session: PlaylistSession) -> SongRowCloudDisplay? {
-        guard let url = songURL(for: track, in: session) else {
-            return unfoundKind(for: track, in: session).flatMap(SongRowCloudDisplay.unfound)    // locked, question mark, or none
-        }
-        let song = cloud.id(for: url)
-        let tracked = downloads.state(of: song)
-        return SongRowCloudDisplay(presence: cloud.presence(of: url), tracked: tracked == .onThisDevice ? nil : tracked)
-    }
-
-    func cloudIconTapped(_ track: Track, session: PlaylistSession) {
-        if needsAccess(track, in: session) { beginRestore(for: session); return }
-        if unfoundKind(for: track, in: session) == .elsewhere { enqueueMessage(addedElsewhereMessage); return }
-        guard let display = cloudDisplay(for: track, in: session), let url = songURL(for: track, in: session) else { return }
-        let song = cloud.id(for: url)
-        pendingPlays[song] = (session, track)
-        switch cloudIconTapAction(state: display.icon, kind: .song) {
-        case .cancelDownload: downloads.cancel(song)
-        case .retryDownload: downloads.retry(song)
-        case .openSyncDialog:
-            // A song outside the Playaway folder: ask about it as for any song entering an iCloud playlist, or offer to move the
-            // playlist itself if it is still only on this phone.
-            if let cloudLibrary, library(for: session.url) === cloudLibrary { songsEntered([track], in: session, source: .iPhoneAdd) }
-            else if let entry = entries.first(where: { $0.url == session.url }) { beginSync(entry) }
-        case .none, .cancelSync, .restoreAccess, .explainElsewhere: break
-        }
-        cloudRevision += 1
     }
 
     // MARK: Move a playlist to iCloud
@@ -1018,7 +751,7 @@ final class AppModel: ObservableObject {
 
     /// Every place that knows a playlist by its file follows it to its new file.
     private func rekey(from old: URL, to new: URL) {
-        songURLs.removeAll()
+        songCache.removeAll()
         if let session = sessions.removeValue(forKey: old) { session.rebase(to: new); sessions[new] = session }
         path = path.map { $0 == old ? new : $0 }
         if selectedPlaylist == old { selectedPlaylist = new }

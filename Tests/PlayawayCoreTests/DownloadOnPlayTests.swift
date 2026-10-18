@@ -19,6 +19,33 @@ final class DownloadOnPlayTests: XCTestCase {
         sut = DownloadOnPlayCoordinator(downloader: seams, player: seams)
     }
 
+    // Audit I4: the screen is told to redraw only when an event changed something it shows.
+
+    func testAProgressTickWithNoNewPercentageChangesNothingSoNothingIsRedrawn() {
+        sut.request(a, source: .list, isOnDevice: false)
+        XCTAssertFalse(sut.handle(.progress(a, reportedPercent: nil)), "the pie has not moved")
+        XCTAssertFalse(sut.handle(.progress(a, reportedPercent: nil)))
+        XCTAssertEqual(sut.state(of: a), .downloading(0))
+    }
+
+    func testAProgressTickWithANewPercentageIsAChange() {
+        sut.request(a, source: .list, isOnDevice: false)
+        XCTAssertTrue(sut.handle(.progress(a, reportedPercent: 50)))
+        XCTAssertEqual(sut.state(of: a), .downloading(0.5), "50 of 100")
+        XCTAssertFalse(sut.handle(.progress(a, reportedPercent: 50)), "the same percentage again is not")
+    }
+
+    func testFinishedAndFailedAreChangesAndALateReportForASongNotBeingFetchedIsNot() {
+        sut.request(a, source: .list, isOnDevice: false)
+        sut.request(b, source: .list, isOnDevice: false)
+        XCTAssertTrue(sut.handle(.finished(a)))
+        XCTAssertTrue(sut.handle(.failed(b)))
+        XCTAssertFalse(sut.handle(.progress(a, reportedPercent: 90)), "a is on the device now")
+        XCTAssertFalse(sut.handle(.finished(a)), "a second finish changes nothing")
+        XCTAssertFalse(sut.handle(.failed(b)), "nor a second failure")
+        XCTAssertFalse(sut.handle(.finished(SongID("never requested"))))
+    }
+
     func testSongOnDevicePlaysAtOnce() {
         sut.request(a, source: .list, isOnDevice: true)
         XCTAssertEqual(seams.played, [a]); XCTAssertTrue(seams.started.isEmpty)
