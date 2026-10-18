@@ -3,7 +3,7 @@ import AppKit
 @testable import LocalPlayer
 @testable import PlayawayCore
 
-let sdefURL = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/LocalPlayer.sdef")
+let sdefURL = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/Playaway.sdef")
 let infoPlistURL = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/Info.plist")
 
 /// A snapshot of everything a person could observe, to compare the UI route with the script route.
@@ -334,7 +334,7 @@ final class SdefAndParityTests: XCTestCase {
     func testInfoPlistTurnsScriptingOnAndNamesTheSdef() throws {                                 // TC-60
         let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: infoPlistURL), format: nil) as! [String: Any]
         XCTAssertEqual(plist["NSAppleScriptEnabled"] as? Bool, true)
-        XCTAssertEqual(plist["OSAScriptingDefinition"] as? String, "LocalPlayer.sdef")
+        XCTAssertEqual(plist["OSAScriptingDefinition"] as? String, "Playaway.sdef")
         XCTAssertTrue(FileManager.default.fileExists(atPath: sdefURL.path))
     }
 

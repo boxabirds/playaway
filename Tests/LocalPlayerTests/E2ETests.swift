@@ -7,12 +7,12 @@ import XCTest
 /// Audio is silenced (volume 0, muted) before anything plays. Nothing here reaches the person's own data: the app is
 /// launched against its own bundle id's defaults, and every playlist and audio copy lives in a temp folder.
 final class E2ETests: XCTestCase {
-    static let bundleID = "com.localplayer.app.e2e"
+    static let bundleID = "software.away.play.mac.e2e"
     /// The e2e bundle has its own name, so it never shares a process, defaults or saved windows with a copy in use.
-    static let processName = "LocalPlayerE2E"
+    static let processName = "PlayawayE2E"
     static let scriptTimeout: TimeInterval = 25
     static let launchTimeout: TimeInterval = 20
-    var appURL: URL { Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".build/e2e-app/LocalPlayerE2E.app") }
+    var appURL: URL { Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".build/e2e-app/PlayawayE2E.app") }
     let dir = TempDir("e2e")
 
     override func setUpWithError() throws {
@@ -332,8 +332,8 @@ final class E2ETests: XCTestCase {
         let edit = ax("get name of every menu item of menu 1 of menu bar item \"Edit\" of menu bar 1").out
         for required in ["Undo", "Redo", "Select All", "Remove from Playlist"] { XCTAssertTrue(edit.contains(required), "Edit has \(required): \(edit)") }
         let app = ax("get name of every menu item of menu 1 of menu bar item \"\(Self.processName)\" of menu bar 1").out
-        XCTAssertTrue(app.contains("About LocalPlayer") && app.contains("Quit LocalPlayer") && app.contains("Check for Updates…"), app)
-        let quit = ax("get {value of attribute \"AXMenuItemCmdChar\", value of attribute \"AXMenuItemCmdModifiers\"} of menu item \"Quit LocalPlayer\" of menu 1 of menu bar item \"\(Self.processName)\" of menu bar 1").out
+        XCTAssertTrue(app.contains("About Playaway") && app.contains("Quit Playaway") && app.contains("Check for Updates…"), app)
+        let quit = ax("get {value of attribute \"AXMenuItemCmdChar\", value of attribute \"AXMenuItemCmdModifiers\"} of menu item \"Quit Playaway\" of menu 1 of menu bar item \"\(Self.processName)\" of menu bar 1").out
         XCTAssertTrue(quit.hasPrefix("Q"), "Command-Q: \(quit)")
         XCTAssertEqual(ax("get name of every menu item of menu 1 of menu bar item \"Help\" of menu bar 1").status, 0)
     }

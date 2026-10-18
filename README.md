@@ -6,8 +6,9 @@ A fast, simple, native player for your own **mp3, wav, m4a and flac** files, on 
 import, no account: your files stay where they are. Playlists are ordinary documents you can see in Files or Finder,
 and they can live in iCloud Drive so the same playlist plays on every device.
 
-Formerly **LocalPlayer**. The Mac target, its bundle id (`com.localplayer.app`) and its AppleScript name are still
-`LocalPlayer` in code; the product, the iPhone app and the repository are Playaway.
+Formerly **LocalPlayer**. The Mac app is Playaway too (bundle id `software.away.play.mac`, scripted as
+`tell application "Playaway"`); only the Swift target `LocalPlayer` and the playlist file type `com.localplayer.playlist`
+keep the old word, and nobody sees those.
 
 **Status (2026-10-16):** the iPhone app is on TestFlight (build 20). The Mac app builds and runs from source with a
 large automated test suite; no signed or notarized Mac build has been published.
@@ -46,7 +47,7 @@ PLAYAWAY_LYRICS_ENGINES=1 swift test --filter PlayawayLyricsTests   # the real s
 swift run -c release lyrics-eval <folder>   # measures the lyrics engines on songs with <name>.txt lyrics (Mac)
 scripts/ios-ui-tests.sh [-only-testing:...] # the iPhone UI suite in the simulator, silent
 scripts/release-gate.sh           # swift test, then the whole iPhone UI suite; run before any upload
-scripts/bundle-dev.sh [release]   # .build/dev-app/LocalPlayer.app (ad-hoc signed, development only)
+scripts/bundle-dev.sh [release]   # .build/dev-app/Playaway.app (ad-hoc signed, development only)
 scripts/build-app.sh              # Mac release pipeline: universal, Developer ID, notarize, DMG (never run for real)
 scripts/launch-bench.sh           # repeatable first-window launch timing (Mac)
 scripts/check-hig.sh              # the HIG review gate
@@ -65,13 +66,13 @@ TestFlight upload use `xcodebuild archive` and `-exportArchive` with `ios/build/
 | `Sources/LocalPlayer` | the Mac app (AppKit): document windows, transport and mode controls, scripting, Sparkle |
 | `ios/` | the iPhone app (SwiftUI with a UIKit song table), its UI tests and `project.yml` for xcodegen |
 | `Tests/` | `PlayawayCoreTests`, `PlayawayLyricsTests`, `LocalPlayerTests` |
-| `Resources` | Mac `Info.plist`, `LocalPlayer.sdef`, `ui-manifest.json`, entitlements |
+| `Resources` | Mac `Info.plist`, `Playaway.sdef`, `ui-manifest.json`, entitlements |
 | `scripts/` | build, test, gate and release scripts |
 
 ## AppleScript (Mac)
 
 ```applescript
-tell application "LocalPlayer"
+tell application "Playaway"
     open audio file "/path/song.mp3"
     set the volume to 50          -- NOT "set volume to 50": AppleScript's StandardAdditions claims that form
     set muted to false

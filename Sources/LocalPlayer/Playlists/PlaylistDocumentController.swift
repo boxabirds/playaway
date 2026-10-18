@@ -24,7 +24,7 @@ final class PlaylistDocumentController: NSDocumentController {
     }
 
     override func displayName(forType typeName: String) -> String? {
-        typeName == playlistTypeIdentifier ? "LocalPlayer Playlist" : nil
+        typeName == playlistTypeIdentifier ? "Playaway Playlist" : nil
     }
 
     private static let coreEventClass: AEEventClass = 0x6165_7674      // 'aevt'

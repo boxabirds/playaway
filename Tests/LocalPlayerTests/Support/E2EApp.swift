@@ -17,7 +17,7 @@ final class E2EApp {
     static let quitTimeout: TimeInterval = 10
 
     let appURL: URL = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent()
-        .appendingPathComponent(".build/e2e-app/LocalPlayerE2E.app")
+        .appendingPathComponent(".build/e2e-app/PlayawayE2E.app")
 
     var isBuilt: Bool { FileManager.default.fileExists(atPath: appURL.path) }
 

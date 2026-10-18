@@ -9,16 +9,16 @@
 #   SIGNING_IDENTITY      overrides the keychain lookup of a "Developer ID Application" identity
 #   OUTPUT_DIR            where the .app and .dmg are written (default: .build/release-app)
 #   BUILD_DIR             where `swift build` leaves the binary and Sparkle.framework (default: swift build --show-bin-path)
-#   ENTITLEMENTS_FILE     entitlements to sign with (default: Resources/LocalPlayer.entitlements)
+#   ENTITLEMENTS_FILE     entitlements to sign with (default: Resources/Playaway.entitlements)
 # Tool commands (each may be a shim in tests): SWIFT_CMD SECURITY_CMD CODESIGN_CMD DITTO_CMD HDIUTIL_CMD
 #   NOTARYTOOL_CMD (default "xcrun notarytool") STAPLER_CMD (default "xcrun stapler") SPCTL_CMD
 # Test-only: CODESIGN_TIMESTAMP_FLAG (default --timestamp), ALLOW_SINGLE_ARCH=1, STAPLE_RETRY_DELAY_SECONDS.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BINARY_NAME="LocalPlayer"
+BINARY_NAME="LocalPlayer"   # the SwiftPM product name; the bundle carries it under the executable name the plist declares
 INFO_PLIST_SRC="${ROOT}/Resources/Info.plist"
-ENTITLEMENTS="${ENTITLEMENTS_FILE:-${ROOT}/Resources/LocalPlayer.entitlements}"
+ENTITLEMENTS="${ENTITLEMENTS_FILE:-${ROOT}/Resources/Playaway.entitlements}"
 BUILD_DIR="${BUILD_DIR:-}"   # default: asked of SwiftPM after the build (the path differs between SwiftPM backends)
 BUILD_ARGS=(-c release --arch arm64 --arch x86_64 --product "LocalPlayer")
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT}/.build/release-app}"
@@ -91,6 +91,7 @@ if [[ "$SKIP_NOTARIZE" == false && -z "${NOTARY_PROFILE:-}" ]]; then
 fi
 
 PRODUCT_NAME="$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$INFO_PLIST_SRC")"
+EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$INFO_PLIST_SRC")"
 APP_BUNDLE="${OUTPUT_DIR}/${PRODUCT_NAME}.app"
 
 # --- Build ---
@@ -115,9 +116,9 @@ fi
 echo "Bundling ${APP_BUNDLE}..."
 rm -rf "$APP_BUNDLE"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS" "${APP_BUNDLE}/Contents/Resources" "${APP_BUNDLE}/Contents/Frameworks"
-cp "${BUILD_DIR}/${BINARY_NAME}" "${APP_BUNDLE}/Contents/MacOS/${BINARY_NAME}"
+cp "${BUILD_DIR}/${BINARY_NAME}" "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
 cp "$INFO_PLIST_SRC" "${APP_BUNDLE}/Contents/Info.plist"
-for resource in LocalPlayer.sdef ui-manifest.json; do
+for resource in Playaway.sdef ui-manifest.json; do
     if [[ -f "${ROOT}/Resources/${resource}" ]]; then cp "${ROOT}/Resources/${resource}" "${APP_BUNDLE}/Contents/Resources/${resource}"; fi
 done
 for spm_bundle in "${BUILD_DIR}"/*.bundle; do
@@ -132,7 +133,7 @@ if [[ ! -d "$SPARKLE_FRAMEWORK" ]]; then
 fi
 cp -R "$SPARKLE_FRAMEWORK" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
 
-EXECUTABLE="${APP_BUNDLE}/Contents/MacOS/${BINARY_NAME}"
+EXECUTABLE="${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
 if ! otool -l "$EXECUTABLE" | grep -q "$FRAMEWORKS_RPATH"; then
     install_name_tool -add_rpath "$FRAMEWORKS_RPATH" "$EXECUTABLE"
 fi
@@ -151,7 +152,7 @@ echo "Checking scripting parity..."
 # install_name_tool invalidated the binary's signature and macOS refuses to run it, so give it a throwaway ad-hoc
 # one for the gate. The real Developer ID signing below uses --force and replaces it.
 "${CODESIGN[@]}" --force --sign - "$EXECUTABLE" >/dev/null 2>&1 || true
-if ! "$EXECUTABLE" --check-script-parity "${APP_BUNDLE}/Contents/Resources/LocalPlayer.sdef"; then
+if ! "$EXECUTABLE" --check-script-parity "${APP_BUNDLE}/Contents/Resources/Playaway.sdef"; then
     echo "ERROR: scripting parity gate failed. Nothing was signed." >&2
     exit 1
 fi

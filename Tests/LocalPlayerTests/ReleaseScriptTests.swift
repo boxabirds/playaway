@@ -150,7 +150,7 @@ final class BuildScriptTests: XCTestCase {
         let result = try build(w, extra: ["SIGNING_IDENTITY": adHocIdentity])
         XCTAssertEqual(result.status, 0, result.output)
 
-        let app = w.outputDir.appendingPathComponent("LocalPlayer.app")
+        let app = w.outputDir.appendingPathComponent("Playaway.app")
         let verify = try ScriptRunner.run("/usr/bin/codesign", arguments: ["--verify", "--deep", "--strict", app.path], environment: [:])
         XCTAssertEqual(verify.status, 0, verify.output)
 
@@ -180,7 +180,7 @@ final class BuildScriptTests: XCTestCase {
         let signing = calls.filter { $0.contains("--options runtime") }
         XCTAssertFalse(signing.isEmpty)
         XCTAssertTrue(signing.allSatisfy { $0.contains("--timestamp") }, "secure timestamp requested on every signature")
-        XCTAssertTrue(signing.last?.hasSuffix("LocalPlayer.app") == true, "the app is signed last")
+        XCTAssertTrue(signing.last?.hasSuffix("Playaway.app") == true, "the app is signed last")
         let frameworkIndex = signing.firstIndex { $0.hasSuffix("Sparkle.framework") }
         let nestedIndex = signing.firstIndex { $0.contains(".xpc") || $0.contains("Autoupdate") }
         XCTAssertNotNil(frameworkIndex)
@@ -191,7 +191,7 @@ final class BuildScriptTests: XCTestCase {
     func testAScriptingGapStopsTheBuildBeforeAnythingIsSigned_TC66() throws {
         let w = try ScriptWorkspace()
         try w.stageBuildProducts()
-        let sdef = w.root.appendingPathComponent("Resources/LocalPlayer.sdef")
+        let sdef = w.root.appendingPathComponent("Resources/Playaway.sdef")
         guard FileManager.default.fileExists(atPath: sdef.path) else { throw XCTSkip("workspace has no sdef") }
         let gapped = try String(contentsOf: sdef, encoding: .utf8).replacingOccurrences(of: "<command name=\"seek\"", with: "<command name=\"seek-removed\"")
         try gapped.write(to: sdef, atomically: true, encoding: .utf8)
@@ -199,7 +199,7 @@ final class BuildScriptTests: XCTestCase {
         XCTAssertNotEqual(result.status, 0, "a release with an unscriptable action must not build")
         XCTAssertTrue(result.output.contains("action 'seek' has no scripting command"), result.output)
         XCTAssertTrue(w.logLines("codesign").filter { $0.contains("--options runtime") }.isEmpty, "nothing was signed for release")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: w.outputDir.appendingPathComponent("LocalPlayer.dmg").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: w.outputDir.appendingPathComponent("Playaway.dmg").path))
     }
 
     func testNoDeveloperIDIdentityAbortsBeforeBuilding_TC51() throws {
@@ -209,7 +209,7 @@ final class BuildScriptTests: XCTestCase {
         XCTAssertNotEqual(result.status, 0)
         XCTAssertTrue(result.output.contains("Developer ID Application"), result.output)
         XCTAssertEqual(w.log("swift"), "", "nothing was built")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: w.outputDir.appendingPathComponent("LocalPlayer.app").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: w.outputDir.appendingPathComponent("Playaway.app").path))
     }
 
     func testRejectedNotarizationFailsAndPrintsHowToFetchTheLog_TC52() throws {
@@ -234,7 +234,7 @@ final class BuildScriptTests: XCTestCase {
         XCTAssertEqual(result.status, 0, result.output)
         XCTAssertTrue(result.output.contains("retrying"))
         XCTAssertEqual(w.logLines("stapler").filter { $0.hasPrefix("staple") }.count, 3, "app twice, DMG once")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: w.outputDir.appendingPathComponent("LocalPlayer-\(try w.plistValue("CFBundleShortVersionString")).dmg").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: w.outputDir.appendingPathComponent("Playaway-\(try w.plistValue("CFBundleShortVersionString")).dmg").path))
     }
 
     func testStaplingFailingTwiceFailsTheBuild_TC54() throws {
@@ -262,7 +262,7 @@ final class BuildScriptTests: XCTestCase {
     }
 
     func testRepositoryEntitlementsAreNotSandboxed() throws {
-        let text = RepoLayout.text("Resources/LocalPlayer.entitlements")
+        let text = RepoLayout.text("Resources/Playaway.entitlements")
         XCTAssertFalse(text.contains("app-sandbox"))
     }
 
@@ -318,7 +318,7 @@ final class ReleaseScriptTests: XCTestCase {
         echo "$@" >> "$LOG_DIR/build.log"
         \(fail ? "echo 'build failed' >&2; exit 1" : "")
         version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$(dirname "$0")/../Resources/Info.plist")
-        head -c 70001 /dev/urandom > "$OUTPUT_DIR/LocalPlayer-${version}.dmg"
+        head -c 70001 /dev/urandom > "$OUTPUT_DIR/Playaway-${version}.dmg"
 
         """
         try body.write(to: path, atomically: true, encoding: .utf8)
@@ -529,7 +529,7 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertTrue(git.contains { $0.hasSuffix("push --tags") })
         XCTAssertTrue(git.contains { $0.contains("commit -m Bump version to 1.1") })
         XCTAssertTrue(w.logLines("gh").first?.hasPrefix("release create v1.1") == true)
-        XCTAssertTrue(w.logLines("gh").first?.contains("LocalPlayer-1.1.dmg") == true)
+        XCTAssertTrue(w.logLines("gh").first?.contains("Playaway-1.1.dmg") == true)
         XCTAssertEqual(try w.plistValue("CFBundleShortVersionString"), "1.1")
         XCTAssertEqual(try w.plistValue("CFBundleVersion"), "1.1")
 
@@ -539,8 +539,8 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertTrue(appcast.contains("<sparkle:version>1.1</sparkle:version>"))
         XCTAssertTrue(appcast.contains("<sparkle:shortVersionString>1.1</sparkle:shortVersionString>"))
         XCTAssertTrue(appcast.contains("<sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>"))
-        XCTAssertTrue(appcast.contains("url=\"https://github.com/example-owner/example-repo/releases/download/v1.1/LocalPlayer-1.1.dmg\""))
-        let dmg = w.outputDir.appendingPathComponent("LocalPlayer-1.1.dmg")
+        XCTAssertTrue(appcast.contains("url=\"https://github.com/example-owner/example-repo/releases/download/v1.1/Playaway-1.1.dmg\""))
+        let dmg = w.outputDir.appendingPathComponent("Playaway-1.1.dmg")
         let size = (try FileManager.default.attributesOfItem(atPath: dmg.path)[.size] as! NSNumber).intValue
         XCTAssertEqual(size, 70001)
         XCTAssertTrue(appcast.contains("length=\"\(size)\""), "length must equal the real DMG byte length")

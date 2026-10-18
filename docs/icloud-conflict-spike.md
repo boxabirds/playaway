@@ -7,7 +7,7 @@ be done from here, not observations. Everything marked **seen** was observed in 
 
 ## How the probes were made
 
-- The built debug app (`LocalPlayerE2E`, the e2e bundle) on a stand-in iCloud folder (`LOCALPLAYER_TEST_CLOUD_ROOT`).
+- The built debug app (`PlayawayE2E`, the e2e bundle; it was LocalPlayerE2E on the day) on a stand-in iCloud folder (`LOCALPLAYER_TEST_CLOUD_ROOT`).
 - "The other device" was a scratch program that replaces the playlist file through `NSFileCoordinator`
   (`.forReplacing`, modification date set a moment later), which is how iCloud's daemon writes. A plain `mv` is NOT
   seen by a file presenter and must not be used to stand in for iCloud.

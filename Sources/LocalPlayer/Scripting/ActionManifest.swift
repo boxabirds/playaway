@@ -13,8 +13,8 @@ struct ManifestAction: Equatable {
 enum ExcludedSystemItems {
     static let ids: Set<String> = ["about", "quit", "hide", "services", "windowMenu", "helpMenu"]
     /// Hide Others and Show All belong to Hide; the Window menu's items belong to the Window menu.
-    static let menuTitles: Set<String> = ["About LocalPlayer", "Hide LocalPlayer", "Hide Others", "Show All", "Services",
-                                          "Quit LocalPlayer", "Minimize", "Zoom", "Bring All to Front"]
+    static let menuTitles: Set<String> = ["About Playaway", "Hide Playaway", "Hide Others", "Show All", "Services",
+                                          "Quit Playaway", "Minimize", "Zoom", "Bring All to Front"]
     /// System document actions the app does not script (the PRD excludes "system document actions").
     static let documentMenuTitles: Set<String> = ["Open…", "Open Recent", "Clear Menu", "Close", "Save", "Undo", "Redo", "Select All"]
 }
@@ -40,7 +40,7 @@ enum ActionManifest {
         ManifestAction(id: "removeTrack", description: "Remove a track from a playlist.", uiBinding: "Edit > Remove from Playlist", scriptBinding: "remove track"),
         ManifestAction(id: "reorderTrack", description: "Move a track to another position.", uiBinding: "Drag a track row", scriptBinding: "move track"),
         ManifestAction(id: "locate", description: "Point a missing track at its file.", uiBinding: "Track row context menu > Locate…", scriptBinding: "locate track"),
-        ManifestAction(id: "checkForUpdates", description: "Check for a newer version.", uiBinding: "LocalPlayer > Check for Updates…", scriptBinding: "check for updates"),
+        ManifestAction(id: "checkForUpdates", description: "Check for a newer version.", uiBinding: "Playaway > Check for Updates…", scriptBinding: "check for updates"),
         ManifestAction(id: "syncPlaylist", description: "Turn iCloud sync on for a playlist.", uiBinding: "Title-bar cloud button", scriptBinding: "sync playlist"),
     ]
 }

@@ -4,5 +4,5 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-BUNDLE_NAME=LocalPlayerE2E BUNDLE_ID=com.localplayer.app.e2e "$ROOT/scripts/bundle-dev.sh" debug "$ROOT/.build/e2e-app" >/dev/null
+BUNDLE_NAME=PlayawayE2E BUNDLE_ID=software.away.play.mac.e2e "$ROOT/scripts/bundle-dev.sh" debug "$ROOT/.build/e2e-app" >/dev/null
 swift test --filter E2ETests

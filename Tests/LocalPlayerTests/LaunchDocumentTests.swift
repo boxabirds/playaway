@@ -137,7 +137,7 @@ final class InfoPlistTests: XCTestCase {
     func testDoesNotChangeSystemDefaultsAndIsNotSandboxed() throws {
         let types = try plist()["CFBundleDocumentTypes"] as! [[String: Any]]
         XCTAssertFalse(types.contains { $0["LSHandlerRank"] as? String == "Default" }, "being the default handler stays the person's choice")
-        let entitlements = try String(contentsOf: packageRoot.appendingPathComponent("Resources/LocalPlayer.entitlements"), encoding: .utf8)
+        let entitlements = try String(contentsOf: packageRoot.appendingPathComponent("Resources/Playaway.entitlements"), encoding: .utf8)
         XCTAssertFalse(entitlements.contains("app-sandbox"))
     }
 }

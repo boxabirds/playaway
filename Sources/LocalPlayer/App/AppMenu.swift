@@ -3,7 +3,7 @@ import AppKit
 
 /// The standard macOS menu bar: application menu, File, Window, Help. Standard names and shortcuts.
 enum AppMenu {
-    static let appName = "LocalPlayer"
+    static let appName = "Playaway"
 
     static func makeMenuBar(target: AnyObject?) -> NSMenu {
         let main = NSMenu()

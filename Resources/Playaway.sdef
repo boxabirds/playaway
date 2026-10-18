@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
-<dictionary title="LocalPlayer Terminology">
-    <suite name="LocalPlayer Suite" code="LPlr" description="Everything the player's windows and menus do, for scripts.">
+<dictionary title="Playaway Terminology">
+    <suite name="Playaway Suite" code="LPlr" description="Everything the player's windows and menus do, for scripts.">
 
-        <class name="application" code="capp" description="The LocalPlayer application.">
+        <class name="application" code="capp" description="The Playaway application.">
             <cocoa class="NSApplication"/>
 
             <property name="playing" code="lpPl" type="boolean" access="r"

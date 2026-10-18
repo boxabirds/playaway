@@ -25,7 +25,7 @@ final class UpdaterController: FirstWindowObserver {
     private var driver: UpdaterDriver?
     private let driverFactory: () -> UpdaterDriver
     private let log: (String) -> Void
-    private static let logger = Logger(subsystem: "LocalPlayer", category: "updates")
+    private static let logger = Logger(subsystem: "software.away.play.mac", category: "updates")
 
     /// The driver is built lazily at start, so nothing from Sparkle exists before the first window.
     init(configuration: UpdateConfiguration,

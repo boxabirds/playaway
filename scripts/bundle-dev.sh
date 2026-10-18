@@ -1,5 +1,5 @@
 #!/bin/bash
-# Assembles a local, ad-hoc signed LocalPlayer.app from the SwiftPM build, for development and end-to-end tests.
+# Assembles a local, ad-hoc signed Playaway.app from the SwiftPM build, for development and end-to-end tests.
 # This is NOT the release pipeline: no Developer ID signing and no notarization (see scripts/build-app.sh).
 #
 # Usage: scripts/bundle-dev.sh [debug|release] [output-dir]
@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${1:-debug}"
 OUT_DIR="${2:-${ROOT}/.build/dev-app}"
-NAME="${BUNDLE_NAME:-LocalPlayer}"
+NAME="${BUNDLE_NAME:-Playaway}"
 APP="${OUT_DIR}/${NAME}.app"
 FRAMEWORKS_RPATH="@executable_path/../Frameworks"
 
@@ -28,7 +28,7 @@ fi
 if [[ -n "${BUNDLE_ID:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "$APP/Contents/Info.plist"
 fi
-for resource in LocalPlayer.sdef ui-manifest.json; do
+for resource in Playaway.sdef ui-manifest.json; do
     [[ -f "$ROOT/Resources/$resource" ]] && cp "$ROOT/Resources/$resource" "$APP/Contents/Resources/$resource"
 done
 cp -R "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"

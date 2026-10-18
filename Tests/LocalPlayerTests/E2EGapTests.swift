@@ -39,7 +39,7 @@ final class E2EGapTests: XCTestCase {
     static let minimumBrightnessGap = 0.15
     static let appMenuItemTitle = "Check for Updates…"
 
-    var appURL: URL { Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".build/e2e-app/LocalPlayerE2E.app") }
+    var appURL: URL { Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".build/e2e-app/PlayawayE2E.app") }
     let dir = TempDir("e2egap")
     var server: Process?
     var patchedApp: URL?
@@ -133,7 +133,7 @@ final class E2EGapTests: XCTestCase {
     /// A copy of the dev bundle whose Info.plist passes the updater's own validation, ad-hoc signed, in a temp folder.
     func makePatchedApp() throws {
         let key = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString()
-        let copy = dir.url.appendingPathComponent("patched").appendingPathComponent("LocalPlayerE2E.app")
+        let copy = dir.url.appendingPathComponent("patched").appendingPathComponent("PlayawayE2E.app")
         try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: appURL, to: copy)
         let plist = copy.appendingPathComponent("Contents/Info.plist").path

@@ -44,7 +44,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>LocalPlayer Playlist</string>
+			<string>Playaway Playlist</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
@@ -57,14 +57,16 @@
 			<string>PlaylistDocument</string>
 		</dict>
 	</array>
+	<key>CFBundleDisplayName</key>
+	<string>Playaway</string>
 	<key>CFBundleExecutable</key>
-	<string>LocalPlayer</string>
+	<string>Playaway</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.localplayer.app</string>
+	<string>software.away.play.mac</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>LocalPlayer</string>
+	<string>Playaway</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -78,7 +80,7 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>OSAScriptingDefinition</key>
-	<string>LocalPlayer.sdef</string>
+	<string>Playaway.sdef</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
@@ -94,7 +96,7 @@
 				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>LocalPlayer Playlist</string>
+			<string>Playaway Playlist</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.localplayer.playlist</string>
 			<key>UTTypeTagSpecification</key>

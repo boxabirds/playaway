@@ -8,7 +8,7 @@ package enum Notice: Equatable {
     case syncFailed(String)
 
     package static let dismissTitle = "Dismiss"
-    package static let supportedTypesSentence = "LocalPlayer currently plays MP3, WAV and M4A files."
+    package static let supportedTypesSentence = "Playaway currently plays MP3, WAV and M4A files."
 
     package var title: String {
         switch self {
