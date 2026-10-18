@@ -1,5 +1,4 @@
 import Foundation
-import AVFoundation
 
 /// How a playlist remembers an audio file: an Apple alias (bookmark), the last known path, the original file name,
 /// and, for a file in iCloud, where it is in terms every device understands (`cloudPath`, story 40). The bookmark
@@ -22,7 +21,9 @@ package struct TrackReference: Codable, Equatable {
     package var fileName: String
     /// Absent in files from before story 40 (decoded as nil, and not written while nil, so older builds still read the file).
     package var cloudPath: CloudPath?
-    /// What helps find the song again on another device (story 41). Absent in files from before; omitted while nil.
+    /// What helps find the song again on another device (story 41). Absent in files from before; omitted while nil. The
+    /// duration is never read when a song is added (that opened every file on the main thread, and a file iCloud has not
+    /// downloaded can block the open): it stays nil until something that already has the file open knows it.
     package var fileSize: Int64?
     package var duration: Double?
     package var folderName: String?
@@ -59,7 +60,7 @@ extension TrackReference {
         }
         let path = url.canonicalPath
         return TrackReference(bookmark: bookmark, lastKnownPath: path, fileName: url.lastPathComponent, cloudPath: CloudPath.derive(fromPath: path),
-                              fileSize: fileSize(of: url), duration: duration(of: url), folderName: url.deletingLastPathComponent().lastPathComponent)
+                              fileSize: fileSize(of: url), duration: nil, folderName: url.deletingLastPathComponent().lastPathComponent)
     }
 }
 
@@ -67,11 +68,6 @@ extension TrackReference {
     /// The file's length in bytes; nil when it cannot be read.
     static func fileSize(of url: URL) -> Int64? {
         (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 }.map(Int64.init)
-    }
-    /// Seconds, read from the audio header; nil when the file is not readable audio (an empty file, a placeholder).
-    static func duration(of url: URL) -> Double? {
-        guard let file = try? AVAudioFile(forReading: url), file.fileFormat.sampleRate > 0 else { return nil }
-        return Double(file.length) / file.fileFormat.sampleRate
     }
 }
 

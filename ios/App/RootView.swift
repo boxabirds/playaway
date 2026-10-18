@@ -300,6 +300,32 @@ struct FolderPicker: UIViewControllerRepresentable {
     }
 }
 
+/// Shown while Playaway searches a folder for the songs: a big iCloud folder can take a while, and nothing here should
+/// look frozen. The count of items looked at moves, and Cancel stops the search.
+struct RestoreProgressCard: View {
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        if let progress = model.restoreProgress {
+            ZStack {
+                Color.black.opacity(0.35).ignoresSafeArea()
+                VStack(spacing: 14) {
+                    ProgressView().controlSize(.large)
+                    Text("Restoring your songs").font(.headline)
+                    Text(progress.looked == 0 ? "Looking in “\(progress.folder)”…" : "Looked at \(progress.looked) items in “\(progress.folder)”")
+                        .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                    Button("Cancel") { model.cancelRestoreSearch() }
+                        .buttonStyle(.bordered).accessibilityIdentifier("restore-cancel")
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("restore-progress")
+            }
+            .transition(.opacity)
+        }
+    }
+}
+
 struct PlaylistView: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var session: PlaylistSession
@@ -363,6 +389,7 @@ struct PlaylistView: View {
                     #endif
                 }
             }
+            .overlay { RestoreProgressCard() }
             .fileImporter(isPresented: $model.locateShown, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
                 model.locate(try? result.get().first)
             }

@@ -84,6 +84,8 @@ package final class InMemoryDeviceMatchStore: DeviceMatchStoring {
 /// that folder, not a one-read lease.
 package final class GrantedCloudRoots: CloudRoots {
     package var playawayDocuments: URL?
+    /// The roots are read by the rows on the main thread while a restore, on another thread, grants and remembers.
+    private let lock = NSRecursiveLock()
     private let store: FolderGrantStoring
     private let matchStore: DeviceMatchStoring
     private var deviceMatches: DeviceMatches
@@ -118,12 +120,13 @@ package final class GrantedCloudRoots: CloudRoots {
         return url
     }
 
-    package var granted: [FolderGrant] { grants }
+    package var granted: [FolderGrant] { lock.lock(); defer { lock.unlock() }; return grants }
 
     /// Records a folder the person picked. Nil, and nothing recorded, for a folder that is not under iCloud Drive (or
     /// is the root itself, which the picker cannot grant), or that cannot be bookmarked.
     @discardableResult
     package func grant(pickedFolder url: URL) -> FolderGrant? {
+        lock.lock(); defer { lock.unlock() }
         guard let path = drivePath(url).map(Self.normalized), !path.isEmpty, let bookmark = makeBookmark(url) else { return nil }
         let grant = FolderGrant(drivePath: path, bookmark: bookmark)
         grants.removeAll { $0.drivePath == path }
@@ -135,15 +138,17 @@ package final class GrantedCloudRoots: CloudRoots {
 
     /// Forgets a grant (one that turned out to cover none of the songs it was asked for).
     package func revoke(drivePath: String) {
+        lock.lock(); defer { lock.unlock() }
         guard let grant = grants.first(where: { $0.drivePath == drivePath }) else { return }
         drop(grant)
     }
 
     /// Whether a grant covers the path: the grant's folder is the file's folder or one above it, and its bookmark still
     /// opens a folder on this device.
-    package func covers(_ path: CloudPath) -> Bool { grantURL(covering: path) != nil }
+    package func covers(_ path: CloudPath) -> Bool { lock.lock(); defer { lock.unlock() }; return grantURL(covering: path) != nil }
 
     package func url(for path: CloudPath) -> URL? {
+        lock.lock(); defer { lock.unlock() }
         switch path {
         case .playawayFolder(let rest):
             return playawayDocuments.flatMap { appending(rest, to: $0) }
@@ -159,6 +164,7 @@ package final class GrantedCloudRoots: CloudRoots {
 
     /// The folder to ask for when this device cannot reach the path: its top folder, unless something here already covers it.
     package func accessNeeded(for path: CloudPath) -> String? {
+        lock.lock(); defer { lock.unlock() }
         guard case .iCloudDrive(let rest) = path else { return nil }
         if locatedURL(for: rest) != nil { return nil }
         if let actual = deviceMatches.moved[rest], covers(.iCloudDrive(actual)) { return nil }
@@ -168,12 +174,14 @@ package final class GrantedCloudRoots: CloudRoots {
     /// Whether this device reaches the song only through what the person gave it here: a folder grant, a match found
     /// under one, or a Locate. A song found any other way (its own reference) says the folder is readable anyway.
     package func reaches(_ path: CloudPath) -> Bool {
+        lock.lock(); defer { lock.unlock() }
         guard case .iCloudDrive(let rest) = path else { return false }
         return deviceMatches.located[rest] != nil || deviceMatches.moved[rest] != nil || covers(path)
     }
 
     /// Remembers where songs were found other than where they were saved, per device.
     package func remember(_ moved: [String: String]) {
+        lock.lock(); defer { lock.unlock() }
         guard !moved.isEmpty else { return }
         deviceMatches.moved.merge(moved) { _, new in new }
         matchStore.save(deviceMatches)
@@ -182,6 +190,7 @@ package final class GrantedCloudRoots: CloudRoots {
     /// Locate: the person chose this file for the song saved at `path`; kept per device as a bookmark.
     @discardableResult
     package func locate(savedPath path: String, file: URL) -> Bool {
+        lock.lock(); defer { lock.unlock() }
         guard let bookmark = makeBookmark(file) else { return false }
         deviceMatches.located[path] = bookmark
         locatedURLs[path] = file

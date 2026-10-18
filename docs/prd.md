@@ -19,11 +19,13 @@ Three qualities define it. Each is only a goal until it has a measurable thresho
 ## Solution overview
 
 - A native Swift app for macOS 26 and later.
+- A document-based Mac app: each playlist is a document with its own window. There is no main window and no playlist list.
 - Plays local `.mp3`, `.wav` and `.m4a` files.
 - Opens files from Finder (double-click, drag onto the icon) and from the File menu.
+- Standard playback controls: play, pause, stop, seek, next, previous, volume and mute.
 - Plays playlists with shuffle and repeat controls.
-- Playlists are a new file format stored on disk. Users who want backups keep them in iCloud Drive.
-- Fully scriptable with AppleScript: every UI function has an AppleScript equivalent.
+- Playlists are ordinary documents in a new file format. The person chooses where they are saved (the Save panel offers Documents by default). Deleting a playlist is done in Finder; the app does not offer it. Users who want backups keep them in iCloud Drive.
+- Fully scriptable with AppleScript: every app-specific UI function has an AppleScript equivalent.
 - Distributed outside the Mac App Store, signed and notarized, with updates delivered through Sparkle.
 
 ## Users and jobs
@@ -59,25 +61,29 @@ As a user, I want to play a whole playlist, with a choice of how it plays.
   - **Shuffle** is an on/off toggle.
   - **Repeat** is a button that cycles through off, all, one.
 - The last-used shuffle and repeat settings persist across launches. They decide whether a playlist starts from the top or at a random track.
-- Double-clicking a playlist file in Finder:
+- Double-clicking a playlist file in Finder opens it as a document in its own window:
   - starts the playlist, from the top or at random per the last-used setting
-  - if the playlist window is already open, brings it to the front and starts playback
+  - if the playlist is already open, brings its window to the front (no second window) and starts playback
   - if that playlist is already playing, brings it to the front and leaves playback unchanged
+- Only one thing plays at a time: starting a playlist or opening a file ends any other playback.
+- Double-clicking a track in a playlist window plays that track.
 
 ### US-3: Manage playlists
 
 As a user, I want to create and maintain playlists.
 
-- I can create, open, rename and delete playlists.
+- I can create, open and rename playlists, as with any document. New Playlist opens an untitled playlist; the first save uses the standard Save panel, offering Documents by default. Later changes save automatically.
 - I can add files to a playlist, remove them, and reorder them.
+- Deleting a playlist is not offered; it is done in Finder.
 - A playlist is a file in a new, app-specific format. Format design is out of scope for this document.
+- Whether the same track may appear twice in one playlist is not decided.
 
 ### US-4: Recover missing files
 
 As a user, I want playlists to survive moved and deleted files.
 
-- A playlist tracks its files in a way that survives them being moved (Apple aliases, as the working choice).
-- A file that has been deleted or can't be found is greyed out and not playable.
+- A playlist tracks its files in a way that survives them being moved (Apple aliases, as the working choice). The playlist document updates itself when a reference is refreshed or a file is located.
+- A file that has been deleted or can't be found is greyed out and not playable. Automatic play-through skips it and marks it with the hazard icon.
 - I can choose "locate" on a missing file and point to its new location.
 - After I locate one file, the app searches that file's folder for other missing files from the same playlist, matching on filename.
 
@@ -85,7 +91,7 @@ As a user, I want playlists to survive moved and deleted files.
 
 As a user, I want to use the app the moment I open it.
 
-- The playlist window is visible within 1 second of launch on an M2 MacBook Air.
+- The first window is visible within 1 second of launch on an M2 MacBook Air. Which window that is, when there is nothing to restore, is open (proposal: an untitled new playlist).
 - Open: whether that figure is for a cold launch (after reboot) or a warm one. Notes launches about 1 second slower cold than warm, so the answer decides how hard the target is.
 - Open: a number for pressing play to first sound. "Super responsive to play" is the stated goal and has no threshold yet.
 
@@ -93,8 +99,18 @@ As a user, I want to use the app the moment I open it.
 
 As a user, I want a window with nothing on it that I don't need.
 
-- The main window contains only elements that serve the three jobs above.
+- A playlist window contains only elements that serve the three jobs above.
 - Open: the actual list of elements and which job each serves. This is the test for "simple", and it doesn't exist yet.
+
+### US-6a: Control what is playing
+
+As a user, I want the standard controls for what is playing.
+
+- Play, pause, stop, seek, next, previous, volume and mute.
+- Volume is the app's own level, and volume and mute are remembered across launches.
+- Next always moves to the following track, even with repeat one.
+- Previous on the first track: goes to the last track when repeat is on, does nothing when repeat is off, and steps backward through the shuffle order when shuffle is on (interpretation of the owner's words, pending confirmation).
+- Open: keyboard shortcuts and what "previous" does early in a track.
 
 ### US-7: Beautiful, native look
 
@@ -108,7 +124,7 @@ As a user, I want the app to feel like part of macOS.
 
 As a user, I want to control the app from AppleScript.
 
-- Every UI function has an AppleScript equivalent.
+- Every app-specific UI function has an AppleScript equivalent, including Check for Updates. The standard menu items macOS provides (About, Quit, Hide, Services, Window, Help) are excluded from this rule.
 - Regression tests cover both the UI path and the AppleScript path for every function.
 
 ### US-9: Update automatically
@@ -118,6 +134,7 @@ As a user, I want the app to keep itself up to date.
 - The app checks for updates through Sparkle and lets me install them.
 - There is a "Check for Updates…" menu item.
 - Updates are delivered only to Macs running macOS 26 or later.
+- The app never asks a separate question about whether to check for updates automatically.
 - See `tech-architecture.md`.
 
 ## Constraints
@@ -152,3 +169,17 @@ These were considered and deliberately left unspecified.
 6. The increments: which slice ships first, and what "done" means for each. The spec is currently one product.
 7. Who implements it (coding agent, human, pair), what the blast radius is, and what must not be touched.
 8. Product name, bundle identifier and the playlist file extension.
+9. Which window appears on a launch with nothing to restore, and which window hosts playback of a single opened audio file.
+10. Keyboard shortcuts, and the behavior of "previous" early in a track.
+11. Whether the same track may appear twice in one playlist.
+
+## Decisions recorded in this revision
+
+- Playlists are documents with their own windows; there is no main window (not an SDI app).
+- The person chooses where a playlist is saved; Documents is the default.
+- Playback controls, including volume and mute, are in scope. Volume is the app's own level and is saved.
+- A playlist document updates itself (refreshed references, located files).
+- Deleting a playlist is not a feature.
+- Only one thing plays at a time. A missing track reached during play-through is skipped and marked with the hazard icon.
+- Shuffle toggled mid-song keeps the current track; next with repeat one moves on; double-clicking a track plays it.
+- AppleScript error numbers 1001 to 1008 are accepted for now.

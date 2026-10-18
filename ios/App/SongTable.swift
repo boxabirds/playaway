@@ -157,6 +157,17 @@ struct SongTable: UIViewRepresentable {
             return [UIDragItem(itemProvider: provider)]
         }
 
+        /// The lifted row gets its own surface and rounded corners from the system's own preview parameters, so in either
+        /// appearance it reads as a row picked up (a transparent preview was bare text over a black gap in dark mode).
+        func tableView(_ tableView: UITableView, dragPreviewParametersForRowAt indexPath: IndexPath) -> UIDragPreviewParameters? {
+            guard let cell = tableView.cellForRow(at: indexPath) else { return nil }
+            let parameters = UIDragPreviewParameters()
+            parameters.backgroundColor = .secondarySystemBackground
+            parameters.visiblePath = UIBezierPath(roundedRect: cell.bounds, cornerRadius: Self.liftedRowCornerRadius)
+            return parameters
+        }
+        static let liftedRowCornerRadius: CGFloat = 12
+
         func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) { isDragging = true }
         func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) {
             isDragging = false

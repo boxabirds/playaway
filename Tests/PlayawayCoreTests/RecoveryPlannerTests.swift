@@ -94,4 +94,56 @@ final class RecoveryPlannerTests: XCTestCase {
         XCTAssertNil(r.accessNeeded(for: .iCloudDrive("Mixdowns/a.mp3")))
         XCTAssertEqual(roots(matches: matches).url(for: .iCloudDrive("Mixdowns/a.mp3"))?.canonicalPath, file.canonicalPath, "a new instance reopens it from the bookmark")
     }
+
+    /// The owner's hang on the iPad: restoring listed the whole folder tree (thousands of cloud files) on the main thread even
+    /// though every song was exactly where the playlist said. Songs at their saved place are checked directly and the tree is
+    /// listed only for songs that are not.
+    final class CountingListing: FolderListing {
+        var calls = 0
+        func entries(under folder: URL, progress: (Int) -> Void, isCancelled: () -> Bool) -> [TreeEntry] {
+            calls += 1; return SystemFolderListing().entries(under: folder, progress: progress, isCancelled: isCancelled)
+        }
+    }
+
+    func testSongsAtTheirSavedPlaceNeverListTheTree() throws {
+        try make("Mixdowns/a.mp3"); try make("Mixdowns/Live/b.mp3"); try make("Mixdowns/Other/unrelated.mp3")
+        let listing = CountingListing()
+        let result = RecoveryPlanner.apply(picked: drive.appendingPathComponent("Mixdowns"), unfound: [song("Mixdowns/a.mp3"), song("Mixdowns/Live/b.mp3")], roots: roots(), listing: listing)
+        XCTAssertEqual(result.restored, 2); XCTAssertTrue(result.kept)
+        XCTAssertEqual(listing.calls, 0, "nothing moved, so there is nothing to search for")
+    }
+
+    func testTheTreeIsListedOnceAndOnlyForTheSongsNotAtTheirSavedPlace() throws {
+        try make("Mixdowns/a.mp3"); try make("Mixdowns/New/moved.mp3")
+        let listing = CountingListing()
+        let moved = song("Mixdowns/Old/moved.mp3")
+        let result = RecoveryPlanner.apply(picked: drive.appendingPathComponent("Mixdowns"), unfound: [song("Mixdowns/a.mp3"), moved], roots: roots(), listing: listing)
+        XCTAssertEqual(result.restored, 2)
+        XCTAssertEqual(listing.calls, 1)
+    }
+
+    func testAnOffloadedSongAtItsSavedPlaceCounts() throws {
+        try make("Mixdowns/.Evicted.mp3.icloud")
+        let listing = CountingListing()
+        let result = RecoveryPlanner.apply(picked: drive.appendingPathComponent("Mixdowns"), unfound: [song("Mixdowns/Evicted.mp3")], roots: roots(), listing: listing)
+        XCTAssertEqual(result.restored, 1); XCTAssertEqual(listing.calls, 0)
+    }
+
+    func testCancellingTheSearchKeepsWhatWasAlreadyFoundAndStopsListing() throws {
+        try make("Mixdowns/a.mp3")
+        let found = song("Mixdowns/a.mp3"), lost = song("Mixdowns/Old/gone.mp3")
+        let result = RecoveryPlanner.apply(picked: drive.appendingPathComponent("Mixdowns"), unfound: [found, lost], roots: roots(), listing: SystemFolderListing(), isCancelled: { true })
+        XCTAssertEqual(result.restored, 1, "the song at its saved place was found before the search began")
+        XCTAssertEqual(result.reason, nil)
+        let nothing = RecoveryPlanner.apply(picked: drive.appendingPathComponent("Mixdowns"), unfound: [lost], roots: roots(), listing: SystemFolderListing(), isCancelled: { true })
+        XCTAssertEqual(nothing.reason, .cancelled); XCTAssertFalse(nothing.kept)
+    }
+
+    func testTheSearchReportsHowManyFilesItHasLookedAt() throws {
+        for i in 0..<120 { try make("Mixdowns/Sub/f\(i).mp3") }
+        var reports: [Int] = []
+        _ = RecoveryPlanner.apply(picked: drive.appendingPathComponent("Mixdowns"), unfound: [song("Mixdowns/Old/zzz.mp3")], roots: roots(), listing: SystemFolderListing(), progress: { reports.append($0) })
+        XCTAssertFalse(reports.isEmpty); XCTAssertEqual(reports, reports.sorted(), "counts only grow")
+        XCTAssertGreaterThanOrEqual(reports.last ?? 0, 100)
+    }
 }

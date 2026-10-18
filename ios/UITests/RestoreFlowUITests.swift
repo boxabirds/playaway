@@ -151,4 +151,34 @@ final class RestoreFlowUITests: XCTestCase {
         app.alerts["Let Playaway use this whole folder?"].buttons["Choose Folder"].tap()
         dismissAlert(app, containing: "can now use “Other”")
     }
+
+    /// The owner's report: restoring on a big folder looked broken (iPhone) or hung (iPad). The search runs off the main thread
+    /// and shows a card with a count and a Cancel; a song that moved inside the folder is still found when it finishes.
+    func testASlowSearchShowsProgressAndStillFindsAMovedSong() {
+        let app = launch(["-PlayawayRestoreDelay", "4"])
+        XCTAssertTrue(app.staticTexts["Mixdowns Moved"].waitForExistence(timeout: 15)); app.staticTexts["Mixdowns Moved"].tap()
+        XCTAssertTrue(app.tables["song-table"].cells["Demo Moved"].waitForExistence(timeout: 15))
+        restore(app)
+        let card = app.otherElements["restore-progress"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5), "a search that takes time says so")
+        XCTAssertTrue(app.buttons["restore-cancel"].exists)
+        XCTAssertTrue(app.staticTexts.allElementsBoundByIndex.contains { $0.label.hasPrefix("Looked at ") }, "and shows that it is moving")
+        dismissAlert(app, containing: "Restored 1 of 1 songs")
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5), "the card goes when it is done")
+        XCTAssertFalse(isLocked(app, "Demo Moved"))
+        app.tables["song-table"].cells["Demo Moved"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "the moved song plays")
+    }
+
+    func testCancellingASlowSearchStopsItAndKeepsNothingFound() {
+        let app = launch(["-PlayawayRestoreDelay", "30"])
+        XCTAssertTrue(app.staticTexts["Mixdowns Moved"].waitForExistence(timeout: 15)); app.staticTexts["Mixdowns Moved"].tap()
+        XCTAssertTrue(app.tables["song-table"].cells["Demo Moved"].waitForExistence(timeout: 15))
+        restore(app)
+        XCTAssertTrue(app.buttons["restore-cancel"].waitForExistence(timeout: 5))
+        app.buttons["restore-cancel"].tap()
+        dismissAlert(app, containing: "Search cancelled")
+        XCTAssertTrue(app.otherElements["restore-banner"].waitForExistence(timeout: 5), "still to restore")
+        XCTAssertTrue(isLocked(app, "Demo Moved"))
+    }
 }

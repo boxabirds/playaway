@@ -50,33 +50,48 @@ package enum RecoveryPlanner {
 
     /// Judges a folder the person picked: keeps the permission and remembers where songs were found only when the
     /// folder is in iCloud Drive and holds at least one of the songs; otherwise nothing is kept.
-    package static func apply(picked: URL?, unfound: [UnfoundSong], roots: GrantedCloudRoots, listing: FolderListing) -> RecoveryResult {
+    ///
+    /// Songs at the place the playlist saved are checked directly, which costs nothing however big the folder is. Only
+    /// songs that are not there make the folder's tree be listed (once, for all of them), and that listing reports its
+    /// progress and stops when `isCancelled` says so: a big iCloud folder can take a long time to list, and nothing
+    /// should freeze while it does.
+    package static func apply(picked: URL?, unfound: [UnfoundSong], roots: GrantedCloudRoots, listing: FolderListing,
+                              progress: (Int) -> Void = { _ in }, isCancelled: () -> Bool = { false }) -> RecoveryResult {
         let needed = unfound.count
         guard let picked else { return RecoveryResult(restored: 0, needed: needed, kept: false, reason: .cancelled) }
         guard let grant = roots.grant(pickedFolder: picked) else {
             return RecoveryResult(restored: 0, needed: needed, kept: false, reason: .notInICloudDrive)
         }
-        let entries = listing.entries(under: picked)
-        let prefix = grant.drivePath + "/"
-        let probes = unfound.map { song -> SongProbe in
-            let inside = song.location.relativePath.hasPrefix(prefix) ? String(song.location.relativePath.dropFirst(prefix.count)) : nil
-            return SongProbe(id: song.id, savedPlace: inside, fileName: song.fileName, fileSize: song.fileSize)
-        }
-        let outcomes = matchSongs(probes, in: entries)
-        var moved: [String: String] = [:], restored = 0
+        var restored = 0, moved: [String: String] = [:]
+        var notThere: [UnfoundSong] = []
         for song in unfound {
-            guard case .matched(let relative)? = outcomes[song.id] else { continue }
-            restored += 1
-            let actual = prefix + relative
-            if actual.lowercased() != song.location.relativePath.lowercased() { moved[song.location.relativePath] = actual }
+            if let url = roots.url(for: song.location), exists(url) { restored += 1 } else { notThere.append(song) }
+        }
+        if !notThere.isEmpty, !isCancelled() {
+            let entries = listing.entries(under: picked, progress: progress, isCancelled: isCancelled)
+            if !isCancelled() {
+                let prefix = grant.drivePath + "/"
+                let probes = notThere.map { song -> SongProbe in
+                    let inside = song.location.relativePath.hasPrefix(prefix) ? String(song.location.relativePath.dropFirst(prefix.count)) : nil
+                    return SongProbe(id: song.id, savedPlace: inside, fileName: song.fileName, fileSize: song.fileSize)
+                }
+                let outcomes = matchSongs(probes, in: entries)
+                for song in notThere {
+                    guard case .matched(let relative)? = outcomes[song.id] else { continue }
+                    restored += 1
+                    moved[song.location.relativePath] = prefix + relative
+                }
+            }
         }
         guard restored > 0 else {
             roots.revoke(drivePath: grant.drivePath)
-            return RecoveryResult(restored: 0, needed: needed, kept: false, reason: .holdsNoneOfTheSongs)
+            return RecoveryResult(restored: 0, needed: needed, kept: false, reason: isCancelled() ? .cancelled : .holdsNoneOfTheSongs)
         }
         roots.remember(moved)
         return RecoveryResult(restored: restored, needed: needed, kept: true, reason: nil)
     }
+
+    private static func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) || iCloudPlaceholderExists(for: url) }
 
     /// Where the chooser should open: iCloud Drive's folder as an iPhone or iPad lays it out. It is a hint, so a
     /// wrong one only makes the chooser open where it last was.

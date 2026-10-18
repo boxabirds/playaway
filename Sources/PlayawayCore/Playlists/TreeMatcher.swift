@@ -20,17 +20,29 @@ package struct TreeEntry: Equatable {
 
 /// Reads a folder's whole tree in one pass, so restoring a 300-song playlist lists the folder once, not once per song.
 package protocol FolderListing {
-    func entries(under folder: URL) -> [TreeEntry]
+    /// `progress` is told how many items have been looked at (every fifty, and at the end); `isCancelled` is asked as it goes,
+    /// and a cancelled listing returns what it has.
+    func entries(under folder: URL, progress: (Int) -> Void, isCancelled: () -> Bool) -> [TreeEntry]
+}
+
+extension FolderListing {
+    package func entries(under folder: URL) -> [TreeEntry] { entries(under: folder, progress: { _ in }, isCancelled: { false }) }
 }
 
 package struct SystemFolderListing: FolderListing {
     package init() {}
-    package func entries(under folder: URL) -> [TreeEntry] {
+    /// How often the count of items looked at is reported while walking.
+    static let progressEvery = 50
+
+    package func entries(under folder: URL, progress: (Int) -> Void, isCancelled: () -> Bool) -> [TreeEntry] {
         let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
         guard let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys) else { return [] }
         let base = folder.canonicalPath + "/"
-        var found: [TreeEntry] = []
+        var found: [TreeEntry] = [], looked = 0
         for case let url as URL in walker {
+            if isCancelled() { break }
+            looked += 1
+            if looked % Self.progressEvery == 0 { progress(looked) }
             guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
             let path = url.canonicalPath
             guard path.hasPrefix(base) else { continue }
@@ -42,6 +54,7 @@ package struct SystemFolderListing: FolderListing {
             } else if name.hasPrefix(".") { continue }
             found.append(TreeEntry(relativePath: relative, name: name, size: size))
         }
+        progress(looked)
         return found
     }
 }

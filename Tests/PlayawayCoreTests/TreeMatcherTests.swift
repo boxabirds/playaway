@@ -64,7 +64,9 @@ final class TreeMatcherTests: XCTestCase {
         }
         final class Counting: FolderListing {
             var calls = 0
-            func entries(under folder: URL) -> [TreeEntry] { calls += 1; return SystemFolderListing().entries(under: folder) }
+            func entries(under folder: URL, progress: (Int) -> Void, isCancelled: () -> Bool) -> [TreeEntry] {
+                calls += 1; return SystemFolderListing().entries(under: folder, progress: progress, isCancelled: isCancelled)
+            }
         }
         let listing = Counting()
         let tree = listing.entries(under: dir.url)

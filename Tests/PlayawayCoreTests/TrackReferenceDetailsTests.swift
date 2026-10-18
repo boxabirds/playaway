@@ -12,7 +12,7 @@ final class TrackReferenceDetailsTests: XCTestCase {
         try FileManager.default.copyItem(at: Fixtures.url("long30.mp3"), to: song)
         let ref = try XCTUnwrap(TrackReference.make(for: song))
         XCTAssertEqual(ref.fileSize, Int64(try Data(contentsOf: song).count))
-        XCTAssertEqual(try XCTUnwrap(ref.duration), 30, accuracy: 1.0)
+        XCTAssertNil(ref.duration, "adding a song never opens its file (F3): the duration is not read here")
         XCTAssertEqual(ref.folderName, "Mixdowns")
         XCTAssertEqual(ref.groupingFolderName, "Mixdowns")
     }
@@ -48,5 +48,39 @@ final class TrackReferenceDetailsTests: XCTestCase {
         XCTAssertNil(playlist.tracks[0].reference.fileSize)
         XCTAssertEqual(playlist.tracks[0].reference.portableLocation, .iCloudDrive("Mixdowns/a.mp3"))
         XCTAssertEqual(try Data(contentsOf: file), before, "loading does not rewrite the file")
+    }
+
+    /// F3 of the audit: adding a song read its audio header, on the main thread, for every file. A file iCloud has not
+    /// downloaded can block that read, and 300 files pay 300 opens before the list updates. A named pipe stands in for a
+    /// file that blocks when it is opened: making a reference must return without opening it at all.
+    func testMakingAReferenceNeverOpensTheFile() throws {
+        let fifo = dir.url.appendingPathComponent("blocks-when-opened.mp3")
+        XCTAssertEqual(mkfifo(fifo.path, 0o644), 0)
+        let finished = DispatchSemaphore(value: 0)
+        var made: TrackReference?
+        DispatchQueue.global().async { made = TrackReference.make(for: fifo); finished.signal() }
+        let returned = finished.wait(timeout: .now() + 3) == .success
+        if !returned {                                  // release the blocked reader so the test can end
+            let writer = open(fifo.path, O_WRONLY | O_NONBLOCK); if writer >= 0 { close(writer) }
+            _ = finished.wait(timeout: .now() + 3)
+        }
+        XCTAssertTrue(returned, "make(for:) blocked: it opened the file")
+        XCTAssertEqual(made?.fileName, "blocks-when-opened.mp3")
+    }
+
+    func testAddingSongsNeverOpensThem() throws {
+        let fifo = dir.url.appendingPathComponent("blocks-when-opened.wav")
+        XCTAssertEqual(mkfifo(fifo.path, 0o644), 0)
+        let finished = DispatchSemaphore(value: 0)
+        var result: AddResult?
+        DispatchQueue.global().async { result = adding([fifo], to: Playlist(), classifier: AcceptingClassifier()); finished.signal() }
+        let returned = finished.wait(timeout: .now() + 3) == .success
+        if !returned { let writer = open(fifo.path, O_WRONLY | O_NONBLOCK); if writer >= 0 { close(writer) }; _ = finished.wait(timeout: .now() + 3) }
+        XCTAssertTrue(returned, "adding blocked on a file it should not open")
+        XCTAssertEqual(result?.added.count, 1)
+    }
+
+    private struct AcceptingClassifier: FormatClassifying {
+        func classify(_ url: URL) -> FormatClassification { .supported(.wav) }
     }
 }

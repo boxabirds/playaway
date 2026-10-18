@@ -196,6 +196,17 @@ final class AppModel: ObservableObject {
     /// The playlist whose folder the system chooser is open for. The chooser closes its sheet when Open is tapped and only
     /// then reports the folder, so the answer must not depend on the sheet still being up (the bug: Open did nothing).
     private var pickingSession: PlaylistSession?
+    /// A restore that is searching a folder: shown as a progress card with a Cancel, so a big iCloud folder never looks frozen.
+    struct RestoreProgress: Equatable { var folder: String; var looked: Int }
+    @Published var restoreProgress: RestoreProgress?
+    private var restoreCancellation: CancelFlag?
+    /// Read from the search, which runs off the main thread; set from the Cancel button.
+    private final class CancelFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var cancelled = false
+        func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+        var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    }
     /// Choosing a file for one song (Locate), and the offer of a whole folder after a song was added.
     @Published var locateShown = false
     private var locateTarget: (session: PlaylistSession, track: Track)?
@@ -341,6 +352,13 @@ final class AppModel: ObservableObject {
            let demoOne = (try? FileManager.default.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil))?
             .first(where: { $0.lastPathComponent.hasPrefix("Demo One") }) {
             lyrics.seedFakeSheet(for: demoOne)
+        }
+        #endif
+        #if DEBUG
+        // Test aid: what a playlist whose songs are downloading looks like to the list: the cloud state changes all the
+        // time (a download reports progress twice a second), and the list must not be rebuilt under a finger.
+        if ProcessInfo.processInfo.arguments.contains("-PlayawayChurnCloud") {
+            Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.cloudRevision += 1 } }
         }
         #endif
         openAdapter.model = self
@@ -491,6 +509,7 @@ final class AppModel: ObservableObject {
         if !FileManager.default.fileExists(atPath: drive.appendingPathComponent("Other/Demo Added.wav").path) {
             try? Self.tone(60, hz: 450).write(to: drive.appendingPathComponent("Other/Demo Added.wav"))
         }
+        seedMovedDrivePlaylist(in: cloudRoot, drive: drive)
         guard !FileManager.default.fileExists(atPath: file.path) else { return }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let prefix = "/private/var/mobile/Library/Mobile Documents/\(CloudFolder.driveFolderName)/"
@@ -498,6 +517,22 @@ final class AppModel: ObservableObject {
             Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: "\(prefix)\(dirName)/\(songFile)", fileName: songFile))
         }
         _ = PlaylistStore().save(Playlist(tracks: tracks), to: file)
+    }
+
+    /// Test aid: a song that moved inside the folder since the playlist was made (saved in Mixdowns/Old, now in Mixdowns/New),
+    /// so restoring has to search the folder, which is what takes time on a big iCloud folder.
+    private func seedMovedDrivePlaylist(in cloudRoot: URL, drive: URL) {
+        let name = "Mixdowns Moved"
+        let folder = cloudRoot.appendingPathComponent(name)
+        let file = folder.appendingPathComponent(name).appendingPathExtension(playlistFileExtension)
+        let now = drive.appendingPathComponent("Mixdowns/New", isDirectory: true)
+        try? FileManager.default.createDirectory(at: now, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: now.appendingPathComponent("Demo Moved.wav").path) { try? Self.tone(60, hz: 280).write(to: now.appendingPathComponent("Demo Moved.wav")) }
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let saved = "/private/var/mobile/Library/Mobile Documents/\(CloudFolder.driveFolderName)/Mixdowns/Old/Demo Moved.wav"
+        let track = Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: saved, fileName: "Demo Moved.wav"))
+        _ = PlaylistStore().save(Playlist(tracks: [track]), to: file)
     }
 
     /// Test aid (story 41): a song added from a folder this device was not allowed to read, as the file chooser would
@@ -940,24 +975,58 @@ final class AppModel: ObservableObject {
     }
     #endif
 
-    /// The chooser's answer; nil when the person cancelled. States how many songs came back, or why nothing did.
+    /// The chooser's answer; nil when the person cancelled. The search for the songs runs off the main thread, with a
+    /// progress card and a Cancel, then says how many songs came back, or why nothing did.
     func folderPicked(_ url: URL?) {
         guard let session = pickingSession ?? restoreSession else { return }
         pickingSession = nil
         restoreSession = nil
+        guard let url else { return }                       // the person cancelled the chooser: nothing to do
         let snapshot = accessSnapshot(for: session)
-        _ = url?.startAccessingSecurityScopedResource()
-        let result = RecoveryPlanner.apply(picked: url, unfound: snapshot.unfound, roots: roots, listing: SystemFolderListing())
+        _ = url.startAccessingSecurityScopedResource()
+        let flag = CancelFlag()
+        restoreCancellation = flag
+        restoreProgress = RestoreProgress(folder: url.lastPathComponent, looked: 0)
+        let roots = self.roots, unfound = snapshot.unfound
+        #if DEBUG
+        let listing: FolderListing = Self.restoreDelay.map { SlowFolderListing(delay: $0) } ?? SystemFolderListing()
+        #else
+        let listing: FolderListing = SystemFolderListing()
+        #endif
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result = RecoveryPlanner.apply(picked: url, unfound: unfound, roots: roots, listing: listing,
+                                               progress: { looked in Task { @MainActor in self?.restoreProgress?.looked = looked } },
+                                               isCancelled: { flag.isCancelled })
+            await MainActor.run { self?.finishRestore(result, cancelled: flag.isCancelled) }
+        }
+    }
+
+    func cancelRestoreSearch() { restoreCancellation?.cancel() }
+
+    private func finishRestore(_ result: RecoveryResult, cancelled: Bool) {
+        restoreProgress = nil
+        restoreCancellation = nil
         songURLs.removeAll()
         pendingPlays.removeAll()
         cloudRevision += 1
         switch result.reason {
+        case nil where cancelled:
+            enqueueMessage("Restored \(result.restored) of \(result.needed) songs. You cancelled the search, so songs that have moved were not looked for.")
         case nil: enqueueMessage("Restored \(result.restored) of \(result.needed) songs.")
-        case .cancelled?: break
+        case .cancelled?: enqueueMessage("Search cancelled. Nothing was restored.")
         case .notInICloudDrive?: enqueueMessage("That folder is not in your iCloud Drive. Choose the folder that holds your songs.")
         case .holdsNoneOfTheSongs?: enqueueMessage("None of the songs were in that folder. Choose the folder that holds them, or a folder above it.")
         }
     }
+
+    #if DEBUG
+    /// Test aid: `-PlayawayRestoreDelay <seconds>` makes the search of a folder take that long, so the progress card can be seen.
+    private static var restoreDelay: TimeInterval? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let at = arguments.firstIndex(of: "-PlayawayRestoreDelay"), at + 1 < arguments.count else { return nil }
+        return TimeInterval(arguments[at + 1])
+    }
+    #endif
 
     /// Locate (long-press on a locked cloud): one song, one file, kept on this device only.
     func beginLocate(_ track: Track, in session: PlaylistSession) {
@@ -1280,3 +1349,17 @@ struct UbiquitousMover: CloudMoving {
         try FileManager.default.setUbiquitous(true, itemAt: source, destinationURL: destination)
     }
 }
+
+#if DEBUG
+/// Test aid: a folder search that takes a set time, in small steps, so the progress card can be seen and cancelled.
+struct SlowFolderListing: FolderListing {
+    let delay: TimeInterval
+    func entries(under folder: URL, progress: (Int) -> Void, isCancelled: () -> Bool) -> [TreeEntry] {
+        let step = 0.1
+        var looked = 0
+        var waited = 0.0
+        while waited < delay, !isCancelled() { Thread.sleep(forTimeInterval: step); waited += step; looked += 50; progress(looked) }
+        return SystemFolderListing().entries(under: folder, progress: progress, isCancelled: isCancelled)
+    }
+}
+#endif

@@ -1144,6 +1144,24 @@ import UIKit
         sleep(1)
     }
 
+    /// The owner's report on a real device: dragging a song often fails, and the row zips back from a corner. On a playlist
+    /// whose songs are downloading the cloud state changes constantly; the list must not be rebuilt under the finger.
+    /// Dragging must also never add a second copy of the song (the table's own drop must win over the page's).
+    func testReorderStillWorksWhileTheCloudStateKeepsChanging() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayChurnCloud"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.cells["Demo Five"].waitForExistence(timeout: 5))
+        for round in 1...4 {
+            drag(table, "Demo One", toward: "Demo Five", below: true)
+            XCTAssertEqual(order(table).count, 5, "round \(round): no song is duplicated or lost")
+            XCTAssertEqual(order(table).last, "Demo One", "round \(round): the dragged song landed at the end")
+            drag(table, "Demo One", toward: "Demo Two", below: false)
+            XCTAssertEqual(order(table), ["Demo One", "Demo Two", "Demo Three", "Demo Four", "Demo Five"], "round \(round): and back to the start")
+        }
+    }
+
     func testReorderStartMiddleAndEnd() {
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
