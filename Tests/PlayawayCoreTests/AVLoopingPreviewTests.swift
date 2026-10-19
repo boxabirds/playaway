@@ -36,6 +36,50 @@ final class AVLoopingPreviewTests: XCTestCase {
         XCTAssertLessThan(heldUp, 0.1, "the 10 ms sleep per stop used to add up to at least 0.2 s here")
     }
 
+    /// Audit (scrub): the first start of the loop took about 0.7 s here (engine start plus reading the snippet) and later ones
+    /// 0.1 to 0.2 s, all on the main thread. Prepared in the background, the start is only scheduling the buffer.
+    func testStartingAPreparedPlaceIsFastWhereAColdStartIsSlow() {
+        let cold = AVLoopingPreview()
+        let coldBegan = Date()
+        XCTAssertTrue(cold.start(url: song, at: 7, length: 1))
+        let coldTime = Date().timeIntervalSince(coldBegan)
+        cold.stop(); cold.endSession()
+
+        let preview = AVLoopingPreview()
+        preview.prepare(url: song, at: 7, length: 1)
+        Thread.sleep(forTimeInterval: 2)                           // the background work finishes
+        let began = Date()
+        XCTAssertTrue(preview.start(url: song, at: 7, length: 1))
+        let preparedTime = Date().timeIntervalSince(began)
+        XCTAssertTrue(preview.isPlaying)
+        XCTAssertLessThan(preparedTime, 0.05, "a prepared start only schedules the buffer (cold took \(Int(coldTime * 1000)) ms)")
+        XCTAssertLessThan(preparedTime, coldTime)
+        preview.stop(); preview.endSession()
+    }
+
+    func testAnotherPlaceThanThePreparedOneIsStillPlayedFromWhereAskedNotFromTheOldPlace() throws {
+        let preview = AVLoopingPreview()
+        preview.prepare(url: song, at: 3, length: 1)
+        XCTAssertTrue(preview.start(url: song, at: 15, length: 1))
+        Thread.sleep(forTimeInterval: 0.3)
+        let place = try XCTUnwrap(preview.stop())
+        XCTAssertGreaterThanOrEqual(place, 15)
+        XCTAssertLessThanOrEqual(place, 16.05)
+        preview.endSession()
+    }
+
+    func testTheEngineSurvivesStartStopStartWithoutBeingRebuiltAndEndSessionLetsGo() {
+        let preview = AVLoopingPreview()
+        for place in [4.0, 9.0, 4.0] {
+            XCTAssertTrue(preview.start(url: song, at: place, length: 0.5))
+            XCTAssertNotNil(preview.stop())
+        }
+        preview.endSession()
+        XCTAssertFalse(preview.isPlaying)
+        XCTAssertTrue(preview.start(url: song, at: 4, length: 0.5), "usable again after a session ended")
+        preview.stop(); preview.endSession()
+    }
+
     func testASnippetAtTheVeryEndOfTheSongIsShorterButStillPlays() {
         let preview = AVLoopingPreview()
         XCTAssertTrue(preview.start(url: song, at: 29.7, length: 1))

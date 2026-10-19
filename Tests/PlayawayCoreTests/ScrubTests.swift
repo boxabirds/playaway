@@ -234,4 +234,55 @@ final class LoopingPreviewTests: XCTestCase {
         try transport.endScrub(toSeconds: 1)
         XCTAssertEqual(engine.state, .playing)
     }
+
+    // MARK: Getting the loop ready while the finger moves (audit: the scrubbed sound came more than a second late)
+
+    func testTheLoopIsBeingGotReadyAsSoonAsTheFingerIsDownOnAPlayingSong() {
+        let (transport, preview, engine) = rig(); let url = engine.currentURL!
+        transport.beginScrub()
+        pump(0.05)
+        XCTAssertEqual(preview.prepares.count, 1, "the engine starts warming at once")
+        XCTAssertEqual(preview.prepares.first?.url, url)
+    }
+
+    func testAMoveGetsTheNewPlaceReadyOnceTheFingerPausesAndOnlyTheLastMoveCounts() throws {
+        let (transport, preview, _) = rig()
+        transport.scrubPrepareDelay = 0.1
+        transport.beginScrub(); pump(0.02)
+        let before = preview.prepares.count
+        try transport.seek(toSeconds: 1.0); pump(0.03)
+        try transport.seek(toSeconds: 1.5); pump(0.03)
+        try transport.seek(toSeconds: 2.0)
+        XCTAssertEqual(preview.prepares.count, before, "a finger still moving prepares nothing")
+        pump(0.25)
+        XCTAssertEqual(preview.prepares.count, before + 1, "one preparation, for the place the finger stopped at")
+        XCTAssertEqual(preview.prepares.last?.seconds ?? -1, 2.0, accuracy: 0.001)
+    }
+
+    func testAPausedSongPreparesNothingBecauseItHasNoLoop() throws {
+        let (transport, preview, engine) = rig(); engine.pause()
+        transport.beginScrub(); pump(0.05)
+        try transport.seek(toSeconds: 1); pump(0.2)
+        XCTAssertTrue(preview.prepares.isEmpty)
+    }
+
+    func testTheLoopStartsAtThePlaceThatWasPreparedAndTheSessionEndsOnTheLift() throws {
+        let (transport, preview, _) = rig()
+        transport.scrubHoldDelay = 0.1
+        transport.beginScrub()
+        try transport.seek(toSeconds: 2.0)
+        pump(0.3)
+        XCTAssertEqual(preview.starts.last?.seconds ?? -1, 2.0, accuracy: 0.001, "the loop plays the place the finger rests on")
+        XCTAssertEqual(preview.prepares.last?.seconds ?? -1, 2.0, accuracy: 0.001, "and that place had been prepared")
+        try transport.endScrub(toSeconds: 2.0)
+        XCTAssertEqual(preview.sessionsEnded, 1, "the audio kept ready is let go once")
+    }
+
+    func testTheSafetyTimerAlsoEndsTheSession() {
+        let (transport, preview, _) = rig()
+        transport.scrubTimeout = 0.1
+        transport.beginScrub()
+        pump(0.4)
+        XCTAssertEqual(preview.sessionsEnded, 1)
+    }
 }

@@ -171,6 +171,13 @@ package final class AVPlaybackEngine: PlaybackEngine {
         return true
     }
 
+    package func prepareLoop(at seconds: Double, length: TimeInterval) {
+        guard state != .idle, let url = currentURL else { return }
+        preview.prepare(url: url, at: seconds, length: length)
+    }
+
+    package func endPreviewSession() { preview.endSession() }
+
     @discardableResult
     package func stopPreviewLoop() -> Double? {
         guard lease.holder == .preview else { return nil }

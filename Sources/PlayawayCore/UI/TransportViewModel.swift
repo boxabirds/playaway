@@ -109,7 +109,7 @@ package final class TransportViewModel: ObservableObject {
         guard engine.seek(toSeconds: seconds) else { throw ActionError.invalidSeekPosition }
         if isScrubbing {
             scrubTarget = seconds
-            scrubTrace.moved(at: clock()); armScrubWatchdog(); armHoldTimer()
+            scrubTrace.moved(at: clock()); armScrubWatchdog(); armHoldTimer(); if scrubWasPlaying { armPrepareTimer(after: scrubPrepareDelay) }
         }
         refresh()
     }
@@ -121,6 +121,9 @@ package final class TransportViewModel: ObservableObject {
     private var scrubWatchdog: Timer?
     private var playheadWatch: Timer?
     private var holdTimer: Timer?
+    private var prepareTimer: Timer?
+    /// How long after the finger last moved the loop for that place starts being got ready, so that it is ready when the hold ends.
+    package var scrubPrepareDelay: TimeInterval = 0.06
     /// How long the sound fades in when it takes over from the looping snippet at the lift.
     package static let handoffFade: TimeInterval = 0.02
     /// Where the finger is while a drag is in progress. The slider and its labels show this, not the engine, so the thumb
@@ -150,7 +153,7 @@ package final class TransportViewModel: ObservableObject {
         scrubWasPlaying = engine.state == .playing
         scrubTarget = engine.position
         scrubTrace.fingerDown(at: clock(), wasPlaying: scrubWasPlaying)
-        if scrubWasPlaying { engine.pause() }
+        if scrubWasPlaying { engine.pause(); armPrepareTimer(after: 0) }      // the engine starts warming at once
         armScrubWatchdog()
         refresh()
     }
@@ -173,6 +176,17 @@ package final class TransportViewModel: ObservableObject {
         holdTimer = timer
     }
 
+    /// Reads the snippet at the slider's place in the background once the finger has paused for a moment.
+    private func armPrepareTimer(after delay: TimeInterval) {
+        prepareTimer?.invalidate()
+        let timer = Self.mainTimer(interval: delay, repeats: false) { [weak self] in
+            guard let self, self.isScrubbing else { return }
+            self.engine.prepareLoop(at: self.scrubTarget ?? self.engine.position, length: self.scrubLoopLength)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        prepareTimer = timer
+    }
+
     private func armScrubWatchdog(after interval: TimeInterval? = nil) {
         scrubWatchdog?.invalidate()
         let watchdog = Self.mainTimer(interval: interval ?? scrubTimeout, repeats: false) { [weak self] in
@@ -189,7 +203,8 @@ package final class TransportViewModel: ObservableObject {
     private func finishScrub(toSeconds seconds: Double, how: ScrubTrace.End) throws {
         defer {
             isScrubbing = false; scrubWasPlaying = false; scrubWatchdog?.invalidate(); scrubWatchdog = nil
-            holdTimer?.invalidate(); holdTimer = nil; engine.stopPreviewLoop(); scrubTarget = nil
+            holdTimer?.invalidate(); holdTimer = nil; prepareTimer?.invalidate(); prepareTimer = nil
+            engine.stopPreviewLoop(); engine.endPreviewSession(); scrubTarget = nil
             watchPlayheadAfterResume()
             refresh()
         }

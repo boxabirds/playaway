@@ -58,8 +58,14 @@ package protocol PlaybackEngine: AnyObject {
     func startPreviewLoop(at seconds: Double, length: TimeInterval) -> Bool
     /// Silences the loop. Returns the place in the song the loop had reached, or nil when no loop was playing.
     @discardableResult func stopPreviewLoop() -> Double?
+    /// Gets the loop for `seconds` ready in the background, so the `startPreviewLoop` that follows is instant.
+    func prepareLoop(at seconds: Double, length: TimeInterval)
+    /// The scrub is over: the audio kept ready for the loop is let go.
+    func endPreviewSession()
 }
 
 extension PlaybackEngine {
+    package func prepareLoop(at seconds: Double, length: TimeInterval) {}
+    package func endPreviewSession() {}
     package func resume(fadingIn duration: TimeInterval) { resume() }
 }

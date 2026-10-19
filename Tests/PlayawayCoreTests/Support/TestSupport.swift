@@ -163,6 +163,9 @@ final class FakeLoopingPreview: LoopingPreviewing {
     private(set) var isPlaying = false
     private(set) var starts: [(url: URL, seconds: Double, length: Double)] = []
     private(set) var stops = 0
+    /// What was asked to be got ready, and how many scrubs were ended.
+    private(set) var prepares: [(url: URL, seconds: Double, length: Double)] = []
+    private(set) var sessionsEnded = 0
     var canStart = true
     /// Where the loop is when it is stopped; the start of the snippet when not set.
     var placeWhenStopped: Double?
@@ -170,6 +173,9 @@ final class FakeLoopingPreview: LoopingPreviewing {
     private static let soundName = "loop"
 
     init(ledger: SoundLedger? = nil) { self.ledger = ledger }
+
+    func prepare(url: URL, at seconds: Double, length: Double) { prepares.append((url, seconds, length)) }
+    func endSession() { sessionsEnded += 1 }
 
     func start(url: URL, at seconds: Double, length: Double) -> Bool {
         guard canStart else { return false }
