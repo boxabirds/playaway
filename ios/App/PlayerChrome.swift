@@ -18,6 +18,8 @@ enum Chrome {
     static let cardCorner: CGFloat = 24
     /// The sheet's height for the instant before the card has measured its content.
     static let firstCardHeight: CGFloat = 320
+    /// The floating controller never grows wider than this, so on an iPad it is a bar in the middle of the songs, not a slab.
+    static let controllerMaxWidth: CGFloat = 640
     /// How long the card takes to grow or shrink when artwork comes or goes or the lyrics panel changes.
     static let cardResizeDuration: TimeInterval = 0.35
     /// A change of the card's height smaller than this (points) is layout noise, not a resize.
@@ -47,6 +49,8 @@ struct PlayerChrome: View {
             ZStack(alignment: .bottom) {
                 if active {
                     FloatingController()
+                        .frame(maxWidth: Chrome.controllerMaxWidth)
+                        .background { SeekShortcuts() }
                         .onTapGesture { model.cardOpen = true }
                         .gesture(DragGesture(minimumDistance: Chrome.openDragDistance).onEnded { value in
                             if value.translation.height < -Chrome.openDragDistance { model.cardOpen = true }
@@ -76,7 +80,7 @@ struct PlayerCard: View {
 
     var body: some View {
         ScrollView {
-            PlayerColumn(layout: .stacked, showsHandle: true, screenHeight: screenHeight)
+            PlayerColumn(showsHandle: true, screenHeight: screenHeight)
                 .fixedSize(horizontal: false, vertical: true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured in resize(to: measured) }
         }
@@ -170,47 +174,23 @@ struct FloatingController: View {
 /// keeps nothing of its own.
 struct PlayerColumn: View {
     @EnvironmentObject var model: AppModel
-    let layout: PlayerLayout
     let showsHandle: Bool
     let screenHeight: CGFloat
     @ScaledMetric(relativeTo: .largeTitle) private var playButtonSide = Chrome.playButtonSide
 
     var body: some View {
-        switch layout {
-        case .stacked:
-            VStack(alignment: .leading, spacing: 14) {
-                if showsHandle { handle }
-                playlistLink
-                artwork
-                title
-                scrubber
-                controls
-                LyricsPanel()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: lyricsPanelHeight)
-            }
-            .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
-        case .sideBySide:
-            HStack(alignment: .top, spacing: 24) {
-                // The controls sit at the bottom of the left half; artwork and title changes happen above them.
-                VStack(alignment: .leading, spacing: 14) {
-                    playlistLink
-                    artwork
-                    title
-                    Spacer(minLength: 0)
-                    scrubber
-                    controls
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("player-left-column")
-                LyricsPanel()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("player-lyrics-column")
-            }
-            .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
+        VStack(alignment: .leading, spacing: 14) {
+            if showsHandle { handle }
+            playlistLink
+            artwork
+            title
+            scrubber
+            controls
+            LyricsPanel()
+                .frame(maxWidth: .infinity)
+                .frame(height: lyricsPanelHeight)
         }
+        .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
     }
 
     @ViewBuilder private var artwork: some View {
@@ -332,29 +312,22 @@ struct PlayerColumn: View {
     }
 }
 
-/// The iPad's detail column: the player when a song is under way or paused, otherwise a named empty state. The
-/// layout follows the column's own width (the words beside the controls from `IPadLayout.lyricsBesideMinimumWidth`).
-struct NowPlayingColumn: View {
+/// The keyboard on an iPad (story 38): what each key does, listed in the system's shortcut overlay by the buttons
+/// that carry them.
+enum Keys {
+    static let seekStep: Double = 5
+}
+
+
+extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+/// Left and Right arrows seek by `Keys.seekStep` (an iPad's keyboard); the buttons are not drawn, the shortcuts are what
+/// they are for.
+struct SeekShortcuts: View {
     @EnvironmentObject var model: AppModel
-
     var body: some View {
-        GeometryReader { geo in
-            if model.transport.state != .idle {
-                ScrollView {
-                    PlayerColumn(layout: IPadLayout.playerLayout(columnWidth: geo.size.width), showsHandle: false, screenHeight: geo.size.height)
-                        .frame(minHeight: geo.size.height)
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .accessibilityIdentifier("now-playing-column")
-                .background { seekShortcuts }
-            } else {
-                EmptyNowPlaying()
-            }
-        }
-    }
-
-    /// Left and Right arrows seek by `Keys.seekStep`; the buttons are not drawn, the shortcuts are what they are for.
-    private var seekShortcuts: some View {
         HStack {
             Button("Back 5 seconds") { try? model.transport.seek(toSeconds: max(model.transport.position - Keys.seekStep, 0)) }
                 .keyboardShortcut(.leftArrow, modifiers: [])
@@ -363,21 +336,4 @@ struct NowPlayingColumn: View {
         }
         .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
     }
-}
-
-/// The keyboard on an iPad (story 38): what each key does, listed in the system's shortcut overlay by the buttons
-/// that carry them.
-enum Keys {
-    static let seekStep: Double = 5
-}
-
-struct EmptyNowPlaying: View {
-    var body: some View {
-        ContentUnavailableView("Nothing playing", systemImage: "music.note", description: Text("Choose a song"))
-            .accessibilityIdentifier("now-playing-empty")
-    }
-}
-
-extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

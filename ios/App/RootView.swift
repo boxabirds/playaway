@@ -18,9 +18,7 @@ struct RootView: View {
     }
 
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
-    @State private var windowWidth: CGFloat = 0
 
     /// The size class the forms follow: the system's, or the rig's reading of its fixed width (a frame alone does not
     /// change the size class, and a 320-point window is compact).
@@ -29,10 +27,9 @@ struct RootView: View {
         return sizeClass
     }
 
-    /// Which columns this window shows (story 38): the size class and type size, and the measured width.
+    /// Which form this window takes: the stack, or two columns.
     var plan: ColumnPlan {
-        let width: WidthClass? = effectiveSizeClass.map { $0 == .compact ? .compact : .regular }
-        return IPadLayout.columnPlan(width: width, isAccessibilityTypeSize: typeSize.isAccessibilitySize, windowWidth: Double(windowWidth))
+        IPadLayout.columnPlan(width: effectiveSizeClass.map { $0 == .compact ? .compact : .regular })
     }
 
     var body: some View {
@@ -49,14 +46,10 @@ struct RootView: View {
         Group {
             switch plan {
             case .stack: stack
-            case .two, .three: columns
+            case .two: columns
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
-        .onChange(of: plan, initial: true) { _, plan in
-            columnVisibility = plan == .three ? .all : .doubleColumn
-            if plan != .stack { model.cardOpen = false }
-        }
+        .onChange(of: plan) { _, _ in model.cardOpen = false }
         .modifier(ModelAlerts())
         .sheet(isPresented: $model.renameShown) { RenameSheet() }
         .alert("Sync with iCloud", isPresented: Binding(get: { model.syncTarget != nil }, set: { if !$0 { model.syncTarget = nil } })) {
@@ -100,21 +93,24 @@ struct RootView: View {
         .overlay { PlayerChrome() }
     }
 
-    /// The iPad's form: Playlists in the sidebar, the chosen playlist's songs in the middle, Now Playing at the right.
+    /// The iPad's form: Playlists in the sidebar and the chosen playlist's songs beside it. The player floats over the songs
+    /// as a glass bar and opens as a card, as on the iPhone. In portrait, and at large type sizes, the sidebar folds away
+    /// behind its button.
     private var columns: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             PlaylistsView(selection: Binding(get: { model.selectedPlaylist }, set: { if let url = $0 { model.openFromList(url, in: plan) } else { model.select(nil, in: plan) } }))
-        } content: {
-            if let url = model.selectedPlaylist, let session = model.openSession(for: url) {
-                PlaylistView(session: session)
-            } else if let url = model.selectedPlaylist, model.opening[url] != nil {
-                ProgressView().accessibilityLabel("Opening").accessibilityIdentifier("songs-opening")
-            } else {
-                ContentUnavailableView("No playlist chosen", systemImage: "music.note.list", description: Text("Choose a playlist"))
-                    .accessibilityIdentifier("songs-empty")
-            }
         } detail: {
-            NowPlayingColumn()
+            Group {
+                if let url = model.selectedPlaylist, let session = model.openSession(for: url) {
+                    PlaylistView(session: session)
+                } else if let url = model.selectedPlaylist, model.opening[url] != nil {
+                    ProgressView().accessibilityLabel("Opening").accessibilityIdentifier("songs-opening")
+                } else {
+                    ContentUnavailableView("No playlist chosen", systemImage: "music.note.list", description: Text("Choose a playlist"))
+                        .accessibilityIdentifier("songs-empty")
+                }
+            }
+            .overlay { PlayerChrome() }
         }
         .navigationSplitViewStyle(.balanced)
     }

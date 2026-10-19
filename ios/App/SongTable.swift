@@ -151,7 +151,8 @@ struct SongTable: UIViewRepresentable {
         func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
             let track = self.session.playlist.tracks[indexPath.row]
             let provider = NSItemProvider(object: track.id.uuidString as NSString)
-            if let model, case .resolved(let url) = model.resolver.resolve(track.reference, besidePlaylistAt: self.session.folder).0 {
+            if SongDragPolicy.offersFileURL(isPad: UIDevice.current.userInterfaceIdiom == .pad),
+               let model, case .resolved(let url) = model.resolver.resolve(track.reference, besidePlaylistAt: self.session.folder).0 {
                 provider.registerObject(url as NSURL, visibility: .all)
             }
             return [UIDragItem(itemProvider: provider)]
