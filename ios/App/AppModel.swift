@@ -227,6 +227,11 @@ final class AppModel: ObservableObject {
     let transport: TransportViewModel
     @Published private(set) var entries: [PlaylistEntry] = []
     @Published var cardOpen = false
+    /// The iPad's lyrics panel, beside the songs (the phone's lyrics sit in the card).
+    @Published var lyricsPanelShown = false
+    /// True while the window is in its two-column form. A sheet can report a compact width of its own even on an iPad, so the
+    /// views that must follow the window, not their own container, read this.
+    @Published var isWideWindow = false
     @Published var path: [URL] = []
     /// Playlists being read, with how far each has got; the row of one that takes longer than a moment shows it.
     @Published var opening: [URL: OpeningProgress] = [:]

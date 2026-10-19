@@ -31,6 +31,16 @@ import XCTest
         return false
     }
 
+    /// Taps the Demo playlist, opening the sidebar from its button first when it is folded away (in portrait the sidebar
+    /// can still be sliding away when the app has just launched, so each attempt looks again).
+    private func chooseDemo(_ app: XCUIApplication) -> Bool {
+        for _ in 0..<4 {
+            if app.staticTexts["Demo"].waitForExistence(timeout: 4), app.staticTexts["Demo"].isHittable { app.staticTexts["Demo"].tap(); return true }
+            for name in ["ToggleSidebar", "Show Sidebar", "Playlists"] where app.buttons[name].exists { app.buttons[name].tap(); break }
+        }
+        return false
+    }
+
     func testLandscapeShowsTwoColumnsAndNoPlayerUntilASongPlays() {
         let app = launch()
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15), "the sidebar lists the playlists")
@@ -60,12 +70,37 @@ import XCTest
         XCUIDevice.shared.orientation = .landscapeLeft
     }
 
+    /// Owner's list: the position belongs on top of the fixed player, and the lyrics in a panel, not in the player.
+    func testThePositionSliderSitsOnTopOfTheFloatingControllerAndTheLyricsHaveAPanelOfTheirOwn() {
+        // Not the fake cloud: the ready-made lyrics are for the Demo One file in the app's own folder.
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeLyrics"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 10))
+        table.cells["Demo One"].tap()
+        let controller = app.descendants(matching: .any).matching(identifier: "floating-controller").firstMatch
+        XCTAssertTrue(controller.waitForExistence(timeout: 10))
+        let slider = controller.sliders["Playback position"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5), "the position is on the bar")
+        XCTAssertLessThan(slider.frame.minY, controller.buttons["Pause"].frame.minY, "on top of the controls")
+        XCTAssertTrue(controller.buttons["Previous"].exists && controller.buttons["Next"].exists, "with Previous and Next beside Play")
+        // The lyrics: not in the card, in a panel from the toolbar.
+        XCTAssertFalse(app.descendants(matching: .any)["lyrics-panel"].firstMatch.exists, "no lyrics until asked for")
+        controller.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.85)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["player-card"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["lyrics-panel"].firstMatch.exists, "the card has no lyrics on the iPad")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.97)).tap()         // outside the card: the iPad's sheet closes
+        XCTAssertTrue(app.descendants(matching: .any)["player-card"].firstMatch.waitForNonExistence(timeout: 5), "the card closed")
+        XCTAssertTrue(app.buttons["lyrics-panel-button"].waitForExistence(timeout: 5))
+        app.buttons["lyrics-panel-button"].tap()
+        XCTAssertTrue(app.staticTexts["lyrics-line-0"].waitForExistence(timeout: 5), "the panel shows the lyrics")
+    }
+
     func testPortraitShowsTheSongsTheControllerAndTheSidebarFromItsButton() {
         let app = launch()
         XCUIDevice.shared.orientation = .portrait
-        XCTAssertTrue(sidebarIsReachable(app), "the playlists are on screen or behind the sidebar button in portrait")
-        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 10))
-        app.staticTexts["Demo"].tap()
+        XCTAssertTrue(chooseDemo(app), "the playlists are on screen or behind the sidebar button in portrait")
         let table = app.tables["song-table"]
         XCTAssertTrue(table.waitForExistence(timeout: 10))
         table.cells["Demo Two"].tap()

@@ -136,29 +136,38 @@ struct ModelAlerts: ViewModifier {
 
 struct FloatingController: View {
     @EnvironmentObject var model: AppModel
+    /// Wide windows (the iPad) put the position slider on top of the bar, with Previous and Next beside Play; the phone's bar
+    /// stays one slim row.
+    private var isWide: Bool { model.isWideWindow }
+
     var body: some View {
-        HStack(spacing: 12) {
-            if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
-                Image(uiImage: image).resizable().scaledToFill()
-                    .frame(width: Chrome.artworkSide, height: Chrome.artworkSide)
-                    .clipShape(RoundedRectangle(cornerRadius: 6)).accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.metadata?.title ?? model.transport.nowPlaying).font(.subheadline.weight(.semibold)).lineLimit(1)
-                if let detail = detailLine { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-            }
-            Spacer(minLength: 8)
-            Button { model.transport.playPause() } label: {
-                Group {
-                    if let loading = model.downloads.currentLoading { LoadingGlyph(fraction: loading).frame(width: 26, height: 26) }
-                    else { Image(systemName: model.transport.state == .playing ? "pause.fill" : "play.fill").font(.title2) }
+        VStack(spacing: isWide ? 6 : 0) {
+            if isWide { PlayerScrubber().padding(.top, 8) }
+            HStack(spacing: 12) {
+                if let data = model.metadata?.artworkData, let image = UIImage(data: data) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                        .frame(width: Chrome.artworkSide, height: Chrome.artworkSide)
+                        .clipShape(RoundedRectangle(cornerRadius: 6)).accessibilityHidden(true)
                 }
-                .frame(width: 44, height: 44).contentShape(Rectangle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.metadata?.title ?? model.transport.nowPlaying).font(.subheadline.weight(.semibold)).lineLimit(1)
+                    if let detail = detailLine { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                Spacer(minLength: 8)
+                if isWide { skipButton("backward.fill", label: "Previous") { try? model.transport.previous() } }
+                Button { model.transport.playPause() } label: {
+                    Group {
+                        if let loading = model.downloads.currentLoading { LoadingGlyph(fraction: loading).frame(width: 26, height: 26) }
+                        else { Image(systemName: model.transport.state == .playing ? "pause.fill" : "play.fill").font(.title2) }
+                    }
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .accessibilityLabel(model.downloads.currentLoading != nil ? "Loading" : (model.transport.state == .playing ? "Pause" : "Play"))
+                if isWide { skipButton("forward.fill", label: "Next") { try? model.transport.next() } }
             }
-            .accessibilityLabel(model.downloads.currentLoading != nil ? "Loading" : (model.transport.state == .playing ? "Pause" : "Play"))
+            .frame(minHeight: PlayerBar.height)
         }
         .padding(.horizontal, 16)
-        .frame(minHeight: PlayerBar.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))    // keeps the list behind it unreadable
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 8).padding(.bottom, PlayerBar.bottomMargin)
@@ -167,8 +176,44 @@ struct FloatingController: View {
         .accessibilityIdentifier("floating-controller")
     }
 
+    private func skipButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.title3).frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
+    }
+
     private var detailLine: String? {
         [model.metadata?.artist, model.metadata?.album].compactMap { $0 }.joined(separator: " · ").nilIfEmpty
+    }
+}
+
+/// The position slider and the two times. They are drawn on a clock straight from the engine, so they are always the
+/// engine's position. While a finger is on the slider the song is paused and every move seeks the engine itself, so the
+/// slider, the times and the sound can never disagree.
+struct PlayerScrubber: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.25, paused: model.transport.state != .playing)) { _ in
+            let position = model.transport.displayPosition      // the finger during a drag, the engine otherwise
+            let duration = model.transport.duration
+            VStack(spacing: 2) {
+                Slider(value: Binding(get: { position }, set: { try? model.transport.seek(toSeconds: $0) }),
+                       in: 0...max(duration, 1), step: Chrome.scrubberStep) { editing in
+                    if editing { model.transport.beginScrub() }
+                    else { try? model.transport.endScrub(toSeconds: model.transport.position) }
+                }
+                .accessibilityLabel("Playback position")
+                .accessibilityValue("\(TransportViewModel.formatTime(position)) of \(TransportViewModel.formatTime(duration))")
+                HStack {
+                    Text(TransportViewModel.formatTime(position))
+                    Spacer()
+                    Text("-" + TransportViewModel.formatTime(max(duration - position, 0)))
+                }
+                .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }
     }
 }
 
@@ -189,9 +234,11 @@ struct PlayerColumn: View {
             title
             scrubber
             controls
-            LyricsPanel()
-                .frame(maxWidth: .infinity)
-                .frame(height: lyricsPanelHeight)
+            if !model.isWideWindow {                         // wide windows keep the lyrics in a panel of their own
+                LyricsPanel()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: lyricsPanelHeight)
+            }
         }
         .padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 16)
     }
@@ -230,30 +277,7 @@ struct PlayerColumn: View {
         Text(model.metadata?.title ?? model.transport.nowPlaying).font(.title2.weight(.bold)).lineLimit(2)
     }
 
-    /// The position slider and the two times. They are drawn on a clock straight from the engine, so they are always the
-    /// engine's position. While a finger is on the slider the song is paused and every move seeks the engine itself, so the
-    /// slider, the times and the sound can never disagree.
-    private var scrubber: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: model.transport.state != .playing)) { _ in
-            let position = model.transport.displayPosition      // the finger during a drag, the engine otherwise
-            let duration = model.transport.duration
-            VStack(spacing: 2) {
-                Slider(value: Binding(get: { position }, set: { try? model.transport.seek(toSeconds: $0) }),
-                       in: 0...max(duration, 1), step: Chrome.scrubberStep) { editing in
-                    if editing { model.transport.beginScrub() }
-                    else { try? model.transport.endScrub(toSeconds: model.transport.position) }
-                }
-                .accessibilityLabel("Playback position")
-                .accessibilityValue("\(TransportViewModel.formatTime(position)) of \(TransportViewModel.formatTime(duration))")
-                HStack {
-                    Text(TransportViewModel.formatTime(position))
-                    Spacer()
-                    Text("-" + TransportViewModel.formatTime(max(duration - position, 0)))
-                }
-                .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
-            }
-        }
-    }
+    private var scrubber: some View { PlayerScrubber() }
 
     private var controls: some View {
         ViewThatFits(in: .horizontal) {

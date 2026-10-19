@@ -7,12 +7,14 @@ import PlayawayCore
 /// song is.
 struct LyricsPanel: View {
     @EnvironmentObject var model: AppModel
+    /// In a panel of its own (the iPad's inspector) the section is always open and has no folding header.
+    var embedded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {                       // one element, so the identifier lands on the panel itself
-            if model.lyrics.status != .off { header }
-            if model.lyrics.status == .off || model.lyrics.settings.panelShown { section }
+            if !embedded, model.lyrics.status != .off { header }
+            if embedded || model.lyrics.status == .off || model.lyrics.settings.panelShown { section }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .accessibilityElement(children: .contain)

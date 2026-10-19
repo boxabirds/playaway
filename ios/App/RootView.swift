@@ -49,7 +49,10 @@ struct RootView: View {
             case .two: columns
             }
         }
-        .onChange(of: plan) { _, _ in model.cardOpen = false }
+        .onChange(of: plan, initial: true) { _, plan in
+            model.isWideWindow = plan != .stack
+            model.cardOpen = false
+        }
         .modifier(ModelAlerts())
         .sheet(isPresented: $model.renameShown) { RenameSheet() }
         .alert("Sync with iCloud", isPresented: Binding(get: { model.syncTarget != nil }, set: { if !$0 { model.syncTarget = nil } })) {
@@ -100,20 +103,32 @@ struct RootView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             PlaylistsView(selection: Binding(get: { model.selectedPlaylist }, set: { if let url = $0 { model.openFromList(url, in: plan) } else { model.select(nil, in: plan) } }))
         } detail: {
-            Group {
-                if let url = model.selectedPlaylist, let session = model.openSession(for: url) {
-                    PlaylistView(session: session)
-                } else if let url = model.selectedPlaylist, model.opening[url] != nil {
-                    ProgressView().accessibilityLabel("Opening").accessibilityIdentifier("songs-opening")
-                } else {
-                    ContentUnavailableView("No playlist chosen", systemImage: "music.note.list", description: Text("Choose a playlist"))
-                        .accessibilityIdentifier("songs-empty")
+            HStack(spacing: 0) {
+                Group {
+                    if let url = model.selectedPlaylist, let session = model.openSession(for: url) {
+                        PlaylistView(session: session)
+                    } else if let url = model.selectedPlaylist, model.opening[url] != nil {
+                        ProgressView().accessibilityLabel("Opening").accessibilityIdentifier("songs-opening")
+                    } else {
+                        ContentUnavailableView("No playlist chosen", systemImage: "music.note.list", description: Text("Choose a playlist"))
+                            .accessibilityIdentifier("songs-empty")
+                    }
+                }
+                .overlay { PlayerChrome() }
+                // The lyrics have a panel of their own beside the songs, opened from the toolbar, not a place in the player.
+                if model.lyricsPanelShown {
+                    Divider()
+                    LyricsPanel(embedded: true)
+                        .frame(width: Self.lyricsPanelWidth)
+                        .transition(.move(edge: .trailing))
                 }
             }
-            .overlay { PlayerChrome() }
+            .animation(.easeInOut(duration: Chrome.cardResizeDuration), value: model.lyricsPanelShown)
         }
         .navigationSplitViewStyle(.balanced)
     }
+
+    private static let lyricsPanelWidth: CGFloat = 380
 }
 
 struct PlaylistsView: View {
@@ -357,6 +372,10 @@ struct PlaylistView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     StartPlaylistButton(session: session)
+                    if model.isWideWindow {
+                        Button { model.lyricsPanelShown.toggle() } label: { Image(systemName: "quote.bubble") }
+                            .accessibilityLabel("Lyrics").accessibilityIdentifier("lyrics-panel-button")
+                    }
                     Button { importing = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add Songs")
                         .keyboardShortcut("o", modifiers: .command)
                 }
