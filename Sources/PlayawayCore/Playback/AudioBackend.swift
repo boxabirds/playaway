@@ -74,6 +74,11 @@ package final class AVAudioPlayerHandle: NSObject, AudioPlayerHandle {
     private final class FinishedListener: NSObject, AVAudioPlayerDelegate {
         weak var owner: AVAudioPlayerHandle?
         nonisolated override init() { super.init() }
-        nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { owner?.finished() }
+        /// The system chooses the thread. The finish closure was made on the main actor, and calling it from anywhere else
+        /// stops the app under Swift 6, so it is always run on the main thread.
+        nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+            nonisolated(unsafe) let handle = owner
+            if Thread.isMainThread { handle?.finished() } else { DispatchQueue.main.async { handle?.finished() } }
+        }
     }
 }

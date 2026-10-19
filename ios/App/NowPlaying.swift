@@ -14,14 +14,14 @@ final class NowPlayingCenter {
     func attach(model: AppModel) {
         self.model = model
         let commands = MPRemoteCommandCenter.shared()
-        commands.playCommand.addTarget { [weak self] _ in self?.run { try $0.transport.play() } ?? .commandFailed }
-        commands.pauseCommand.addTarget { [weak self] _ in self?.run { try $0.transport.pause() } ?? .commandFailed }
-        commands.togglePlayPauseCommand.addTarget { [weak self] _ in self?.run { $0.transport.playPause() } ?? .commandFailed }
-        commands.nextTrackCommand.addTarget { [weak self] _ in self?.run { try $0.transport.next() } ?? .commandFailed }
-        commands.previousTrackCommand.addTarget { [weak self] _ in self?.run { try $0.transport.previous() } ?? .commandFailed }
-        commands.changePlaybackPositionCommand.addTarget { [weak self] event in
+        Self.register(commands.playCommand, on: self) { me, _ in me.run { try $0.transport.play() } }
+        Self.register(commands.pauseCommand, on: self) { me, _ in me.run { try $0.transport.pause() } }
+        Self.register(commands.togglePlayPauseCommand, on: self) { me, _ in me.run { $0.transport.playPause() } }
+        Self.register(commands.nextTrackCommand, on: self) { me, _ in me.run { try $0.transport.next() } }
+        Self.register(commands.previousTrackCommand, on: self) { me, _ in me.run { try $0.transport.previous() } }
+        Self.register(commands.changePlaybackPositionCommand, on: self) { me, event in
             guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            return self?.run { try $0.transport.seek(toSeconds: e.positionTime) } ?? .commandFailed
+            return me.run { try $0.transport.seek(toSeconds: e.positionTime) }
         }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
@@ -32,6 +32,22 @@ final class NowPlayingCenter {
             nonisolated(unsafe) let note = n
             MainActor.assumeIsolated { self?.routeChange(note) }
         })
+    }
+
+    /// A remote command's handler must not be a main-actor closure: the system is free to call it on any thread, and a
+    /// main-actor closure called elsewhere stops the app. This is made outside the actor and moves the work onto the main
+    /// thread itself (waiting for it, because the system wants the answer back).
+    nonisolated private static func register(_ command: MPRemoteCommand, on center: NowPlayingCenter,
+                                             _ body: @escaping @MainActor @Sendable (NowPlayingCenter, MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) {
+        command.addTarget { [weak center] event in
+            nonisolated(unsafe) let event = event
+            let work: @MainActor () -> MPRemoteCommandHandlerStatus = {
+                guard let center else { return .commandFailed }
+                return body(center, event)
+            }
+            if Thread.isMainThread { return MainActor.assumeIsolated(work) }
+            return DispatchQueue.main.sync { MainActor.assumeIsolated(work) }
+        }
     }
 
     private func run(_ body: (AppModel) throws -> Void) -> MPRemoteCommandHandlerStatus {
@@ -76,8 +92,15 @@ final class NowPlayingCenter {
         if let album = meta?.album { info[MPMediaItemPropertyAlbumTitle] = album }
         if let name = model.activeSession?.name { info[MPMediaItemPropertyAlbumTitle] = meta?.album ?? name }
         if let data = meta?.artworkData, let image = UIImage(data: data) {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            info[MPMediaItemPropertyArtwork] = nowPlayingArtwork(image)
         }
         center.nowPlayingInfo = info
     }
+}
+
+/// The system asks for the artwork on its own queue, so the handler is made here, outside the main actor; a closure made
+/// in a main-actor method would stop the app when called there. The image is only read.
+private func nowPlayingArtwork(_ image: UIImage) -> MPMediaItemArtwork {
+    nonisolated(unsafe) let picture = image
+    return MPMediaItemArtwork(boundsSize: image.size) { _ in picture }
 }
