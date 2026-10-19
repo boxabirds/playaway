@@ -211,9 +211,37 @@ struct SongTable: UIViewRepresentable {
         func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) {
             isDragging = true
             DragTrace.shared.record("drag session began; items \(session.items.count); finger at \(Int(session.location(in: tableView).x)),\(Int(session.location(in: tableView).y)); table \(Int(tableView.bounds.width))x\(Int(tableView.bounds.height))")
+            followFinger(of: session, over: tableView)
+        }
+
+        private var fingerTimer: Timer?
+        private static let fingerSampleInterval: TimeInterval = 0.25
+
+        /// While the drag lasts, writes down where the finger is and where each row sits, whenever either changes. Rows
+        /// that open a gap under the finger mean the table is taking the drag as a reorder; rows that stay put mean it is not.
+        private func followFinger(of session: UIDragSession, over table: UITableView) {
+            fingerTimer?.invalidate()
+            var last = ""
+            nonisolated(unsafe) let watched = session           // only read on the main thread, below
+            let timer = Timer(timeInterval: Self.fingerSampleInterval, repeats: true) { [weak table] _ in
+                MainActor.assumeIsolated {
+                    guard let table else { return }
+                    let finger = watched.location(in: table)
+                    let rows = table.indexPathsForVisibleRows?.sorted().compactMap { path in
+                        table.cellForRow(at: path).map { "\(path.row)@\(Int($0.frame.minY))" }
+                    }.joined(separator: " ") ?? ""
+                    let line = "finger \(Int(finger.x)),\(Int(finger.y)); rows \(rows)"
+                    guard line != last else { return }
+                    last = line
+                    DragTrace.shared.record(line)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            fingerTimer = timer
         }
         func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) {
             isDragging = false
+            fingerTimer?.invalidate(); fingerTimer = nil
             DragTrace.shared.record("drag session ended; reload waiting: \(needsReloadAfterDrag)")
             guard needsReloadAfterDrag else { return }
             needsReloadAfterDrag = false
