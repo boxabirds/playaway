@@ -394,6 +394,45 @@ final class PlaylistPlayerTests: XCTestCase {
         }
     }
 
+    /// Owner's list: "going back jumps to the previous song; it should only do that if the play position is under 3 s".
+    func testPreviousPastThreeSecondsRestartsTheSongInsteadOfGoingBack() {
+        let rig = PlayerRig()
+        rig.player.play(track: rig.playlist.tracks[2])
+        XCTAssertTrue(rig.engine.seek(toSeconds: 3.5))
+        let started = rig.startedNames
+        rig.player.previous()
+        XCTAssertEqual(rig.currentName, "track3.mp3", "the same song")
+        XCTAssertEqual(rig.engine.position, 0, "from its start")
+        XCTAssertEqual(rig.startedNames, started, "without starting another song")
+        XCTAssertTrue(rig.engine.isPlaying, "and it keeps playing")
+        rig.player.previous()
+        XCTAssertEqual(rig.currentName, "track2.mp3", "a second press right away goes back a song")
+    }
+
+    func testPreviousJustUnderAndAtTheThresholdSplitsOnTheThreshold() {
+        let rig = PlayerRig()
+        rig.player.play(track: rig.playlist.tracks[2])
+        XCTAssertTrue(rig.engine.seek(toSeconds: PlaylistPlayer.restartThreshold - 0.1))
+        rig.player.previous()
+        XCTAssertEqual(rig.currentName, "track2.mp3", "under three seconds goes back")
+        rig.player.next()
+        XCTAssertTrue(rig.engine.seek(toSeconds: PlaylistPlayer.restartThreshold))
+        rig.player.previous()
+        XCTAssertEqual(rig.currentName, "track3.mp3", "at three seconds restarts")
+        XCTAssertEqual(rig.engine.position, 0)
+    }
+
+    func testPreviousPastThreeSecondsOnAPausedSongRestartsItAndLeavesItPaused() {
+        let rig = PlayerRig()
+        rig.player.play(track: rig.playlist.tracks[2])
+        XCTAssertTrue(rig.engine.seek(toSeconds: 3.5))
+        rig.engine.pause()
+        rig.player.previous()
+        XCTAssertEqual(rig.currentName, "track3.mp3")
+        XCTAssertEqual(rig.engine.position, 0)
+        XCTAssertEqual(rig.engine.state, .paused)
+    }
+
     func testPreviousWithShuffleStepsBackThroughThePass() {         // TC-33 / TC-92..94
         let rig = PlayerRig(shuffle: true)
         rig.player.start()

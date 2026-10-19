@@ -28,6 +28,13 @@ package final class DownloadOnPlayCoordinator {
 
     package func state(of song: SongID) -> DownloadState { states[song] ?? .onThisDevice }
 
+    /// How far the song being waited for has got (0 to 1; 0 when the system reports no percentage), nil when nothing is
+    /// being waited for. The play button shows it in place of its glyph.
+    package var currentLoading: Double? {
+        guard let current, case .downloading(let fraction) = state(of: current) else { return nil }
+        return fraction
+    }
+
     /// A request to play `song`. `isOnDevice` is the file's presence now, supplied by the adapter.
     package func request(_ song: SongID, source: PlayRequestSource, isOnDevice: Bool) {
         current = song

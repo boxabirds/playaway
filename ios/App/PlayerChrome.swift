@@ -149,10 +149,13 @@ struct FloatingController: View {
             }
             Spacer(minLength: 8)
             Button { model.transport.playPause() } label: {
-                Image(systemName: model.transport.state == .playing ? "pause.fill" : "play.fill")
-                    .font(.title2).frame(width: 44, height: 44).contentShape(Rectangle())
+                Group {
+                    if let loading = model.downloads.currentLoading { LoadingGlyph(fraction: loading).frame(width: 26, height: 26) }
+                    else { Image(systemName: model.transport.state == .playing ? "pause.fill" : "play.fill").font(.title2) }
+                }
+                .frame(width: 44, height: 44).contentShape(Rectangle())
             }
-            .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
+            .accessibilityLabel(model.downloads.currentLoading != nil ? "Loading" : (model.transport.state == .playing ? "Pause" : "Play"))
         }
         .padding(.horizontal, 16)
         .frame(minHeight: PlayerBar.height)
@@ -282,10 +285,15 @@ struct PlayerColumn: View {
 
     private var playButton: some View {
         Button { model.transport.playPause() } label: {
-            Image(systemName: model.transport.state == .playing ? "pause.circle.fill" : "play.circle.fill")
-                .resizable().frame(width: min(playButtonSide, Chrome.playButtonMaxSide), height: min(playButtonSide, Chrome.playButtonMaxSide))
+            let side = min(playButtonSide, Chrome.playButtonMaxSide)
+            if let loading = model.downloads.currentLoading {
+                LoadingGlyph(fraction: loading).frame(width: side * 0.7, height: side * 0.7).frame(width: side, height: side)
+            } else {
+                Image(systemName: model.transport.state == .playing ? "pause.circle.fill" : "play.circle.fill")
+                    .resizable().frame(width: side, height: side)
+            }
         }
-        .accessibilityLabel(model.transport.state == .playing ? "Pause" : "Play")
+        .accessibilityLabel(model.downloads.currentLoading != nil ? "Loading" : (model.transport.state == .playing ? "Pause" : "Play"))
         .keyboardShortcut(.space, modifiers: [])
     }
 
@@ -335,5 +343,14 @@ struct SeekShortcuts: View {
                 .keyboardShortcut(.rightArrow, modifiers: [])
         }
         .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+    }
+}
+
+/// What the play button shows while the song it was asked for is being fetched from iCloud: a pie of how far it has got, or
+/// a spinner while the system has not said. The screen stays usable; the person can pick another song.
+struct LoadingGlyph: View {
+    let fraction: Double
+    var body: some View {
+        if fraction > 0 { OpeningPie(fraction: fraction) } else { ProgressView() }
     }
 }

@@ -217,6 +217,23 @@ import UIKit
         app.tables["song-table"].cells[row].buttons["cloud-icon"]
     }
 
+    /// Owner's list: going between songs, when the next has to be fetched, the screen must not lock and the play button
+    /// becomes a progress pie (here a spinner: the fake cloud reports no percentage) until the song arrives.
+    func testWhileTheNextSongIsFetchedThePlayButtonShowsLoadingAndTheListStaysUsable() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo", "-PlayawayFakeCloud"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 10))
+        table.cells["Demo One"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "a song on the phone plays")
+        table.cells["Demo Two"].tap()                                          // in iCloud, not on the phone: fetched first (2 s)
+        XCTAssertTrue(app.buttons["Loading"].waitForExistence(timeout: 3), "the play button says it is loading")
+        XCTAssertTrue(table.cells["Demo Three"].isHittable, "and the list is not locked")
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "then the song plays")
+        XCTAssertFalse(app.buttons["Loading"].exists)
+    }
+
     /// Story 37, TC-21: a playlist a Mac wrote into the Playaway folder (every reference the Mac's) lists its songs as
     /// in iCloud and plays them, on this launch and the next. Nothing on the phone writes a reference back: there is
     /// no reporter on the phone and the resolver returns such a reference unchanged (CrossDevicePlaylistTests TC-19),

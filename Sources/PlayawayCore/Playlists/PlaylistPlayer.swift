@@ -150,8 +150,16 @@ package final class PlaylistPlayer: SessionEnding {
         playLoop(first: .skipForward)
     }
 
+    /// Past this many seconds into a song, Previous starts that song again; earlier than that it goes back a song. As in
+    /// every music player: a second tap right away goes back, a tap well into the song only rewinds it.
+    package static let restartThreshold: TimeInterval = 3
+
     package func previous() {
         guard sessionActive else { return }
+        if engine.state != .idle, engine.position >= Self.restartThreshold {
+            _ = engine.seek(toSeconds: 0)                  // keeps playing or paused as it was
+            return
+        }
         playLoop(first: .skipBackward)
     }
 

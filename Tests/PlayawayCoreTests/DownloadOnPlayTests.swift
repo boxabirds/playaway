@@ -46,6 +46,21 @@ final class DownloadOnPlayTests: XCTestCase {
         XCTAssertFalse(sut.handle(.finished(SongID("never requested"))))
     }
 
+    func testTheCurrentLoadingFollowsTheSongBeingWaitedForAndEndsWhenItArrivesOrFails() {
+        XCTAssertNil(sut.currentLoading, "nothing asked for")
+        sut.request(a, source: .list, isOnDevice: true)
+        XCTAssertNil(sut.currentLoading, "on the device: nothing to wait for")
+        sut.request(b, source: .list, isOnDevice: false)
+        XCTAssertEqual(sut.currentLoading, 0, "waiting, no percentage yet")
+        sut.handle(.progress(b, reportedPercent: 40))
+        XCTAssertEqual(sut.currentLoading ?? -1, 0.4, accuracy: 1e-9)
+        sut.request(a, source: .next, isOnDevice: true)
+        XCTAssertNil(sut.currentLoading, "moved on to a song that is here")
+        sut.request(b, source: .list, isOnDevice: false)
+        sut.handle(.failed(b))
+        XCTAssertNil(sut.currentLoading, "a failure is not loading")
+    }
+
     func testSongOnDevicePlaysAtOnce() {
         sut.request(a, source: .list, isOnDevice: true)
         XCTAssertEqual(seams.played, [a]); XCTAssertTrue(seams.started.isEmpty)
