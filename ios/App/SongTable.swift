@@ -155,7 +155,27 @@ struct SongTable: UIViewRepresentable {
                let model, case .resolved(let url) = model.resolver.resolve(track.reference, besidePlaylistAt: self.session.folder).0 {
                 provider.registerObject(url as NSURL, visibility: .all)
             }
-            return [UIDragItem(itemProvider: provider)]
+            let item = UIDragItem(itemProvider: provider)
+            // What follows the finger is a picture of the row on a solid surface, made now. The row's own content is hosted
+            // SwiftUI, and on a real iPhone its lifted copy came out as bare text (or nothing) that then flew in from the
+            // corner of the screen; a picture cannot come out empty.
+            if let cell = tableView.cellForRow(at: indexPath), cell.bounds.width > 0 {
+                let bounds = cell.bounds
+                let picture = UIGraphicsImageRenderer(bounds: bounds).image { context in
+                    UIColor.secondarySystemBackground.setFill()
+                    context.fill(bounds)
+                    cell.drawHierarchy(in: bounds, afterScreenUpdates: true)
+                }
+                let parameters = UIDragPreviewParameters()
+                parameters.backgroundColor = .secondarySystemBackground
+                parameters.visiblePath = UIBezierPath(roundedRect: bounds, cornerRadius: Self.liftedRowCornerRadius)
+                item.previewProvider = {
+                    let view = UIImageView(image: picture)
+                    view.frame = bounds
+                    return UIDragPreview(view: view, parameters: parameters)
+                }
+            }
+            return [item]
         }
 
         /// The lifted row gets its own surface and rounded corners from the system's own preview parameters, so in either
