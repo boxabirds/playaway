@@ -52,6 +52,10 @@ package final class AVLoopingPreview: LoopingPreviewing, @unchecked Sendable {
     private var playing = false
     /// Bumped by anything that makes work in flight pointless, so the work gives up at its next checkpoint.
     private var generation = 0
+    /// The song decoded whole (see `DecodedSong`) and the one being decoded now, guarded by `lock`.
+    private var decodedSong: DecodedSong?
+    private var decodingURL: URL?
+    private let decodeQueue = DispatchQueue(label: "software.away.play.loop-decode", qos: .utility)
 
     // Everything below is touched only on `queue`.
     private var engine: AVAudioEngine?
@@ -68,7 +72,27 @@ package final class AVLoopingPreview: LoopingPreviewing, @unchecked Sendable {
     @discardableResult private func bumpGeneration() -> Int { lock.lock(); defer { lock.unlock() }; generation += 1; return generation }
     private func isCurrent(_ gen: Int) -> Bool { lock.lock(); defer { lock.unlock() }; return generation == gen }
 
+    /// Starts decoding `url` whole in the background unless it already is, or is, decoded; a different song replaces it.
+    private func ensureDecoding(_ url: URL) {
+        lock.lock()
+        if decodedSong?.url != url { decodedSong = nil }
+        let needed = decodedSong == nil && decodingURL != url
+        if needed { decodingURL = url }
+        lock.unlock()
+        guard needed else { return }
+        decodeQueue.async { [self] in
+            let song = DecodedSong.decode(url) { self.isDecodingTarget(url) }
+            lock.lock()
+            if decodingURL == url { decodingURL = nil; decodedSong = song }
+            lock.unlock()
+        }
+    }
+
+    private func isDecodingTarget(_ url: URL) -> Bool { lock.lock(); defer { lock.unlock() }; return decodingURL == url }
+    private func decoded(for url: URL) -> DecodedSong? { lock.lock(); defer { lock.unlock() }; return decodedSong?.url == url ? decodedSong : nil }
+
     package func prepare(url: URL, at seconds: Double, length: Double) {
+        ensureDecoding(url)
         let gen = bumpGeneration()
         queue.async { [self] in
             guard isCurrent(gen) else { return }
@@ -79,6 +103,7 @@ package final class AVLoopingPreview: LoopingPreviewing, @unchecked Sendable {
     }
 
     package func start(url: URL, at seconds: Double, length: Double) -> Bool {
+        ensureDecoding(url)
         bumpGeneration()                                   // an older prepare for another place is not worth finishing
         var started = false
         queue.sync { started = startOnQueue(url: url, at: seconds, length: length) }
@@ -109,30 +134,47 @@ package final class AVLoopingPreview: LoopingPreviewing, @unchecked Sendable {
         if let prepared, prepared.url == url, prepared.length == length, abs(prepared.place - max(seconds, 0)) < Self.matchTolerance {
             return prepared
         }
-        guard let file = try? AVAudioFile(forReading: url) else { return nil }
-        let format = file.processingFormat
-        let rate = format.sampleRate
-        let startFrame = AVAudioFramePosition(max(seconds, 0) * rate)
-        guard startFrame < file.length else { return nil }
-        let wantedLoop = Int(length * rate)
-        let available = Int(file.length - startFrame)
-        let readFrames = min(wantedLoop + loopCrossfadeFrames, available)
-        guard readFrames > 0,
-              let source = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(readFrames)) else { return nil }
-        file.framePosition = startFrame
-        guard (try? file.read(into: source, frameCount: AVAudioFrameCount(readFrames))) != nil, source.frameLength > 0,
-              let channels = source.floatChannelData else { return nil }
-        guard stillWanted() else { return nil }
-        let frames = Int(source.frameLength)
-        let loopLength = min(wantedLoop, frames)
-        guard let loop = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(loopLength)),
-              let out = loop.floatChannelData else { return nil }
-        for channel in 0..<Int(format.channelCount) {
-            let samples = Array(UnsafeBufferPointer(start: channels[channel], count: frames))
-            let blended = seamlessLoop(samples, loopFrames: loopLength, fadeFrames: min(loopCrossfadeFrames, frames - loopLength))
-            for index in 0..<loopLength { out[channel][index] = blended[index] }
+        let format: AVAudioFormat, rate: Double, startFrame: AVAudioFramePosition, loopLength: Int, loop: AVAudioPCMBuffer
+        if let song = decoded(for: url) {
+            // From memory: exact and at once, wherever in the song.
+            rate = song.sampleRate
+            startFrame = AVAudioFramePosition(max(seconds, 0) * rate)
+            guard let cut = song.loop(startFrame: Int(startFrame), loopFrames: Int(length * rate), fadeFrames: loopCrossfadeFrames),
+                  let made = AVAudioFormat(standardFormatWithSampleRate: rate, channels: AVAudioChannelCount(song.channels.count)),
+                  let first = cut.first, !first.isEmpty,
+                  let buffer = AVAudioPCMBuffer(pcmFormat: made, frameCapacity: AVAudioFrameCount(first.count)),
+                  let out = buffer.floatChannelData else { return nil }
+            format = made; loopLength = first.count; loop = buffer
+            for (channel, samples) in cut.enumerated() { for index in 0..<loopLength { out[channel][index] = samples[index] } }
+            loop.frameLength = AVAudioFrameCount(loopLength)
+        } else {
+            // Until the song has been decoded: read it from the file (slow far into an MP3, and approximate).
+            guard let file = try? AVAudioFile(forReading: url) else { return nil }
+            format = file.processingFormat
+            rate = format.sampleRate
+            startFrame = AVAudioFramePosition(max(seconds, 0) * rate)
+            guard startFrame < file.length else { return nil }
+            let wantedLoop = Int(length * rate)
+            let available = Int(file.length - startFrame)
+            let readFrames = min(wantedLoop + loopCrossfadeFrames, available)
+            guard readFrames > 0,
+                  let source = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(readFrames)) else { return nil }
+            file.framePosition = startFrame
+            guard (try? file.read(into: source, frameCount: AVAudioFrameCount(readFrames))) != nil, source.frameLength > 0,
+                  let channels = source.floatChannelData else { return nil }
+            guard stillWanted() else { return nil }
+            let frames = Int(source.frameLength)
+            loopLength = min(wantedLoop, frames)
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(loopLength)),
+                  let out = buffer.floatChannelData else { return nil }
+            for channel in 0..<Int(format.channelCount) {
+                let samples = Array(UnsafeBufferPointer(start: channels[channel], count: frames))
+                let blended = seamlessLoop(samples, loopFrames: loopLength, fadeFrames: min(loopCrossfadeFrames, frames - loopLength))
+                for index in 0..<loopLength { out[channel][index] = blended[index] }
+            }
+            buffer.frameLength = AVAudioFrameCount(loopLength)
+            loop = buffer
         }
-        loop.frameLength = AVAudioFrameCount(loopLength)
         guard ensureEngine(format: format) else { return nil }
         return Prepared(url: url, place: Double(startFrame) / rate, length: length, buffer: loop, loopFrames: loopLength, sampleRate: rate)
     }

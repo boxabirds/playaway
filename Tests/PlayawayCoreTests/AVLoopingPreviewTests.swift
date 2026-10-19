@@ -80,6 +80,22 @@ final class AVLoopingPreviewTests: XCTestCase {
         preview.stop(); preview.endSession()
     }
 
+    /// Deep in the song the loop starts as fast and at the same place as near its start, once the song has been decoded.
+    func testALatePlaceStartsFastAndReportsAPlaceInsideItsSnippetOnceTheSongIsDecoded() throws {
+        let preview = AVLoopingPreview()
+        preview.prepare(url: song, at: 1, length: 1)               // starts decoding the whole song
+        Thread.sleep(forTimeInterval: 3)
+        let began = Date()
+        XCTAssertTrue(preview.start(url: song, at: 26, length: 1))
+        let time = Date().timeIntervalSince(began)
+        Thread.sleep(forTimeInterval: 0.4)
+        let place = try XCTUnwrap(preview.stop())
+        XCTAssertLessThan(time, 0.5, "from memory, however late the place (took \(Int(time * 1000)) ms)")
+        XCTAssertGreaterThanOrEqual(place, 26)
+        XCTAssertLessThanOrEqual(place, 27.05)
+        preview.endSession()
+    }
+
     func testASnippetAtTheVeryEndOfTheSongIsShorterButStillPlays() {
         let preview = AVLoopingPreview()
         XCTAssertTrue(preview.start(url: song, at: 29.7, length: 1))
