@@ -103,10 +103,12 @@ struct RootView: View {
     /// The iPad's form: Playlists in the sidebar, the chosen playlist's songs in the middle, Now Playing at the right.
     private var columns: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            PlaylistsView(selection: Binding(get: { model.selectedPlaylist }, set: { model.select($0, in: plan) }))
+            PlaylistsView(selection: Binding(get: { model.selectedPlaylist }, set: { if let url = $0 { model.openFromList(url, in: plan) } else { model.select(nil, in: plan) } }))
         } content: {
-            if let url = model.selectedPlaylist, let session = model.session(for: url) {
+            if let url = model.selectedPlaylist, let session = model.openSession(for: url) {
                 PlaylistView(session: session)
+            } else if let url = model.selectedPlaylist, model.opening[url] != nil {
+                ProgressView().accessibilityLabel("Opening").accessibilityIdentifier("songs-opening")
             } else {
                 ContentUnavailableView("No playlist chosen", systemImage: "music.note.list", description: Text("Choose a playlist"))
                     .accessibilityIdentifier("songs-empty")
@@ -139,7 +141,7 @@ struct PlaylistsView: View {
                         .tag(entry.url)
                         .dropDestination(for: URL.self) { urls, _ in model.add(urls, toPlaylistAt: entry.url) }
                         .overlay(alignment: .trailing) {
-                            PlaylistCloudIcon(entry: entry) { model.beginSync(entry) }.padding(.trailing, 28)
+                            PlaylistCloudIcon(entry: entry, opening: model.opening[entry.url]) { model.beginSync(entry) }.padding(.trailing, 28)
                         }
                         .contextMenu {
                             if case .ok = entry.status {
@@ -154,9 +156,12 @@ struct PlaylistsView: View {
                 }
             } else {
                 List(model.entries) { entry in
-                    NavigationLink(value: entry.url) { row(entry) }
+                    Button { model.openFromList(entry.url, in: .stack) } label: {
+                        row(entry).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                         .overlay(alignment: .trailing) {
-                            PlaylistCloudIcon(entry: entry) { model.beginSync(entry) }.padding(.trailing, 28)
+                            PlaylistCloudIcon(entry: entry, opening: model.opening[entry.url]) { model.beginSync(entry) }.padding(.trailing, 28)
                         }
                         .contextMenu {
                             if case .ok = entry.status {
@@ -205,7 +210,12 @@ struct PlaylistsView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(entry.name).font(.body)
             switch entry.status {
-            case .ok(let count): Text("\(count) \(count == 1 ? "song" : "songs")").font(.caption).foregroundStyle(.secondary)
+            case .ok(let count):
+                if let progress = model.opening[entry.url], progress.isShown {
+                    Text(progress.label).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("opening-label")
+                } else {
+                    Text("\(count) \(count == 1 ? "song" : "songs")").font(.caption).foregroundStyle(.secondary)
+                }
             case .loading: EmptyView()
             case .damaged: Text("Can't be read").font(.caption).foregroundStyle(.secondary)
             case .newerVersion: Text("Made by a newer version of Playaway").font(.caption).foregroundStyle(.secondary)
@@ -474,11 +484,25 @@ struct RenameSheet: View {
 /// tapping it offers to move it to iCloud; an outline cloud means it is already in iCloud and does nothing.
 struct PlaylistCloudIcon: View {
     let entry: PlaylistEntry
+    /// While the playlist is being read and the wait is long enough to notice: the cloud becomes a pie of how far it is.
+    var opening: OpeningProgress? = nil
     let tapped: () -> Void
 
     private var state: CloudIconState { entry.location == .iCloud ? .outline : .crossedOut }
 
     var body: some View {
+        if let opening, opening.isShown {
+            OpeningPie(fraction: opening.fraction)
+                .frame(width: cloudIconDrawnSize.width, height: cloudIconDrawnSize.height)
+                .frame(minWidth: minimumCloudIconTapSize.width, minHeight: minimumCloudIconTapSize.height)
+                .accessibilityLabel(opening.label)
+                .accessibilityIdentifier("playlist-opening-pie")
+        } else {
+            cloudButton
+        }
+    }
+
+    private var cloudButton: some View {
         Button {
             if cloudIconTapAction(state: state, kind: .playlist) == .openSyncDialog(.playlist) { tapped() }
         } label: {
@@ -510,3 +534,16 @@ struct FakeSheetChooser: View {
     }
 }
 #endif
+
+/// A small pie that fills clockwise from the top.
+struct OpeningPie: View {
+    let fraction: Double
+    var body: some View {
+        ZStack {
+            Circle().stroke(.secondary.opacity(0.4), lineWidth: 1.5)
+            Circle().trim(from: 0, to: max(0.02, fraction)).stroke(.tint, style: StrokeStyle(lineWidth: 5, lineCap: .butt))
+                .scaleEffect(0.5)
+                .rotationEffect(.degrees(-90))
+        }
+    }
+}

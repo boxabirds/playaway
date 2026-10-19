@@ -219,7 +219,6 @@ final class AppModel: ObservableObject {
     @Published var nudgePickerShown = false
     static let declinedNudgesKey = "declinedFolderNudges"
     /// What this playlist needs, worked out once per change of what is on disk and kept until something changes.
-    struct AccessSnapshot { var plan: RecoveryPlan?; var unfound: [UnfoundSong]; var locked: Set<UUID> }
     var accessCache: [URL: (revision: Int, snapshot: AccessSnapshot)] = [:]
     let settings = PlayModeSettings()
     let engine = AVPlaybackEngine()
@@ -229,6 +228,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var entries: [PlaylistEntry] = []
     @Published var cardOpen = false
     @Published var path: [URL] = []
+    /// Playlists being read, with how far each has got; the row of one that takes longer than a moment shows it.
+    @Published var opening: [URL: OpeningProgress] = [:]
     /// The playlist chosen in the iPad's sidebar (regular width); in the stack it mirrors the end of `path`.
     @Published var selectedPlaylist: URL?
     private let memoryStore = ListeningMemoryStore()
@@ -267,7 +268,7 @@ final class AppModel: ObservableObject {
     let lyrics = LyricsCoordinator()
     @Published var experimentsShown = false
     private let nowPlaying = NowPlayingCenter()
-    private var sessions: [URL: PlaylistSession] = [:]
+    var sessions: [URL: PlaylistSession] = [:]
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -855,6 +856,11 @@ final class AppModel: ObservableObject {
         if let existing = sessions[url] { return existing }
         let owner = library(for: url)
         guard case .loaded(let playlist) = owner.load(url) else { return nil }
+        return makeSession(url: url, playlist: playlist, owner: owner)
+    }
+
+    /// The session for a playlist that has been read already (by `beginOpening`, off the main thread).
+    func makeSession(url: URL, playlist: Playlist, owner: PlaylistLibrary) -> PlaylistSession {
         let session = PlaylistSession(url: url, playlist: playlist, library: owner, model: self,
                                       followsFile: cloudLibrary != nil && owner === cloudLibrary)
         session.model = self
@@ -862,6 +868,9 @@ final class AppModel: ObservableObject {
         session.objectWillChange.sink { [weak self] in self?.objectWillChange.send(); self?.refresh() }.store(in: &cancellables)
         return session
     }
+
+    /// The session if it is already open; never reads the file.
+    func openSession(for url: URL) -> PlaylistSession? { sessions[url] }
 
     private func configureAudioSession() {
         let audio = AVAudioSession.sharedInstance()

@@ -14,9 +14,11 @@ package struct ResolvedTrack: Equatable {
 /// background and applied the results when they arrived; the iPhone did it per row, as the row was drawn. Both now use this.
 package enum PlaylistResolution {
     /// Resolves every track, in playlist order. Reads the file system only, so it is safe off the main thread.
-    package static func resolve(_ tracks: [Track], with resolver: TrackResolving, besidePlaylistAt folder: URL?) -> [ResolvedTrack] {
-        tracks.map { track in
+    package static func resolve(_ tracks: [Track], with resolver: TrackResolving, besidePlaylistAt folder: URL?,
+                                progress: (Int) -> Void = { _ in }) -> [ResolvedTrack] {
+        tracks.enumerated().map { index, track in
             let (status, refreshed) = resolver.resolve(track.reference, besidePlaylistAt: folder)
+            progress(index + 1)
             return ResolvedTrack(trackID: track.id, reference: track.reference, status: status, refreshed: refreshed)
         }
     }

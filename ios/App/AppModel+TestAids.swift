@@ -203,6 +203,13 @@ extension AppModel {
     }
 
     /// Test aid: `-PlayawayRestoreDelay <seconds>` makes the search of a folder take that long, so the progress card can be seen.
+    /// Test aid: `-PlayawayOpenDelay <seconds>` makes opening a playlist take about that long, spread over its songs, so the
+    /// row's progress can be seen.
+    static var openDelay: TimeInterval? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let at = arguments.firstIndex(of: "-PlayawayOpenDelay"), at + 1 < arguments.count else { return nil }
+        return TimeInterval(arguments[at + 1])
+    }
     static var restoreDelay: TimeInterval? {
         let arguments = ProcessInfo.processInfo.arguments
         guard let at = arguments.firstIndex(of: "-PlayawayRestoreDelay"), at + 1 < arguments.count else { return nil }

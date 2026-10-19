@@ -10,20 +10,7 @@ extension AppModel {
     /// playlist IS found is never asked for. Kept until something that could change the answer changes.
     func accessSnapshot(for session: PlaylistSession) -> AccessSnapshot {
         if let cached = accessCache[session.url], cached.revision == cloudRevision { return cached.snapshot }
-        let folder = session.folder
-        var unfound: [UnfoundSong] = [], found: [CloudPath] = []
-        for track in session.playlist.tracks {
-            guard let location = track.reference.portableLocation, location.isInDrive else { continue }
-            if resolver.accessNeeded(for: track.reference, besidePlaylistAt: folder) != nil {
-                unfound.append(UnfoundSong(id: track.id, location: location, fileName: track.reference.fileName, fileSize: track.reference.fileSize))
-            } else if case .resolved = resolver.resolve(track.reference, besidePlaylistAt: folder).0, !roots.reaches(location) {
-                found.append(location)      // found by its own means, not through a permission given here: the folder is readable
-            }
-        }
-        let plan = RecoveryPlanner.plan(unfound: unfound.map(\.location), found: found)
-        let planned = Set(plan?.folders.map(\.name) ?? [])
-        let needing = unfound.filter { planned.contains($0.location.topFolder ?? "") }
-        let snapshot = AccessSnapshot(plan: plan, unfound: needing, locked: Set(needing.map(\.id)))
+        let snapshot = AccessSnapshot.make(tracks: session.playlist.tracks, folder: session.folder, resolver: resolver, reaches: { [roots] in roots.reaches($0) })
         accessCache[session.url] = (cloudRevision, snapshot)
         return snapshot
     }
