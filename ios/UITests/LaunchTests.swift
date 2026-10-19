@@ -1187,6 +1187,26 @@ import UIKit
         }
     }
 
+    /// A drag that goes wrong on a phone can be read out: Experiments > Drag log lists the lift, the session and the move.
+    func testTheDragLogRecordsADrag() {
+        let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))
+        app.staticTexts["Demo"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.cells["Demo Five"].waitForExistence(timeout: 5))
+        drag(table, "Demo One", toward: "Demo Three", below: true)
+        app.navigationBars.buttons.firstMatch.tap()                               // back to Playlists
+        XCTAssertTrue(app.buttons["experiments-button"].waitForExistence(timeout: 5))
+        app.buttons["experiments-button"].tap()
+        XCTAssertTrue(app.buttons["Drag log"].waitForExistence(timeout: 5) || app.staticTexts["Drag log"].waitForExistence(timeout: 2))
+        (app.buttons["Drag log"].exists ? app.buttons["Drag log"] : app.staticTexts["Drag log"]).tap()
+        let log = app.staticTexts["drag-log-text"]
+        XCTAssertTrue(log.waitForExistence(timeout: 5))
+        for expected in ["lift asked for row 0", "drag session began", "moved row 0"] {
+            XCTAssertTrue(log.label.contains(expected), "the log says \"\(expected)\": \(log.label)")
+        }
+    }
+
     func testReorderStartMiddleAndEnd() {
         let app = XCUIApplication(); app.launchArguments = ["-PlayawaySeedDemo"]; app.launch()
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 8))

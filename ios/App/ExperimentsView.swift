@@ -31,6 +31,11 @@ struct ExperimentsView: View {
                     }
                     Text("Apple Speech needs no download; the system fetches its model the first time.").font(.caption).foregroundStyle(.secondary)
                 }
+                Section {
+                    NavigationLink("Drag log") { DragLogView() }
+                } footer: {
+                    Text("If dragging a song goes wrong, drag again, then open this and send what it says.")
+                }
                 Section("Measuring") {
                     Button("Benchmark the Current Song") { model.lyrics.benchmarkCurrentSong() }
                         .disabled(model.transport.state == .idle)
@@ -62,5 +67,31 @@ struct ExperimentsView: View {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityLabel("Downloaded")
             }
         }
+    }
+}
+
+/// What the song list's drag did, newest last, to copy out and send when a drag goes wrong on a phone.
+struct DragLogView: View {
+    @State private var text = DragTrace.shared.text
+
+    var body: some View {
+        ScrollView {
+            Text(text.isEmpty ? "Nothing yet. Drag a song, then come back." : text)
+                .font(.caption.monospaced())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .textSelection(.enabled)
+                .accessibilityIdentifier("drag-log-text")
+        }
+        .navigationTitle("Drag log")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button("Refresh") { text = DragTrace.shared.text }
+                ShareLink(item: text.isEmpty ? "(empty)" : text)
+                Button("Clear") { DragTrace.shared.clear(); text = "" }
+            }
+        }
+        .onAppear { text = DragTrace.shared.text }
     }
 }

@@ -16,6 +16,7 @@ struct SongTable: UIViewRepresentable {
         table.delegate = context.coordinator
         table.dragDelegate = context.coordinator
         table.dragInteractionEnabled = true
+        context.coordinator.watch(table)
         table.register(UITableViewCell.self, forCellReuseIdentifier: Coordinator.cellID)
         table.separatorStyle = .none
         table.accessibilityIdentifier = "song-table"
@@ -34,7 +35,7 @@ struct SongTable: UIViewRepresentable {
         // Rebuild only what changed. The song list used to be rebuilt on every model update, including the playback
         // position ticking four times a second, which made scrolling jerky and could swap the item being dragged.
         let signature = Coordinator.Signature(ids: session.playlist.tracks.map(\.id), current: c.currentID, cloud: model.cloudRevision)
-        guard !c.isDragging else { c.needsReloadAfterDrag = true; return }
+        guard !c.isDragging else { c.needsReloadAfterDrag = true; DragTrace.shared.record("list update held back during the drag"); return }
         defer { c.lastSignature = signature }
         guard let last = c.lastSignature else { table.reloadData(); c.noteReload(table); return }
         if last == signature { return }
@@ -68,6 +69,21 @@ struct SongTable: UIViewRepresentable {
         init(session: PlaylistSession) { self.session = session }
 
         func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { session.playlist.tracks.count }
+
+        /// Writes what the table's own gestures do into the drag log, so a drag that goes wrong on a phone can be read out.
+        func watch(_ table: UITableView) {
+            table.panGestureRecognizer.addTarget(self, action: #selector(scrollPanChanged(_:)))
+            DragTrace.shared.record("table made; \(UIDevice.current.model) iOS \(UIDevice.current.systemVersion)")
+        }
+
+        @objc private func scrollPanChanged(_ pan: UIPanGestureRecognizer) {
+            switch pan.state {
+            case .began: DragTrace.shared.record("scroll pan began")
+            case .ended: DragTrace.shared.record("scroll pan ended")
+            case .cancelled: DragTrace.shared.record("scroll pan cancelled")
+            default: break
+            }
+        }
 
         func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
             let cell = tableView.dequeueReusableCell(withIdentifier: Self.cellID, for: indexPath)
@@ -133,6 +149,7 @@ struct SongTable: UIViewRepresentable {
         func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { true }
 
         func tableView(_ tableView: UITableView, moveRowAt source: IndexPath, to destination: IndexPath) {
+            DragTrace.shared.record("moved row \(source.row) to \(destination.row)")
             Task { @MainActor in self.session.move(from: source.row, to: destination.row) }
         }
 
@@ -150,6 +167,7 @@ struct SongTable: UIViewRepresentable {
         /// a playlist in the iPad's sidebar can take the song (story 38).
         func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
             let track = self.session.playlist.tracks[indexPath.row]
+            DragTrace.shared.record("lift asked for row \(indexPath.row); cell \(tableView.cellForRow(at: indexPath) == nil ? "MISSING" : "ok")")
             let provider = NSItemProvider(object: track.id.uuidString as NSString)
             if SongDragPolicy.offersFileURL(isPad: UIDevice.current.userInterfaceIdiom == .pad),
                let model, case .resolved(let url) = model.resolver.resolve(track.reference, besidePlaylistAt: self.session.folder).0 {
@@ -181,7 +199,8 @@ struct SongTable: UIViewRepresentable {
         /// The lifted row gets its own surface and rounded corners from the system's own preview parameters, so in either
         /// appearance it reads as a row picked up (a transparent preview was bare text over a black gap in dark mode).
         func tableView(_ tableView: UITableView, dragPreviewParametersForRowAt indexPath: IndexPath) -> UIDragPreviewParameters? {
-            guard let cell = tableView.cellForRow(at: indexPath) else { return nil }
+            guard let cell = tableView.cellForRow(at: indexPath) else { DragTrace.shared.record("preview parameters row \(indexPath.row): NO CELL"); return nil }
+            DragTrace.shared.record("preview parameters row \(indexPath.row): cell \(Int(cell.bounds.width))x\(Int(cell.bounds.height)) at y=\(Int(cell.frame.minY))")
             let parameters = UIDragPreviewParameters()
             parameters.backgroundColor = .secondarySystemBackground
             parameters.visiblePath = UIBezierPath(roundedRect: cell.bounds, cornerRadius: Self.liftedRowCornerRadius)
@@ -189,9 +208,13 @@ struct SongTable: UIViewRepresentable {
         }
         static let liftedRowCornerRadius: CGFloat = 12
 
-        func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) { isDragging = true }
+        func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) {
+            isDragging = true
+            DragTrace.shared.record("drag session began; items \(session.items.count); finger at \(Int(session.location(in: tableView).x)),\(Int(session.location(in: tableView).y)); table \(Int(tableView.bounds.width))x\(Int(tableView.bounds.height))")
+        }
         func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) {
             isDragging = false
+            DragTrace.shared.record("drag session ended; reload waiting: \(needsReloadAfterDrag)")
             guard needsReloadAfterDrag else { return }
             needsReloadAfterDrag = false
             lastSignature = nil
