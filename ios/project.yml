@@ -32,7 +32,7 @@ targets:
         CFBundleDisplayName: Playaway
         ITSAppUsesNonExemptEncryption: false
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "29"
+        CFBundleVersion: "30"
         NSSpeechRecognitionUsageDescription: Playaway transcribes the lyrics of your songs on this iPhone, for the lyrics experiment.
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
