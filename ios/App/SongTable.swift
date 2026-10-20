@@ -15,6 +15,7 @@ struct SongTable: UIViewRepresentable {
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         table.dragDelegate = context.coordinator
+        table.dropDelegate = context.coordinator
         table.dragInteractionEnabled = true
         context.coordinator.watch(table)
         table.register(UITableViewCell.self, forCellReuseIdentifier: Coordinator.cellID)
@@ -47,7 +48,7 @@ struct SongTable: UIViewRepresentable {
         c.noteReload(table)
     }
 
-    final class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate, UITableViewDragDelegate {
+    final class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate, UITableViewDragDelegate, UITableViewDropDelegate {
         static let cellID = "song"
         var session: PlaylistSession
         var currentID: UUID?
@@ -146,13 +147,6 @@ struct SongTable: UIViewRepresentable {
             Task { @MainActor in self.session.play(self.session.playlist.tracks[indexPath.row]) }
         }
 
-        func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { true }
-
-        func tableView(_ tableView: UITableView, moveRowAt source: IndexPath, to destination: IndexPath) {
-            DragTrace.shared.record("moved row \(source.row) to \(destination.row)")
-            Task { @MainActor in self.session.move(from: source.row, to: destination.row) }
-        }
-
         func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
             let remove = UIContextualAction(style: .destructive, title: nil) { [weak self] _, _, done in
                 Task { @MainActor in self?.session.remove(at: IndexSet(integer: indexPath.row)) }
@@ -207,6 +201,30 @@ struct SongTable: UIViewRepresentable {
             return parameters
         }
         static let liftedRowCornerRadius: CGFloat = 12
+
+        // The drop is taken here, not left to the table's built-in reorder: on an iPhone 13 (iOS 27.0.1) the built-in
+        // drop opened the gap while the finger moved and then refused the drop, so the row bounced back (drag log).
+        func tableView(_ tableView: UITableView, canHandle session: UIDropSession) -> Bool { session.localDragSession != nil }
+
+        func tableView(_ tableView: UITableView, dropSessionDidUpdate session: UIDropSession,
+                       withDestinationIndexPath destinationIndexPath: IndexPath?) -> UITableViewDropProposal {
+            guard session.localDragSession != nil else { return UITableViewDropProposal(operation: .cancel) }
+            return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+        }
+
+        func tableView(_ tableView: UITableView, performDropWith coordinator: UITableViewDropCoordinator) {
+            let count = tableView.numberOfRows(inSection: 0)
+            guard let item = coordinator.items.first, let source = item.sourceIndexPath, count > 0 else {
+                DragTrace.shared.record("drop refused: no source row"); return
+            }
+            let destination = coordinator.destinationIndexPath ?? IndexPath(row: count - 1, section: 0)
+            DragTrace.shared.record("drop: row \(source.row) to \(destination.row)")
+            tableView.performBatchUpdates {
+                MainActor.assumeIsolated { self.session.move(from: source.row, to: destination.row) }
+                tableView.moveRow(at: source, to: destination)
+            }
+            coordinator.drop(item.dragItem, toRowAt: destination)
+        }
 
         func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) {
             isDragging = true

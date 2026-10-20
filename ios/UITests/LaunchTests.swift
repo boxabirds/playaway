@@ -1202,8 +1202,8 @@ import UIKit
         (app.buttons["Drag log"].exists ? app.buttons["Drag log"] : app.staticTexts["Drag log"]).tap()
         let log = app.staticTexts["drag-log-text"]
         XCTAssertTrue(log.waitForExistence(timeout: 5))
-        for expected in ["lift asked for row 0", "drag session began", "finger ", "moved row 0"] {
-            XCTAssertTrue(log.label.contains(expected), "the log says \"\(expected)\": \(log.label)")
+        for expected in ["lift asked for row 0", "drag session began", "finger ", "drop: row 0"] {
+            XCTAssertTrue(log.label.contains(expected), "the log says \"\(expected)\": \(log.label.replacingOccurrences(of: "\n", with: " | "))")
         }
     }
 
