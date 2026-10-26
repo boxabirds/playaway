@@ -58,6 +58,20 @@ final class PlaylistDocumentController: NSDocumentController {
         }
     }
 
+    /// Resolves every open playlist's songs again, so a file renamed or moved meanwhile is followed and the playlist
+    /// saved with its new place and name. `completion` runs once every document has finished.
+    func refreshOpenPlaylists(completion: (() -> Void)? = nil) {
+        let open = playlistDocuments
+        var waiting = open.count
+        guard waiting > 0 else { completion?(); return }
+        for document in open {
+            document.resolveStatuses {
+                waiting -= 1
+                if waiting == 0 { completion?() }
+            }
+        }
+    }
+
     var playlistDocuments: [PlaylistDocument] { documents.compactMap { $0 as? PlaylistDocument } }
 
     func isOpen(_ url: URL) -> Bool { document(for: url) != nil }

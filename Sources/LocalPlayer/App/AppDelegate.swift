@@ -103,5 +103,7 @@ extension AppDelegate {
     /// A sign-in or sign-out of iCloud shows the next time the app comes to the front, without a relaunch.
     func applicationDidBecomeActive(_ notification: Notification) {
         services?.cloud.refresh()
+        // Not at launch: the launch itself resolves each playlist once its window is up.
+        if LaunchState.firstWindowPresented { PlaylistDocumentController.current.refreshOpenPlaylists() }
     }
 }

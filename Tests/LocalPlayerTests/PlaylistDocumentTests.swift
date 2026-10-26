@@ -223,6 +223,22 @@ final class PlaylistDocumentTests: XCTestCase {
         XCTAssertEqual(doc.statuses.status(of: fixture.tracks[0].id), .resolved(elsewhere.appendingPathComponent("track1.mp3")))
     }
 
+    func testASongRenamedInFinderIsRepairedAndSavedWhenTheAppComesBack() throws {       // TC-01/02 of story 43
+        let fixture = PlaylistFixture()
+        let url = dir.path("Renamed.lplaylist")
+        let doc = app.openSaved(fixture.playlist, at: url)
+        let renamed = fixture.urls[1].deletingLastPathComponent().appendingPathComponent("renamed in finder.mp3")
+        try FileManager.default.moveItem(at: fixture.urls[1], to: renamed)
+        var done = false
+        app.controller.refreshOpenPlaylists { done = true }
+        spin { done }
+        waitForAutosave(doc)
+        guard case .loaded(let onDisk) = PlaylistStore().load(from: url) else { return XCTFail() }
+        XCTAssertEqual(onDisk.tracks[1].reference.lastKnownPath, renamed.canonicalPath)
+        XCTAssertEqual(onDisk.tracks[1].reference.fileName, "renamed in finder.mp3")
+        XCTAssertEqual(doc.statuses.status(of: fixture.tracks[1].id), .resolved(renamed))
+    }
+
     func testMissingTracksAreGreyedAndNotEdited() {                              // TC-05/07/62
         let fixture = PlaylistFixture()
         let doc = app.openSaved(fixture.playlist, at: dir.path("Gone.lplaylist"))
