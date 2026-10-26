@@ -21,3 +21,17 @@ package struct FolderMatcher: FolderMatching {
         }
     }
 }
+
+extension FolderMatcher {
+    /// The one regular file in `folder` with exactly `size` bytes; nil for none, for several, for an unreadable folder.
+    /// Several is nil on purpose: a guess between two files would play the wrong song.
+    package func soleFile(ofSize size: Int64, in folder: URL) -> URL? {
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: []) else { return nil }
+        let candidates = entries.filter {
+            let values = try? $0.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            return values?.isRegularFile == true && values?.fileSize.map(Int64.init) == size
+        }
+        return candidates.count == 1 ? candidates[0] : nil
+    }
+}

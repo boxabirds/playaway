@@ -67,7 +67,11 @@ package struct TrackResolver: TrackResolving {
     /// roots, else beside the playlist under its name (matched as Locate matches, ignoring letter case).
     /// An offloaded placeholder counts at either place.
     private func foundOnThisDevicesTerms(_ ref: TrackReference, besidePlaylistAt folder: URL?) -> URL? {
-        if let portable = ref.portableLocation, let there = roots.url(for: portable), Self.isPresent(there) { return there }
+        if let portable = ref.portableLocation, let there = roots.url(for: portable) {
+            if Self.isPresent(there) { return there }
+            // Renamed since the playlist was saved: the only file of the song's size in its folder is the song.
+            if let size = ref.fileSize, let renamed = FolderMatcher().soleFile(ofSize: size, in: there.deletingLastPathComponent()) { return renamed }
+        }
         guard let folder, !ref.fileName.isEmpty, !ref.fileName.contains("/") else { return nil }
         if let match = FolderMatcher().match(missing: [(id: UUID(), fileName: ref.fileName)], in: folder).first { return match.url }
         let beside = folder.appendingPathComponent(ref.fileName)
