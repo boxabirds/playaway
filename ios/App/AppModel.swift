@@ -356,6 +356,10 @@ final class AppModel: ObservableObject {
             seedDrivePlaylist(in: fake, drive: drive)
             seedMixedDrivePlaylist(in: fake, drive: drive)
         }
+        // Test aid (story 43): a playlist with a song renamed since, one gone, and one in place, in a folder this device may read.
+        if arguments.contains("-PlayawaySeedRenamedPlaylist"), let fake = fakeCloudRoot, let drive = fakeDriveRoot {
+            seedRenamedDrivePlaylist(in: fake, drive: drive)
+        }
         // Test aid: after the given seconds, "another device" rewrites the open playlist's file with one more song.
         if let at = arguments.firstIndex(of: "-PlayawayRewriteOpenPlaylist"), at + 1 < arguments.count, let seconds = Double(arguments[at + 1]) {
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.rewriteOpenPlaylistAsAnotherDevice() }

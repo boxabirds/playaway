@@ -139,6 +139,31 @@ extension AppModel {
         _ = PlaylistStore().save(Playlist(tracks: tracks), to: file)
     }
 
+    /// Test aid (story 43): the phone that made the playlist saved three songs in iCloud Drive/Renamed. One is still in place,
+    /// one was renamed since and is the only file of its size there, one is gone. This device may read the folder.
+    func seedRenamedDrivePlaylist(in cloudRoot: URL, drive: URL) {
+        let name = "Renamed Songs"
+        let folder = cloudRoot.appendingPathComponent(name)
+        let file = folder.appendingPathComponent(name).appendingPathExtension(playlistFileExtension)
+        let songs = drive.appendingPathComponent("Renamed", isDirectory: true)
+        try? FileManager.default.createDirectory(at: songs, withIntermediateDirectories: true)
+        _ = roots.grant(pickedFolder: songs)
+        let inPlace = Self.tone(60, hz: 370)
+        try? inPlace.write(to: songs.appendingPathComponent("Demo In Place.wav"))
+        let renamedNow = Self.tone(61, hz: 410)
+        try? renamedNow.write(to: songs.appendingPathComponent("Demo New Name.wav"))
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let saved = "/private/var/mobile/Library/Mobile Documents/\(CloudFolder.driveFolderName)/Renamed/"
+        let tracks = [Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: saved + "Demo In Place.wav", fileName: "Demo In Place.wav",
+                                                                   fileSize: Int64(inPlace.count))),
+                      Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: saved + "Demo Old Name.wav", fileName: "Demo Old Name.wav",
+                                                                   fileSize: Int64(renamedNow.count))),
+                      Track(id: UUID(), reference: TrackReference(bookmark: Data(), lastKnownPath: saved + "Demo Gone.wav", fileName: "Demo Gone.wav",
+                                                                   fileSize: 12345))]
+        _ = PlaylistStore().save(Playlist(tracks: tracks), to: file)
+    }
+
     /// What the other device does: a coordinated write of the open playlist's file with a new song beside it, dated a
     /// moment later, from off the main thread, as iCloud's arrival would be.
     func rewriteOpenPlaylistAsAnotherDevice() {

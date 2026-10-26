@@ -119,6 +119,23 @@ final class RestoreFlowUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10), "the song the device can open plays")
     }
 
+    func testARenamedSongIsFoundByItsSizeAndAGoneSongOffersAReplacement() {       // TC-11, TC-15, TC-16 of story 43
+        let app = launch(["-PlayawaySeedRenamedPlaylist"])
+        XCTAssertTrue(app.staticTexts["Renamed Songs"].waitForExistence(timeout: 15))
+        app.staticTexts["Renamed Songs"].tap()
+        let table = app.tables["song-table"]
+        XCTAssertTrue(table.cells["Demo In Place"].waitForExistence(timeout: 15))
+        XCTAssertEqual(table.cells["Demo Old Name"].value as? String, "Found as Demo New Name.wav",
+                       "the only file of that size is the renamed song, and the row says so")
+        XCTAssertFalse(table.cells["Demo In Place"].buttons["choose-replacement"].exists, "a song that is found offers nothing")
+        XCTAssertFalse(table.cells["Demo Old Name"].buttons["choose-replacement"].exists, "nor one found under a new name")
+        let gone = table.cells["Demo Gone"].buttons["choose-replacement"]
+        XCTAssertTrue(gone.waitForExistence(timeout: 5), "a song that is gone offers Choose Replacement")
+        gone.tap()                                                               // the test file chooser offers the saved place, which is empty
+        dismissAlert(app, containing: "could not be used")
+        XCTAssertTrue(table.cells["Demo Gone"].buttons["choose-replacement"].exists, "still missing")
+    }
+
     func testAPlaylistInThePlayawayFolderNeverAsks() {
         let app = launch()
         XCTAssertTrue(app.staticTexts["Demo"].waitForExistence(timeout: 15))

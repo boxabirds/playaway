@@ -92,10 +92,24 @@ struct SongTable: UIViewRepresentable {
             let playing = track.id == currentID
             let display = model?.cloudDisplay(for: track, in: session)
             let name = track.reference.fileName.fileNameWithoutExtension
+            let foundAs = model.flatMap { foundUnderNewName(stored: track.reference.fileName, found: $0.songURL(for: track, in: session)) }
+            let replaceable = model.map { offersReplacement($0.unfoundKind(for: track, in: session), for: track.reference) } ?? false
             cell.contentConfiguration = UIHostingConfiguration {
                 HStack {
-                    Text(name).foregroundStyle(.primary).opacity(display?.dimmed == true ? 0.45 : 1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name).foregroundStyle(.primary).opacity(display?.dimmed == true || replaceable ? 0.45 : 1)
+                        if let foundAs {
+                            Text("Found as \(foundAs)").font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("found-under-new-name")
+                        }
+                    }
                     Spacer()
+                    if replaceable {
+                        ChooseReplacementButton { [weak self] in
+                            guard let self, let model = self.model else { return }
+                            model.beginLocate(track, in: self.session)
+                        }
+                    }
                     if playing { Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint) }
                     if let display {
                         CloudIconButton(display: display, tapped: { [weak self] in
@@ -110,6 +124,7 @@ struct SongTable: UIViewRepresentable {
             }
             cell.accessibilityTraits = .button
             cell.accessibilityLabel = track.reference.fileName.fileNameWithoutExtension
+            cell.accessibilityValue = foundAs.map { "Found as \($0)" }       // read out with the row; the row's own text is hidden from VoiceOver by the label
             let count = session.playlist.tracks.count
             cell.accessibilityCustomActions = songRowActions(index: indexPath.row, count: count).map { action in
                 let name: String
@@ -269,6 +284,29 @@ struct SongTable: UIViewRepresentable {
     }
 }
 
+
+/// The end of a row whose song is gone from this device (renamed, moved, deleted): a tap, or the menu, lets the person
+/// say which file it is now. The choice is kept on this device only.
+struct ChooseReplacementButton: View {
+    let choose: () -> Void
+
+    var body: some View {
+        Button(action: choose) {
+            Image(systemName: "questionmark.folder").foregroundStyle(.secondary)
+                .frame(width: cloudIconDrawnSize.width, height: cloudIconDrawnSize.height)
+                .padding(.horizontal, (minimumCloudIconTapSize.width - cloudIconDrawnSize.width) / 2)
+                .padding(.vertical, (minimumCloudIconTapSize.height - cloudIconDrawnSize.height) / 2)
+                .contentShape(Rectangle())
+                .padding(.horizontal, -(minimumCloudIconTapSize.width - cloudIconDrawnSize.width) / 2)
+                .padding(.vertical, -(minimumCloudIconTapSize.height - cloudIconDrawnSize.height) / 2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Choose Replacement")
+        .accessibilityHint("This song can't be found. Pick the file it is now.")
+        .accessibilityIdentifier("choose-replacement")
+        .contextMenu { Button("Choose Replacement…", systemImage: "magnifyingglass", action: choose) }
+    }
+}
 
 /// The cloud icon at the end of a song row. It is drawn small but its tappable area is at least 44 by 44 points.
 struct CloudIconButton: View {
